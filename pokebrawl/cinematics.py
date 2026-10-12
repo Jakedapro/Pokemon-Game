@@ -1,5 +1,8 @@
 """Cutscenes for showcases: the battle pauses, black bars slide in, the camera pushes in on the star, a big
-portrait card and title slam in, then flash + shake and the action happens."""
+portrait card and title slam in, then flash + shake and the action happens.
+
+The "aura" look: the portrait gets a pulsing glow in the event's color, aura flames rise off it, energy rings
+burst out when the action fires, lightning crackles around it and the title glows."""
 import math
 import random
 
@@ -8,6 +11,30 @@ import pygame
 from . import gfx
 from .audio import AUDIO
 from .gfx import H, INK, SPRITES, W, WHITE
+
+
+_VIGNETTE = None
+
+
+def _vignette():
+    """Dark edges fading smoothly to a clear middle (built once). Filled ellipses written outside-in: each one
+    replaces the pixels inside it, so the alpha steps down smoothly toward the center."""
+    global _VIGNETTE
+    if _VIGNETTE is None:
+        v = pygame.Surface((W, H), pygame.SRCALPHA)
+        v.fill((0, 0, 0, 210))
+        steps = 64
+        for i in range(steps):
+            k = i / (steps - 1)                      # 0 = outer edge, 1 = center
+            a = int(210 * (1 - k) ** 1.8)
+            rw, rh = W * (1.5 - 1.0 * k), H * (1.2 - 0.8 * k)
+            pygame.draw.ellipse(v, (0, 0, 0, a), (W / 2 - rw / 2, H / 2 - rh / 2, rw, rh))
+        _VIGNETTE = v
+    return _VIGNETTE
+
+
+def _lighter(c, k=0.55):
+    return tuple(int(v + (255 - v) * k) for v in c)
 
 
 def _ease(x):
@@ -38,6 +65,12 @@ class Cutscene:
         self.fired = False
         self.flash = 0.0
         self.rng = random.Random(7)
+        self.fx = random.Random()
+        self.parts = []    # aura flames: [x, y, vx, vy, life, max_life, size, color]
+        self.rings = []    # [x, y, radius, life]
+        self.bolts = []    # [points, life]
+        self.anchors = []  # where the portraits are (screen coords) this frame
+        self._glow = {}
 
     @property
     def done(self):
@@ -49,9 +82,14 @@ class Cutscene:
         self.t += dt
         if self.focus:
             renderer.cam_target = (self.focus[0], self.focus[1], self.zoom)
+        self._update_aura(dt)
         if not self.fired and self.t >= self.duration * self.action_at:
             self.fired = True
             self.flash = 0.35
+            for ax, ay, _, col in self.anchors:
+                for i in range(3):
+                    self.rings.append([ax, ay, 20 + i * 40, 0.8 + i * 0.15, col])
+                self._burst(ax, ay, 60, col)
             renderer.shake = max(renderer.shake, 0.6)
             AUDIO.play("boom", 0.8)
             if self.cry:
@@ -60,21 +98,121 @@ class Cutscene:
                 self.action()
         self.flash = max(0.0, self.flash - dt)
 
+    # ------------------------------------------------------------------ aura
+    def _burst(self, x, y, n, color):
+        for _ in range(n):
+            a = self.fx.uniform(0, math.tau)
+            sp = self.fx.uniform(150, 520)
+            life = self.fx.uniform(0.4, 0.9)
+            self.parts.append([x, y, math.cos(a) * sp, math.sin(a) * sp, life, life, self.fx.uniform(4, 10),
+                               _lighter(color, self.fx.uniform(0.2, 0.9))])
+
+    def _update_aura(self, dt):
+        live = self.duration - 0.3 > self.t > 0.2
+        for ax, ay, half_w, col in self.anchors:
+            if live:  # aura flames rise off the Pokemon
+                for _ in range(int(90 * dt) + (1 if self.fx.random() < (90 * dt) % 1 else 0)):
+                    life = self.fx.uniform(0.5, 1.1)
+                    self.parts.append([ax + self.fx.uniform(-half_w, half_w), ay - self.fx.uniform(0, 30),
+                                       self.fx.uniform(-20, 20), -self.fx.uniform(160, 340), life, life,
+                                       self.fx.uniform(5, 13), _lighter(col, self.fx.uniform(0.0, 0.8))])
+            if live and self.fx.random() < 6 * dt:  # crackling lightning
+                x, y = ax + self.fx.uniform(-half_w, half_w), ay - self.fx.uniform(60, 2.4 * half_w)
+                pts = [(x, y)]
+                for _ in range(6):
+                    x += self.fx.uniform(-28, 28)
+                    y += self.fx.uniform(-30, 30)
+                    pts.append((x, y))
+                self.bolts.append([pts, 0.12, col])
+        if live and self.anchors and int(self.t / 0.55) != int((self.t - dt) / 0.55):
+            for ax, ay, hw, col in self.anchors:
+                self.rings.append([ax, ay - hw, 30, 0.7, col])
+        for p in self.parts:
+            p[0] += p[2] * dt
+            p[1] += p[3] * dt
+            p[2] += math.sin(p[1] * 0.05) * 40 * dt
+            p[4] -= dt
+        self.parts = [p for p in self.parts if p[4] > 0]
+        for r in self.rings:
+            r[2] += 520 * dt
+            r[3] -= dt
+        self.rings = [r for r in self.rings if r[3] > 0]
+        for b in self.bolts:
+            b[1] -= dt
+        self.bolts = [b for b in self.bolts if b[1] > 0]
+
+    def _glow_layers(self, pid, height, flip, color):
+        key = (pid, height, flip, color)
+        if key not in self._glow:
+            img = SPRITES.get(pid, height, flip=flip)
+            sil = gfx.silhouette(img, _lighter(color, 0.35))
+            layers = []
+            for sc, a in ((1.22, 50), (1.12, 95), (1.05, 160)):
+                g = gfx.rescale(sil, (img.get_width() * sc, img.get_height() * sc))
+                g.set_alpha(a)
+                layers.append(g)
+            self._glow[key] = (img, layers)
+        return self._glow[key]
+
+    def _draw_glowing(self, surf, pid, height, midbottom, flip=False, color=None):
+        """Portrait with a pulsing aura glow behind it; records where it is for flames/rings."""
+        color = color or self.color
+        img, layers = self._glow_layers(pid, height, flip, color)
+        x, y = midbottom
+        y += math.sin(self.t * 3.0) * 6  # float
+        pulse = 1 + 0.5 * math.sin(self.t * 9)
+        for i, g in enumerate(layers):
+            jx = self.fx.uniform(-3, 3) * pulse
+            jy = self.fx.uniform(-3, 3) * pulse
+            r = g.get_rect(midbottom=(x + jx, y + g.get_height() * 0.04 * (len(layers) - i) + jy))
+            surf.blit(g, r)
+        surf.blit(img, img.get_rect(midbottom=(x, y)))
+        self.anchors.append((x, y - 10, img.get_width() * 0.38, color))
+
+    def _draw_aura_fx(self, surf, k):
+        if k <= 0:
+            return
+        layer = pygame.Surface((W, H), pygame.SRCALPHA)
+        for x, y, r, life, col in self.rings:
+            a = int(220 * min(1.0, life / 0.5) * k)
+            pygame.draw.circle(layer, (*_lighter(col, 0.5), a), (int(x), int(y)), int(r),
+                               max(2, int(10 * life)))
+        for p in self.parts:
+            f = p[4] / p[5]
+            sz = max(1, int(p[6] * (0.4 + 0.6 * f)))
+            a = int(230 * f * k)
+            pygame.draw.ellipse(layer, (*p[7], a), (p[0] - sz / 2, p[1] - sz * 1.6, sz, sz * 3.2))
+        for pts, life, col in self.bolts:
+            pygame.draw.lines(layer, (*_lighter(col, 0.4), int(255 * k)), False, pts, 5)
+            pygame.draw.lines(layer, (255, 255, 255, int(255 * k)), False, pts, 2)
+        surf.blit(layer, (0, 0))
+
+    def _glow_title(self, surf, s, pos, size, scale, alpha):
+        sz = int(size * scale)
+        glow = int(alpha * (0.45 + 0.25 * math.sin(self.t * 10)))
+        gfx.text(surf, s, pos, sz, _lighter(self.color, 0.3), _lighter(self.color, 0.1), max(6, sz // 5),
+                 alpha=glow)
+        gfx.title_text(surf, s, pos, size, scale=scale, alpha=alpha)
+
     # ------------------------------------------------------------------ drawing
     def draw(self, surf):
         d, t = self.duration, self.t
         k = _ease(t / 0.35) * _ease((d - t) / 0.35)
-        # color wash + speed lines
+        self.anchors = []
+        # darken + color wash + vignette, then speed lines
         wash = pygame.Surface((W, H), pygame.SRCALPHA)
-        wash.fill((*self.color, int(55 * k)))
+        wash.fill((*(int(c * 0.25) for c in self.color), int(150 * k)))
         surf.blit(wash, (0, 0))
+        vig = _vignette()
+        vig.set_alpha(int(255 * k))
+        surf.blit(vig, (0, 0))
         if k > 0.2:
             cx, cy = W / 2, H / 2
             for i in range(28):
                 a = self.rng.random() * math.tau
                 r0 = 260 + self.rng.random() * 120
                 r1 = r0 + 300 + self.rng.random() * 400
-                pygame.draw.line(surf, (255, 255, 255), (cx + math.cos(a) * r0, cy + math.sin(a) * r0),
+                pygame.draw.line(surf, _lighter(self.color, 0.6), (cx + math.cos(a) * r0, cy + math.sin(a) * r0),
                                  (cx + math.cos(a) * r1, cy + math.sin(a) * r1), 2)
         # letterbox
         bar = int(130 * k)
@@ -94,7 +232,7 @@ class Cutscene:
     def _draw_titles(self, surf, t, k, y):
         if t > 0.25:
             pop = _ease((t - 0.25) / 0.25)
-            gfx.title_text(surf, self.title, (W / 2, y), 64, scale=0.6 + 0.4 * pop, alpha=int(255 * k))
+            self._glow_title(surf, self.title, (W / 2, y), 64, 0.6 + 0.4 * pop, int(255 * k))
         if self.subtitle and t > 0.6:
             n = int(len(self.subtitle) * min(1.0, (t - 0.6) / 0.6))
             gfx.text(surf, self.subtitle[:n], (W / 2, y + 62), 26, self.color, INK, 3, alpha=int(255 * k))
@@ -102,21 +240,27 @@ class Cutscene:
     def _band(self, surf, y, h, offset, color):
         pts = [(offset - 80, y + h), (offset + W + 80, y + h), (offset + W + 160, y), (offset, y)]
         pygame.draw.polygon(surf, INK, [(px, py + 6) for px, py in pts])
-        pygame.draw.polygon(surf, color, pts)
-        pygame.draw.polygon(surf, WHITE, pts, 4)
+        pygame.draw.polygon(surf, (18, 14, 26), pts)
+        # energy streaks across the band in the event color
+        for i in range(5):
+            yy = y + 30 + i * (h - 60) / 4
+            off = (self.t * (500 + i * 90) + i * 170) % (W + 300) - 150
+            pygame.draw.line(surf, tuple(int(c * 0.6) for c in color), (offset + off - 120, yy), (offset + off, yy), 3)
+        pygame.draw.polygon(surf, _lighter(color, 0.3), pts, 5)
+        pygame.draw.polygon(surf, WHITE, pts, 2)
 
     def _draw_card(self, surf, t, k):
         slide = (1 - _ease(t / 0.45)) * -W
         y, h = 470, 300
-        self._band(surf, y, h, slide, tuple(int(c * 0.55) for c in self.color))
+        self._band(surf, y, h, slide, self.color)
         if self.portrait:
-            img = SPRITES.get(self.portrait, 300)
-            surf.blit(img, img.get_rect(midbottom=(W * 0.3 + slide, y + h + 20)))
+            self._draw_glowing(surf, self.portrait, 300, (W * 0.3 + slide, y + h + 20))
+        self._draw_aura_fx(surf, k)
         if t > 0.3:
             pop = _ease((t - 0.3) / 0.3)
             size = min(46, int(46 * 16 / max(16, len(self.title))))
-            gfx.title_text(surf, self.title, (W * 0.62 - slide * 0.2, y + 110), size, scale=0.5 + 0.5 * pop,
-                           alpha=int(255 * k))
+            self._glow_title(surf, self.title, (W * 0.62 - slide * 0.2, y + 110), size, 0.5 + 0.5 * pop,
+                             int(255 * k))
         if self.subtitle and t > 0.7:
             n = int(len(self.subtitle) * min(1.0, (t - 0.7) / 0.5))
             gfx.text(surf, self.subtitle[:n], (W * 0.62, y + 180), 22, WHITE, INK, 3, alpha=int(255 * k))
@@ -130,9 +274,9 @@ class Cutscene:
             y = 520 if i == 0 else 800
             band_col = gfx.TEAM_COLORS[i]
             self._band(surf, y - 120, 200, (-(1 - a) * W) if i == 0 else ((1 - a) * W), band_col)
-            img = SPRITES.get(pid, 260, flip=i == 0)
-            surf.blit(img, img.get_rect(midbottom=(x, y + 90)))
+            self._draw_glowing(surf, pid, 260, (x, y + 90), flip=i == 0, color=band_col)
+        self._draw_aura_fx(surf, k)
         if t > 0.45:
             pop = _ease((t - 0.45) / 0.25)
-            gfx.title_text(surf, "VS", (W / 2, 640), 130, scale=2.2 - 1.2 * pop, alpha=int(255 * k))
-        gfx.title_text(surf, self.title, (W / 2, 250), 54, alpha=int(255 * k))
+            self._glow_title(surf, "VS", (W / 2, 640), 130, 2.2 - 1.2 * pop, int(255 * k))
+        self._glow_title(surf, self.title, (W / 2, 250), 54, 1.0, int(255 * k))

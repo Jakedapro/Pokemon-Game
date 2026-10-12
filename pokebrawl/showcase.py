@@ -241,8 +241,8 @@ class ShowcaseScene:
         if len(alive) == 2 and alive[0].team != alive[1].team and self.start_units > 2 and self._once("final"):
             a, b = alive
             self.cutscenes.append(Cutscene("vs", 3.0, ((a.x + b.x) / 2, (a.y + b.y) / 2), 1.5, "FINAL SHOWDOWN",
-                                           portrait=a.mon.entry["id"], portrait2=b.mon.entry["id"],
-                                           action_at=0.45, sound="count"))
+                                           color=(255, 190, 60), portrait=a.mon.entry["id"],
+                                           portrait2=b.mon.entry["id"], action_at=0.45, sound="count"))
 
     def _once(self, key):
         if key in self.cues:
