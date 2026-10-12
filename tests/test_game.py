@@ -102,8 +102,9 @@ def test_relay_pairs_players():
         if host.conn:
             break
         time.sleep(0.02)
-    host.conn.send({"t": "ping"})
-    joiner.send({"t": "pong"})
-    time.sleep(0.2)
-    assert joiner.poll() == [{"t": "ping"}]
-    assert host.conn.poll() == [{"t": "pong"}]
+    host.conn.send({"t": "hi"})
+    joiner.send({"t": "yo"})
+    time.sleep(0.5)
+    assert joiner.poll() == [{"t": "hi"}]
+    assert host.conn.poll() == [{"t": "yo"}]
+    assert host.conn.rtt is not None  # heartbeat measured ping
