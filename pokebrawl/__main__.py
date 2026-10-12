@@ -36,7 +36,12 @@ def main(argv=None):
         return
     if args.cmd == "download":
         from .pokedex import download_all
-        download_all()
+        try:
+            download_all()
+        except Exception as e:  # noqa: BLE001
+            print(f"\n[pokebrawl] download failed: {e}")
+            print("[pokebrawl] check your internet connection; on school/work Wi-Fi try another network")
+            sys.exit(1)
         return
     if args.cmd == "update":
         if os.path.isdir(os.path.join(APP_DIR, ".git")):

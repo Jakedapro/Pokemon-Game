@@ -180,12 +180,15 @@ class MainMenu(Scene):
         super().__init__(app)
         x, w = 110, 500
         self.buttons = [
-            ui.Button((x, 360, w, 120), "PRACTICE", (196, 60, 60), 40, "Battle a bot - easy to insane", tag="practice"),
-            ui.Button((x, 510, w, 120), "SHOWCASE", (70, 120, 220), 40, "Gen vs Gen mass battles + record MP4",
+            ui.Button((x, 340, w, 120), "PRACTICE", (196, 60, 60), 40, "Battle a bot - easy to insane", tag="practice"),
+            ui.Button((x, 480, w, 120), "SHOWCASE", (70, 120, 220), 40, "Mass battles, royales, tournaments + MP4",
                       tag="showcase"),
-            ui.Button((x, 660, w, 120), "PVP", (60, 160, 90), 40, "Play your friends online", tag="pvp"),
-            ui.Button((x, 810, w, 90), "TEAM BUILDER", ui.PANEL2, 30, tag="teams"),
-            ui.Button((x, 930, w, 70), "QUIT", (60, 58, 70), 24, tag="quit"),
+            ui.Button((x, 620, w, 120), "PVP", (60, 160, 90), 40, "Play your friends online - just a room code",
+                      tag="pvp"),
+            ui.Button((x, 760, 245, 84), "TEAMS", ui.PANEL2, 28, tag="teams"),
+            ui.Button((x + 255, 760, 245, 84), "REPLAYS", ui.PANEL2, 28, tag="replays"),
+            ui.Button((x, 860, 245, 70), "SETTINGS", (60, 58, 70), 24, tag="settings"),
+            ui.Button((x + 255, 860, 245, 70), "QUIT", (60, 58, 70), 24, tag="quit"),
         ]
 
     def update(self, dt):
@@ -211,6 +214,12 @@ class MainMenu(Scene):
         elif tag == "teams":
             from .teambuilder import TeamList
             self.app.push(TeamList(self.app))
+        elif tag == "replays":
+            from .replays_ui import ReplayList
+            self.app.push(ReplayList(self.app))
+        elif tag == "settings":
+            from .settings_ui import SettingsScene
+            self.app.push(SettingsScene(self.app))
         elif tag == "quit":
             self.app.running = False
 

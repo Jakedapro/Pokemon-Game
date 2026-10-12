@@ -7,8 +7,12 @@ into ~/.pokebrawl/ the first time it is needed.
 import csv
 import json
 import os
+import shutil
 import ssl
+import subprocess
 import sys
+import threading
+import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
@@ -41,25 +45,108 @@ SPECIAL_STATUS = {"protect", "detect", "stealth-rock", "spikes", "toxic-spikes",
                   "nasty-plot", "swords-dance", "dragon-dance", "calm-mind", "bulk-up", "agility", "rock-polish",
                   "coil", "shift-gear", "victory-dance", "tidy-up", "curse", "iron-defense", "amnesia", "growth"}
 
-_ssl_ctx = None
+# ---------------------------------------------------------------------------- downloading
+# Some networks (school/work Wi-Fi filters, antivirus "web shields") re-sign HTTPS traffic with their own
+# certificate. The Mac trusts it (it's in the Keychain) but Python's bundled certificates don't, so we try,
+# in order: the OS trust store (truststore), Python's defaults + certifi, the certificates exported from the
+# macOS Keychain, and finally the system `curl`, which always uses the Keychain.
+_ctx_lock = threading.Lock()
+_good_ctx = None
+_use_curl = False
 
 
-def _context():
-    global _ssl_ctx
-    if _ssl_ctx is None:
-        _ssl_ctx = ssl.create_default_context()
-        try:  # python.org builds on macOS ship without CA certs; certifi fixes that when installed
-            import certifi
-            _ssl_ctx.load_verify_locations(certifi.where())
-        except Exception:
-            pass
-    return _ssl_ctx
+def _candidate_contexts():
+    try:
+        import truststore
+        yield "system", truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    except Exception:  # noqa: BLE001 - not installed (Python 3.9) or unsupported
+        pass
+    ctx = ssl.create_default_context()
+    try:
+        import certifi
+        ctx.load_verify_locations(certifi.where())
+    except Exception:  # noqa: BLE001
+        pass
+    yield "default", ctx
+    pem = _keychain_pem()
+    if pem:
+        ctx = ssl.create_default_context(cafile=pem)
+        if hasattr(ssl, "VERIFY_X509_STRICT"):
+            ctx.verify_flags &= ~ssl.VERIFY_X509_STRICT  # filter certificates are often not "strict"
+        yield "keychain", ctx
+
+
+def _keychain_pem():
+    """Export every certificate the Mac trusts into one PEM file Python can load."""
+    if sys.platform != "darwin" or not shutil.which("security"):
+        return None
+    path = os.path.join(HOME, "keychain-certs.pem")
+    chains = ["/System/Library/Keychains/SystemRootCertificates.keychain", "/Library/Keychains/System.keychain",
+              os.path.expanduser("~/Library/Keychains/login.keychain-db")]
+    out = b""
+    for kc in chains:
+        if os.path.exists(kc):
+            try:
+                out += subprocess.run(["security", "find-certificate", "-a", "-p", kc], capture_output=True,
+                                      timeout=20).stdout
+            except (OSError, subprocess.SubprocessError):
+                pass
+    if not out:
+        return None
+    os.makedirs(HOME, exist_ok=True)
+    with open(path, "wb") as f:
+        f.write(out)
+    return path
+
+
+def _is_cert_error(e):
+    reason = getattr(e, "reason", e)
+    return isinstance(reason, ssl.SSLError) or "CERTIFICATE" in str(e).upper()
+
+
+def _urlopen(url, timeout, ctx):
+    req = urllib.request.Request(url, headers={"User-Agent": "pokebrawl/1.0"})
+    with urllib.request.urlopen(req, timeout=timeout, context=ctx) as r:
+        return r.read()
+
+
+def _curl(url, timeout):
+    res = subprocess.run(["curl", "-fsSL", "--max-time", str(int(timeout)), "-A", "pokebrawl/1.0", url],
+                         capture_output=True, timeout=timeout + 10)
+    if res.returncode != 0:
+        raise OSError(f"curl failed ({res.returncode}): {res.stderr.decode(errors='ignore').strip()[:200]}")
+    return res.stdout
 
 
 def fetch(url, timeout=60):
-    req = urllib.request.Request(url, headers={"User-Agent": "pokebrawl/1.0"})
-    with urllib.request.urlopen(req, timeout=timeout, context=_context()) as r:
-        return r.read()
+    global _good_ctx, _use_curl
+    if _use_curl:
+        return _curl(url, timeout)
+    if _good_ctx is not None:
+        return _urlopen(url, timeout, _good_ctx)
+    with _ctx_lock:  # first download: find a way that works, then reuse it
+        if _use_curl:
+            return _curl(url, timeout)
+        if _good_ctx is not None:
+            return _urlopen(url, timeout, _good_ctx)
+        last = None
+        for name, ctx in _candidate_contexts():
+            try:
+                data = _urlopen(url, timeout, ctx)
+                _good_ctx = ctx
+                return data
+            except urllib.error.HTTPError:
+                _good_ctx = ctx  # TLS worked; the file just isn't there
+                raise
+            except Exception as e:  # noqa: BLE001
+                last = e
+                if not _is_cert_error(e):
+                    raise
+        if shutil.which("curl"):
+            data = _curl(url, timeout)
+            _use_curl = True
+            return data
+        raise last
 
 
 def pretty_name(ident):

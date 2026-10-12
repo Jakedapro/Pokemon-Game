@@ -191,14 +191,14 @@ class ShowcaseRecord(Scene):
         self.fps = fps
         self.frames = 0
         self.canvas = pygame.Surface((W, H)).convert()
-        name = "".join(c if c.isalnum() else "_" for c in scene.cfg.get("title", "showcase")).strip("_")
+        title = scene.cfg.get("title", "showcase") if hasattr(scene, "cfg") else getattr(scene, "title", "battle")
+        name = "".join(c if c.isalnum() else "_" for c in title).strip("_")
         self.path = os.path.join(video_dir(), f"{name}_{time.strftime('%Y%m%d_%H%M%S')}.mp4")
         self.error = None
         self.finished = False
         self.mixing = False
         try:
             self.rec = Recorder(self.path + ".video.mp4", W, H, fps)
-            self.prev_track = AUDIO.track
             AUDIO.capture, AUDIO.clock = [], (lambda: self.frames / self.fps)
         except RuntimeError as e:
             self.rec = None
@@ -249,7 +249,7 @@ class ShowcaseRecord(Scene):
             surf.blit(thumb, thumb.get_rect(center=(W / 2, 470)))
             secs = self.frames / self.fps
             msg = f"Saved! {secs:.0f}s video" if self.finished else "Adding sound..." if self.mixing else \
-                f"Recording... {secs:.0f}s  ({self.sc.phase})"
+                f"Recording... {secs:.0f}s  ({getattr(self.sc, 'phase', '')})"
             gfx.text(surf, msg, (W / 2, 840), 28)
             gfx.text(surf, self.path, (W / 2, 890), 15, ui.MUTED, ow=1, chunky=False)
         for b in self.buttons:

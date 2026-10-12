@@ -112,6 +112,7 @@ class TurnBattleScene(Scene):
             dur = 0.95 if self.cur["t"] else 0.45
             if a[0] == "turn":
                 dur = 0.3
+            dur /= getattr(self, "anim_speed", 1.0)
             if self.cur_t >= dur:
                 self.cur = None
         elif not self.queue and getattr(self, "_next_state", None):

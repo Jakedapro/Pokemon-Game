@@ -117,7 +117,9 @@ fi
 
 # --- 7. download the Pokedex + sprites -----------------------------------------------
 say "Downloading all Pokemon, moves and sprites (one time, ~20 MB)..."
-"$BIN/pokebrawl" download
+if ! "$BIN/pokebrawl" download; then
+  warn "Couldn't download the Pokemon data right now - the game will retry when you open it."
+fi
 
 echo
 say "PokeBrawl is installed!"
