@@ -24,6 +24,7 @@ def main(argv=None):
     rl = sub.add_parser("relay", help="run a relay server")
     rl.add_argument("--port", type=int, default=7778)
     sub.add_parser("download", help="download all Pokemon data and sprites")
+    sub.add_parser("spritetest", help="save a picture of sprite effects to your Desktop (for bug reports)")
     sub.add_parser("update", help="update the game")
     args = p.parse_args(argv)
 
@@ -42,6 +43,23 @@ def main(argv=None):
             print(f"\n[pokebrawl] download failed: {e}")
             print("[pokebrawl] check your internet connection; on school/work Wi-Fi try another network")
             sys.exit(1)
+        return
+    if args.cmd == "spritetest":
+        import pygame
+
+        from . import gfx
+        gfx.Display(headless=True)
+        surf = pygame.Surface((560, 140))
+        surf.fill((166, 124, 92))
+        variants = [(150, {}), (150, {"white": 0.7}), (384, {"outline": (230, 50, 50)}),
+                    (384, {"outline": (230, 50, 50), "white": 0.7}), (150, {"white": 0.6, "flip": True})]
+        for i, (pid, kw) in enumerate(variants):
+            surf.blit(gfx.SPRITES.get(pid, 100, **kw), (10 + i * 110, 20))
+        desk = os.path.join(os.path.expanduser("~"), "Desktop")
+        out = os.path.join(desk if os.path.isdir(desk) else os.getcwd(), "pokebrawl-spritetest.png")
+        pygame.image.save(surf, out)
+        print(f"saved {out} - you should see Mewtwo, white Mewtwo, Rayquaza with a red outline, a white one, "
+              f"and a faded Mewtwo")
         return
     if args.cmd == "update":
         if os.path.isdir(os.path.join(APP_DIR, ".git")):

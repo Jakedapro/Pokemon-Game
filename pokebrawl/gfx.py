@@ -172,10 +172,10 @@ class Sprites:
                 path = pokedex.ensure_sprite(pid)
             if path:
                 try:
-                    img = pygame.image.load(path).convert_alpha()
+                    img = _plain_rgba(pygame.image.load(path).convert_alpha())
                     r = img.get_bounding_rect()
                     if r.w > 0:
-                        img = img.subsurface(r).copy()
+                        img = _plain_rgba(img.subsurface(r))
                 except Exception:
                     img = None
             if img is None and back:
@@ -193,14 +193,12 @@ class Sprites:
         img = pygame.transform.scale(img, size) if s >= 1.5 else pygame.transform.smoothscale(img, size)
         if flip:
             img = pygame.transform.flip(img, True, False)
-        if white > 0:
+        if white > 0:  # hit flash: brighten toward white, keep the sprite's own transparency
             img = img.copy()
-            mask = pygame.mask.from_surface(img).to_surface(setcolor=(255, 255, 255, int(255 * white)),
-                                                            unsetcolor=(0, 0, 0, 0))
-            img.blit(mask, (0, 0))
+            v = int(255 * white)
+            img.fill((v, v, v, 0), special_flags=pygame.BLEND_RGBA_ADD)
         if outline:
-            mask = pygame.mask.from_surface(img, 100)
-            sil = mask.to_surface(setcolor=(*outline, 255), unsetcolor=(0, 0, 0, 0))
+            sil = silhouette(img, outline)
             out = pygame.Surface((img.get_width() + ow * 2, img.get_height() + ow * 2), pygame.SRCALPHA)
             for dx, dy in ((-ow, 0), (ow, 0), (0, -ow), (0, ow), (-1, -1), (1, 1), (-1, 1), (1, -1)):
                 out.blit(sil, (dx + ow, dy + ow))
@@ -213,6 +211,20 @@ class Sprites:
 
 
 SPRITES = Sprites()
+
+
+def silhouette(img, color):
+    """A flat-colored copy of a sprite with the same transparency (no pygame.mask: it misbehaves on some Macs)."""
+    sil = img.copy()
+    sil.fill((0, 0, 0, 255), special_flags=pygame.BLEND_RGBA_MULT)        # black, alpha untouched
+    sil.fill((*color, 0), special_flags=pygame.BLEND_RGBA_ADD)            # -> flat color, alpha untouched
+    return sil
+
+
+def _plain_rgba(img):
+    """Rebuild a surface as plain 32-bit RGBA (sprites are palette PNGs; avoid palette/pitch edge cases)."""
+    w, h = img.get_size()
+    return pygame.image.frombytes(pygame.image.tobytes(img, "RGBA"), (w, h), "RGBA").convert_alpha()
 
 
 # ---------------------------------------------------------------------------- arena
