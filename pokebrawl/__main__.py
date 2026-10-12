@@ -45,21 +45,7 @@ def main(argv=None):
             sys.exit(1)
         return
     if args.cmd == "spritetest":
-        import pygame
-
-        from . import gfx
-        gfx.Display(headless=True)
-        surf = pygame.Surface((560, 140))
-        surf.fill((166, 124, 92))
-        variants = [(150, {}), (150, {"white": 0.7}), (384, {"outline": (230, 50, 50)}),
-                    (384, {"outline": (230, 50, 50), "white": 0.7}), (150, {"white": 0.6, "flip": True})]
-        for i, (pid, kw) in enumerate(variants):
-            surf.blit(gfx.SPRITES.get(pid, 100, **kw), (10 + i * 110, 20))
-        desk = os.path.join(os.path.expanduser("~"), "Desktop")
-        out = os.path.join(desk if os.path.isdir(desk) else os.getcwd(), "pokebrawl-spritetest.png")
-        pygame.image.save(surf, out)
-        print(f"saved {out} - you should see Mewtwo, white Mewtwo, Rayquaza with a red outline, a white one, "
-              f"and a faded Mewtwo")
+        _spritetest()
         return
     if args.cmd == "update":
         if os.path.isdir(os.path.join(APP_DIR, ".git")):
@@ -97,6 +83,53 @@ def main(argv=None):
         return
     from .app import App
     App().run()
+
+
+def _spritetest():
+    """Saves a picture testing every way sprites get drawn, plus version info, for bug reports."""
+    import platform
+
+    import pygame
+
+    from . import gfx
+    from .pokedex import load_dex
+    from .render import ArenaRenderer
+    disp = gfx.Display(headless=True)
+    out = gfx.new_surface((720, 520))
+    out.fill((166, 124, 92))
+
+    def label(t, x, y):
+        gfx.text(out, t, (x, y), 14, chunky=False, ow=1)
+    row = [("plain", {}), ("hit flash", {"white": 0.7}), ("outline", {"outline": (230, 50, 50)}),
+           ("outline+flash", {"outline": (230, 50, 50), "white": 0.7}), ("faint", {"white": 0.6, "flip": True})]
+    for i, (name, kw) in enumerate(row):
+        out.blit(gfx.SPRITES.get(150, 90, **kw), (15 + i * 140, 30))
+        label(name, 60 + i * 140, 18)
+    raw = pygame.image.load(gfx.pokedex.ensure_sprite(384))
+    tests = [("raw file", raw), ("smoothscale", pygame.transform.smoothscale(raw.convert_alpha(), (120, 120))),
+             ("scale", pygame.transform.scale(raw, (120, 120))), ("rescale", gfx.rescale(raw, (120, 120)))]
+    for i, (name, img) in enumerate(tests):
+        out.blit(img, (15 + i * 170, 160))
+        label(name, 70 + i * 170, 150)
+    r = ArenaRenderer(load_dex(), {}, mode="showcase")
+    r.feed({"u": [[1, 0, 150, 300, 640, 1.0, 40, 1, "", 1, 0, 0], [2, 1, 384, 420, 640, 1.0, 40, 1, "", -1, 0, 0]],
+            "p": [], "e": [], "w": None})
+    for k, zoom in enumerate((1.0, 1.8)):
+        r.cam = [360, 620, zoom]
+        r.units[1].flash = 0.1 if k else 0
+        r.draw(disp.canvas)
+        out.blit(gfx.rescale(disp.canvas, (180, 320)).subsurface((0, 60, 180, 230)).copy(), (15 + k * 200, 290))
+        label(f"arena zoom {zoom}", 105 + k * 200, 290)
+    info = [f"pygame-ce {pygame.version.ver}  SDL {'.'.join(map(str, pygame.get_sdl_version()))}",
+            f"python {platform.python_version()}  {platform.system()} {platform.machine()} {platform.mac_ver()[0]}",
+            f"display bits {pygame.display.get_surface().get_bitsize()}"]
+    for i, t in enumerate(info):
+        gfx.text(out, t, (430, 330 + i * 26), 15, chunky=False, ow=1, anchor="topleft")
+    desk = os.path.join(os.path.expanduser("~"), "Desktop")
+    path = os.path.join(desk if os.path.isdir(desk) else os.getcwd(), "pokebrawl-spritetest.png")
+    pygame.image.save(out, path)
+    print(f"saved {path}")
+    print("\n".join(info))
 
 
 def _loop(app, gfx):

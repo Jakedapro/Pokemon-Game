@@ -190,7 +190,7 @@ class ShowcaseRecord(Scene):
         self.sc = scene
         self.fps = fps
         self.frames = 0
-        self.canvas = pygame.Surface((W, H)).convert()
+        self.canvas = gfx.new_surface((W, H))
         title = scene.cfg.get("title", "showcase") if hasattr(scene, "cfg") else getattr(scene, "title", "battle")
         name = "".join(c if c.isalnum() else "_" for c in title).strip("_")
         self.path = os.path.join(video_dir(), f"{name}_{time.strftime('%Y%m%d_%H%M%S')}.mp4")

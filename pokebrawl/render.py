@@ -56,7 +56,7 @@ class ArenaRenderer:
         self.my_team = my_team
         self.team_names = team_names or ["Team 1", "Team 2"]
         self.bg = gfx.arena_background()
-        self.world = pygame.Surface((W, H)).convert()
+        self.world = gfx.new_surface((W, H))
         self.units = {}
         self.dead = []          # fading corpses
         self.fx = []
@@ -377,7 +377,7 @@ class ArenaRenderer:
         if r.w >= W - 1:
             surf.blit(w, (0, 0))
         else:
-            surf.blit(pygame.transform.smoothscale(w.subsurface(r), (W, H)), (0, 0))
+            surf.blit(gfx.rescale(w.subsurface(r), (W, H)), (0, 0))
         # screen-space overlays
         for f in self.fx:
             if f.kind in ("label", "pop", "mega", "banner"):

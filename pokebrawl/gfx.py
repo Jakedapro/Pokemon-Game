@@ -19,6 +19,22 @@ INK = (40, 30, 40)
 TEAM_COLORS = [(235, 60, 60), (60, 130, 245), (60, 200, 90), (240, 190, 40)]
 
 
+# ---------------------------------------------------------------------------- safe scaling
+def rescale(img, size):
+    """Nearest-neighbor scale of a contiguous 32-bit copy. Avoids smoothscale/subsurface edge cases that
+    produced striped, alpha-less sprites on some Macs (and suits pixel art anyway)."""
+    size = (max(1, int(size[0])), max(1, int(size[1])))
+    src = img.copy() if img.get_parent() is not None else img
+    if src.get_bitsize() != 32:
+        src = _plain_rgba(src)
+    return pygame.transform.scale(src, size)
+
+
+def new_surface(size, alpha=False):
+    """A plain 32-bit surface (never palette/24-bit, whatever the display uses)."""
+    return pygame.Surface(size, pygame.SRCALPHA if alpha else 0, 32)
+
+
 # ---------------------------------------------------------------------------- display
 class Display:
     """Renders to a fixed 720x1280 canvas and scales it into a resizable window (letterboxed)."""
@@ -38,7 +54,7 @@ class Display:
                 dw, dh = 1280, 800
             scale = min((dh - 90) / H, (dw - 40) / W, 1.0)
             self.window = pygame.display.set_mode((int(W * scale), int(H * scale)), pygame.RESIZABLE)
-        self.canvas = pygame.Surface((W, H)).convert()
+        self.canvas = new_surface((W, H))
         self._rect = pygame.Rect(0, 0, W, H)
 
     def present(self):
@@ -172,7 +188,7 @@ class Sprites:
                 path = pokedex.ensure_sprite(pid)
             if path:
                 try:
-                    img = _plain_rgba(pygame.image.load(path).convert_alpha())
+                    img = _plain_rgba(pygame.image.load(path))
                     r = img.get_bounding_rect()
                     if r.w > 0:
                         img = _plain_rgba(img.subsurface(r))
@@ -190,7 +206,7 @@ class Sprites:
         img = self.base(pid, back)
         s = height / max(1, img.get_height())
         size = (max(1, int(img.get_width() * s)), max(1, int(height)))
-        img = pygame.transform.scale(img, size) if s >= 1.5 else pygame.transform.smoothscale(img, size)
+        img = rescale(img, size)
         if flip:
             img = pygame.transform.flip(img, True, False)
         if white > 0:  # hit flash: brighten toward white, keep the sprite's own transparency
@@ -224,14 +240,14 @@ def silhouette(img, color):
 def _plain_rgba(img):
     """Rebuild a surface as plain 32-bit RGBA (sprites are palette PNGs; avoid palette/pitch edge cases)."""
     w, h = img.get_size()
-    return pygame.image.frombytes(pygame.image.tobytes(img, "RGBA"), (w, h), "RGBA").convert_alpha()
+    return pygame.image.frombytes(pygame.image.tobytes(img, "RGBA"), (w, h), "RGBA")
 
 
 # ---------------------------------------------------------------------------- arena
 def arena_background(seed=7):
     """Grass border, dirt floor with pebble pattern and a stepped rock wall, like the videos."""
     rng = random.Random(seed)
-    bg = pygame.Surface((W, H)).convert()
+    bg = new_surface((W, H))
     bg.fill((92, 180, 70))
     for _ in range(5000):  # grass texture
         x, y = rng.randrange(W), rng.randrange(H)
@@ -261,7 +277,7 @@ def arena_background(seed=7):
 
 
 def turn_background(weather=None):
-    bg = pygame.Surface((W, H)).convert()
+    bg = new_surface((W, H))
     for y in range(H):
         t = y / H
         c = (int(150 + 60 * t), int(205 + 20 * t), int(240 - 40 * t)) if y < 640 else (98, 172, 78)
@@ -323,8 +339,8 @@ def ball_sprite(size=24):
         if path:
             try:
                 img = pygame.image.load(path).convert_alpha()
-                img = img.subsurface(img.get_bounding_rect()).copy()
-                img = pygame.transform.smoothscale(img, (size, size))
+                img = _plain_rgba(img.subsurface(img.get_bounding_rect()))
+                img = rescale(img, (size, size))
             except Exception:
                 img = None
         if img is None:
