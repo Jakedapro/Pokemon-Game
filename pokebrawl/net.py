@@ -10,7 +10,7 @@ import socket
 import threading
 import time
 
-PROTO = 2
+PROTO = 3
 DEFAULT_PORT = 7777
 RELAY_PORT = 7778
 HEARTBEAT = 2.0      # seconds between pings

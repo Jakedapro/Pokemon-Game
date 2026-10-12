@@ -4,14 +4,18 @@ A Pokemon battle game for Mac with **every Pokemon** (all 1,025 species plus reg
 
 | Mode | What it is |
 |---|---|
-| **Practice** | Fight a bot on **Easy / Normal / Hard / Insane**, in either battle style |
+| **Practice** | Turn-based battles vs a bot on **Easy / Normal / Hard / Insane** |
 | **Showcase** | Huge auto-battles for content: *Gen 1 vs Gen 3*, *Fire vs Water*, *10 Legends vs 200*... Watch live or **record a vertical MP4** (720x1280, ready for TikTok / Reels / Shorts) |
 | **PvP** | Play your friends online with just a room code. Comp teams with abilities, Tera, items, natures, EVs, Mega Stones, Showdown import/export |
 
-Two battle styles (for Practice and PvP):
+Practice and PvP are **turn-based (Showdown-style)**: 6v6 singles with:
+- team preview, switching and priority
+- hazards (Stealth Rock, Spikes, Toxic Spikes), weather and screens
+- U-turn/Volt Switch pivots, Protect, Substitute, Trick Room and more
 
-- **Real-time Arena:** both teams fight live on the field, like the showcase videos. Click your Pokemon, then click an enemy to focus it. Right-click to move, 1-4 to fire a move, **M** to Mega Evolve.
-- **Turn-based (Showdown-style):** 6v6 singles with team preview, switching, priority, hazards (Stealth Rock, Spikes, Toxic Spikes), weather, screens, U-turn/Volt Switch pivots, Protect, Substitute, Trick Room and more.
+Keys: **1-4** pick a move, **M** to Mega Evolve, **T** to Terastallize.
+
+The real-time arena is used only for showcases.
 
 ## Install (one command)
 
@@ -46,12 +50,12 @@ Open **PVP**, pick your team, and choose a connection:
 During the match:
 - ping meter
 - emotes (GG, LOL, EZ... also F1-F6)
-- 60-second turn timer in turn-based
+- 60-second turn timer
 - **Rematch** button
 
 Every battle is saved as a replay and counted in your win/loss record against that friend.
 
-The host runs the battle and picks the style. Rules: Species Clause, Item Clause, one Mega and one Tera per team.
+The host runs the battle. Rules: Species Clause, Item Clause, one Mega and one Tera per team.
 
 > On some school or work Wi-Fi, online rooms may be blocked (they use port 1883). Use a hotspot or another network if JOIN can't find the room.
 
@@ -111,7 +115,7 @@ Instead of a `filter`, a team can list exact Pokemon: `"pokemon": ["mewtwo", "ra
 
 Supported items: Leftovers, Life Orb, Choice Band/Specs/Scarf, Focus Sash, Assault Vest, Rocky Helmet, Sitrus Berry, Lum Berry, Expert Belt, Eviolite, Weakness Policy, Heavy-Duty Boots, Black Sludge, Air Balloon, White Herb, Mega Stones and the Red/Blue Orbs.
 
-**Abilities:** about 110 competitive abilities work in both battle styles, including:
+**Abilities:** about 110 competitive abilities work in battles and showcases, including:
 - Intimidate, weather setters, Levitate, absorb abilities
 - Protean, Multiscale, Sturdy, Huge Power, Moxie, Beast Boost, Disguise
 - the Ruin abilities
@@ -143,7 +147,7 @@ python -m pytest tests       # engine tests
 | File | What it does |
 |---|---|
 | `pokebrawl/pokedex.py` | Downloads and caches data from [PokeAPI](https://pokeapi.co) |
-| `sim.py` | Real-time engine |
+| `sim.py` | Real-time arena engine (showcases) |
 | `turnsim.py` | Turn-based engine |
 | `bot.py` | Practice AI |
 | `net.py` | Networking and relay |

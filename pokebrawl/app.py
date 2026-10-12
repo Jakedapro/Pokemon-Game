@@ -9,11 +9,10 @@ from . import gfx, pokedex, ui
 from .audio import AUDIO
 from .bot import DIFF_INFO, DIFFICULTIES, bot_team
 from .gfx import H, W
-from .session import RTLocal, TurnLocal
+from .session import TurnLocal
 from .team import load_saved, random_team, validate
 
-STYLES = ["realtime", "turn"]
-STYLE_NAMES = {"realtime": "Real-time Arena", "turn": "Turn-based (Showdown)"}
+STYLE_NAMES = {"turn": "Turn-based", "realtime": "Arena"}
 SETTINGS_FILE = os.path.join(pokedex.HOME, "settings.txt")
 
 
@@ -180,7 +179,7 @@ class MainMenu(Scene):
         super().__init__(app)
         x, w = 110, 500
         self.buttons = [
-            ui.Button((x, 340, w, 120), "PRACTICE", (196, 60, 60), 40, "Battle a bot - easy to insane", tag="practice"),
+            ui.Button((x, 340, w, 120), "PRACTICE", (196, 60, 60), 40, "Turn-based vs a bot - easy to insane", tag="practice"),
             ui.Button((x, 480, w, 120), "SHOWCASE", (70, 120, 220), 40, "Mass battles, royales, tournaments + MP4",
                       tag="showcase"),
             ui.Button((x, 620, w, 120), "PVP", (60, 160, 90), 40, "Play your friends online - just a room code",
@@ -263,11 +262,9 @@ class PracticeSetup(Scene):
         super().__init__(app)
         opts, self.saved = team_options(app)
         s = app.settings
-        self.style = ui.Cycle((60, 240, 600, 70), "Battle style", STYLES, fmt=lambda v: STYLE_NAMES[v])
-        self.style.set(s.get("practice_style", "realtime"))
-        self.diff = ui.Cycle((60, 340, 600, 70), "Difficulty", DIFFICULTIES, 1, fmt=str.upper)
+        self.diff = ui.Cycle((60, 300, 600, 70), "Difficulty", DIFFICULTIES, 1, fmt=str.upper)
         self.diff.set(s.get("practice_diff", "normal"))
-        self.team = ui.Cycle((60, 440, 600, 70), "Your team", opts)
+        self.team = ui.Cycle((60, 400, 600, 70), "Your team", opts)
         self.team.set(s.get("practice_team", "Random"))
         self.buttons = [ui.Button((60, 640, 600, 110), "START BATTLE", (196, 60, 60), 38),
                         ui.Button((60, 1150, 200, 70), "BACK", ui.PANEL2, 24, tag="back")]
@@ -278,7 +275,7 @@ class PracticeSetup(Scene):
             self.app.pop()
         if ev.type != pygame.MOUSEBUTTONDOWN or ev.button != 1:
             return
-        for c in (self.style, self.diff, self.team):
+        for c in (self.diff, self.team):
             c.click(pos)
         if self.buttons[1].hit(pos):
             self.app.pop()
@@ -287,8 +284,7 @@ class PracticeSetup(Scene):
 
     def start(self):
         app = self.app
-        app.settings.update(practice_style=self.style.value, practice_diff=self.diff.value,
-                            practice_team=self.team.value)
+        app.settings.update(practice_diff=self.diff.value, practice_team=self.team.value)
         save_settings(app.settings)
         mine = pick_team(app, self.team.value, self.saved)
         errs = validate(app.dex, mine)
@@ -299,26 +295,22 @@ class PracticeSetup(Scene):
         theirs = bot_team(app.dex, diff)
         seed = random.randrange(1 << 30)
         ids = [m.species for m in mine + theirs]
-        if self.style.value == "realtime":
-            from .battle_rt import RTBattle
-            make = lambda: RTBattle(app, RTLocal(app.dex, mine, theirs, diff, seed))  # noqa: E731
-        else:
-            from .battle_turn import TurnBattleScene
-            make = lambda: TurnBattleScene(app, TurnLocal(app.dex, mine, theirs, diff, seed))  # noqa: E731
+        from .battle_turn import TurnBattleScene
+        make = lambda: TurnBattleScene(app, TurnLocal(app.dex, mine, theirs, diff, seed))  # noqa: E731
         app.push(PrefetchScene(app, ids, make))
 
     def draw(self, surf):
         ui.menu_background(surf, self.app.t)
         ui.header(surf, "PRACTICE", "Train against a bot before you fight your friends")
-        for c in (self.style, self.diff, self.team):
+        for c in (self.diff, self.team):
             c.draw(surf)
-        gfx.text(surf, DIFF_INFO[self.diff.value], (W / 2, 535), 20, ui.MUTED, ow=1, chunky=False)
+        gfx.text(surf, DIFF_INFO[self.diff.value], (W / 2, 500), 20, ui.MUTED, ow=1, chunky=False)
         for b in self.buttons:
             b.draw(surf)
         if self.error:
             gfx.text(surf, self.error, (W / 2, 790), 20, (255, 120, 120), chunky=False)
-        tips = ["Real-time: click your Pokemon, then an enemy to focus it.",
-                "Right-click the ground to move. Click a move to queue it. M = Mega.",
-                "Turn-based: pick a move or switch each turn, Showdown style."]
+        tips = ["Pick a move or switch each turn, Showdown style.",
+                "1-4 = moves, M = Mega Evolve, T = Terastallize.",
+                "Insane bots get legendary teams and never misplay."]
         for i, t in enumerate(tips):
             gfx.text(surf, t, (W / 2, 870 + i * 34), 18, (190, 190, 205), ow=1, chunky=False)

@@ -5,7 +5,7 @@ import threading
 import pygame
 
 from . import gfx, net, online, ui
-from .app import STYLE_NAMES, STYLES, PrefetchScene, Scene, pick_team, save_settings, team_options
+from .app import STYLE_NAMES, PrefetchScene, Scene, pick_team, save_settings, team_options
 from .gfx import W
 from .session import Lobby
 from .team import validate
@@ -30,13 +30,11 @@ class PvPSetup(Scene):
         super().__init__(app)
         s = app.settings
         opts, self.saved = team_options(app)
-        self.style = ui.Cycle((60, 190, 600, 64), "Battle style", STYLES, fmt=lambda v: STYLE_NAMES[v])
-        self.style.set(s.get("pvp_style", "turn"))
-        self.team = ui.Cycle((60, 268, 600, 64), "Your team", opts)
+        self.team = ui.Cycle((60, 190, 600, 64), "Your team", opts)
         self.team.set(s.get("pvp_team", "Random"))
-        self.conn = ui.Cycle((60, 346, 600, 64), "Connection", CONNS, fmt=lambda v: CONN_NAMES[v])
+        self.conn = ui.Cycle((60, 268, 600, 64), "Connection", CONNS, fmt=lambda v: CONN_NAMES[v])
         self.conn.set(s.get("pvp_conn2", "room"))
-        self.public = ui.Cycle((60, 424, 600, 64), "List room publicly", ["No", "Yes"])
+        self.public = ui.Cycle((60, 346, 600, 64), "List room publicly", ["No", "Yes"])
         self.public.set(s.get("pvp_public", "No"))
         self.name = ui.TextInput((60, 530, 290, 56), "Your name", s.get("name", os.environ.get("USER", "Trainer")))
         self.code = ui.TextInput((370, 530, 290, 56), "Room code (to join)", "", "ABCDE")
@@ -69,7 +67,7 @@ class PvPSetup(Scene):
             self.app.pop()
         if ev.type != pygame.MOUSEBUTTONDOWN or ev.button != 1:
             return
-        for c in (self.style, self.team, self.conn) + ((self.public,) if self.conn.value == "room" else ()):
+        for c in (self.team, self.conn) + ((self.public,) if self.conn.value == "room" else ()):
             if c.click(pos):
                 self._layout()
         b = self.buttons
@@ -92,7 +90,7 @@ class PvPSetup(Scene):
 
     def go(self, role):
         app = self.app
-        app.settings.update(pvp_style=self.style.value, pvp_team=self.team.value, pvp_conn2=self.conn.value,
+        app.settings.update(pvp_team=self.team.value, pvp_conn2=self.conn.value,
                             pvp_public=self.public.value, name=self.name.value or "Trainer",
                             join_addr=self.addr.value, relay=self.relay.value, room=self.room.value)
         save_settings(app.settings)
@@ -105,7 +103,7 @@ class PvPSetup(Scene):
             app.push(RoomBrowser(app, team, name))
             return
         if c == "lan" and role == "join":
-            app.push(LanBrowser(app, team, name, self.style.value))
+            app.push(LanBrowser(app, team, name, "turn"))
             return
         if c == "room" and role == "join" and len(self.code.value.strip()) < 4:
             self.error = "Type the room code your friend sees"
@@ -116,14 +114,14 @@ class PvPSetup(Scene):
         if c == "relay" and (not self.relay.value or not self.room.value):
             self.error = "Enter the relay server and a room code (same as your friend)"
             return
-        app.push(LobbyScene(app, role, c, self.style.value, team, name, code=self.code.value,
+        app.push(LobbyScene(app, role, c, "turn", team, name, code=self.code.value,
                             addr=self.addr.value, relay=self.relay.value, room=self.room.value,
                             public=self.public.value == "Yes"))
 
     def draw(self, surf):
         ui.menu_background(surf, self.app.t)
         ui.header(surf, "PVP", "Battle your friends with your comp teams")
-        for c in (self.style, self.team, self.conn):
+        for c in (self.team, self.conn):
             c.draw(surf)
         if self.conn.value == "room":
             self.public.draw(surf)
@@ -134,7 +132,7 @@ class PvPSetup(Scene):
         if self.error:
             gfx.text(surf, self.error, (W / 2, 950), 19, (255, 120, 120), chunky=False)
         for i, t in enumerate(CONN_HELP[self.conn.value] +
-                              ["", "Host picks the style. Species + Item Clause, 1 Mega + 1 Tera per team."]):
+                              ["", "Turn-based singles. Species + Item Clause, 1 Mega + 1 Tera per team."]):
             gfx.text(surf, t, (W / 2, 990 + i * 28), 17, (190, 190, 205), ow=1, chunky=False)
 
 
@@ -371,14 +369,9 @@ class LobbyScene(Scene):
 
 def start_battle(app, session, team=None, replace=False):
     """Swap to the right battle screen for a session (after sprites are on disk)."""
-    if hasattr(session, "roster"):
-        from .battle_rt import RTBattle
-        scene = RTBattle(app, session)
-        ids = [r["species"] for r in session.roster.values()]
-    else:
-        from .battle_turn import TurnBattleScene
-        scene = TurnBattleScene(app, session)
-        ids = [m.species for m in team] if team else []
+    from .battle_turn import TurnBattleScene
+    scene = TurnBattleScene(app, session)
+    ids = [m.species for m in team] if team else []
     nxt = PrefetchScene(app, ids, lambda: scene)
     if replace:
         app.replace(nxt)

@@ -6,59 +6,10 @@ import pygame
 
 from . import gfx, replays, ui
 from .app import STYLE_NAMES, PrefetchScene, Scene
-from .battle_rt import RTBattle
 from .battle_turn import TurnBattleScene
 from .gfx import W
-from .session import INTRO_HOLD
-from .sim import TICK, Sim
 from .team import Member
 from .turnsim import TurnBattle
-
-
-class RTReplaySession:
-    online = False
-    is_replay = True
-
-    def __init__(self, dex, r):
-        self.my_team = self.me_index = 0
-        self.names = r["names"]
-        self.teams = [[Member.from_dict(d) for d in t] for t in r["teams"]]
-        # JSON turned the per-team option keys ({0: ...}) into strings; turn them back into team numbers
-        opts = {k: ({int(t): v for t, v in val.items()} if isinstance(val, dict) else val)
-                for k, val in r["opts"].items()}
-        self.sim = Sim(dex, [[{"member": m} for m in t] for t in self.teams], seed=r["seed"], **opts)
-        self.roster = self.sim.roster()
-        self.log = sorted(r["log"], key=lambda c: c[0])
-        self.i = 0
-        self.acc = 0.0
-        self.speed = 1.0
-        self.error = None
-        self.hold = INTRO_HOLD
-
-    def step(self, dt):
-        snaps = []
-        self.acc += dt * self.speed
-        while self.acc >= TICK:
-            self.acc -= TICK
-            if self.hold > 0:
-                self.hold -= TICK
-            self.sim.paused = self.hold > 0
-            while self.i < len(self.log) and self.log[self.i][0] <= self.sim.tick:
-                _, team, cmd = self.log[self.i]
-                self.sim.command(team, cmd)
-                self.i += 1
-            self.sim.step(TICK)
-            snaps.append(self.sim.snapshot())
-        return snaps
-
-    def command(self, cmd):
-        pass
-
-    def replay(self):
-        return None
-
-    def close(self):
-        pass
 
 
 class TurnReplaySession:
@@ -133,35 +84,6 @@ class _ReplayMixin:
         gfx.pill(surf, f"REPLAY  x{self._speed():g}   (+/- speed)", (W / 2, 96), (150, 60, 60), 15)
 
 
-class RTReplayScene(_ReplayMixin, RTBattle):
-    def __init__(self, app, replay):
-        self.replay_data = replay
-        super().__init__(app, RTReplaySession(app.dex, replay))
-        self._replay_init(" vs ".join(replay["names"]))
-
-    def restart(self):
-        return RTReplayScene(self.app, self.replay_data)
-
-    def _speed(self):
-        return self.s.speed
-
-    def _set_speed(self, v):
-        self.s.speed = v
-
-    def _ended(self):
-        return self.over
-
-    def handle(self, ev, pos):
-        self._replay_handle(ev, pos)
-
-    def update(self, dt):
-        super().update(dt)
-        self._replay_tick(dt)
-
-    def _draw_panel(self, surf):
-        self._banner(surf)
-
-
 class TurnReplayScene(_ReplayMixin, TurnBattleScene):
     def __init__(self, app, replay):
         self.replay_data = replay
@@ -196,7 +118,7 @@ class TurnReplayScene(_ReplayMixin, TurnBattleScene):
 
 
 def make_replay_scene(app, r):
-    return RTReplayScene(app, r) if r["style"] == "realtime" else TurnReplayScene(app, r)
+    return TurnReplayScene(app, r)
 
 
 class ReplayList(Scene):
@@ -211,7 +133,7 @@ class ReplayList(Scene):
         self.refresh()
 
     def refresh(self):
-        self.items = replays.list_replays()
+        self.items = [(p, r) for p, r in replays.list_replays() if r.get("style") == "turn"]
         rows = []
         for path, r in self.items:
             def draw(surf, rect, sel, r=r):
@@ -250,8 +172,7 @@ class ReplayList(Scene):
         elif b[1].hit(pos):
             from .showcase_ui import ShowcaseRecord
             scene = make_replay_scene(self.app, r)
-            if r["style"] == "turn":
-                scene.anim_speed = 1.6
+            scene.anim_speed = 1.6
             self.app.push(ShowcaseRecord(self.app, scene))
         elif b[2].hit(pos):
             os.remove(path)

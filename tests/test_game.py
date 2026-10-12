@@ -69,17 +69,6 @@ def test_turn_battles_finish(dex):
         assert b.over
 
 
-def test_realtime_battle_finishes(dex):
-    from pokebrawl.session import RTLocal
-    from pokebrawl.team import random_team
-    s = RTLocal(dex, random_team(dex, random.Random(1)), random_team(dex, random.Random(2)), "hard", seed=1)
-    for _ in range(30 * 400):
-        snaps = s.step(1 / 30)
-        if snaps and snaps[-1]["over"]:
-            break
-    assert s.sim.over
-
-
 def test_mass_showcase_sim(dex):
     from pokebrawl.showcase import build_teams, load_config
     from pokebrawl.sim import Sim
@@ -113,21 +102,9 @@ def test_relay_pairs_players():
 def test_replays_reproduce_battles(dex):
     import json
 
-    from pokebrawl.replays_ui import RTReplaySession, TurnReplaySession
-    from pokebrawl.session import RTLocal, TurnLocal
+    from pokebrawl.replays_ui import TurnReplaySession
+    from pokebrawl.session import TurnLocal
     from pokebrawl.team import random_team
-    s = RTLocal(dex, random_team(dex, random.Random(3)), random_team(dex, random.Random(4)), "insane", seed=3)
-    n = 0
-    while not s.sim.over and n < 30 * 400:
-        if n == 100:
-            s.command({"cmd": "focus", "target": next(u.uid for u in s.sim.units if u.team == 1)})
-        s.step(1 / 30)
-        n += 1
-    rs = RTReplaySession(dex, json.loads(json.dumps(s.replay())))
-    while not rs.sim.over and rs.sim.t < 500:
-        rs.step(1 / 30)
-    assert [u.mon.hp for u in s.sim.units] == [u.mon.hp for u in rs.sim.units]
-
     t = TurnLocal(dex, random_team(dex, random.Random(5)), random_team(dex, random.Random(6)), "hard", seed=5)
     for _ in range(500):
         if t.battle.over:
