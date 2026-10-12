@@ -27,6 +27,7 @@ def main(argv=None):
     sub.add_parser("spritetest", help="save a picture of sprite effects to your Desktop (for bug reports)")
     sub.add_parser("update", help="update the game")
     sub.add_parser("version", help="show the installed version")
+    sub.add_parser("nettest", help="check that online rooms can work from this network")
     args = p.parse_args(argv)
 
     if args.cmd == "relay":
@@ -47,6 +48,13 @@ def main(argv=None):
         return
     if args.cmd == "spritetest":
         _spritetest()
+        return
+    if args.cmd == "nettest":
+        from .net import PROTO
+        from .online import selftest
+        from .version import current
+        print(f"version {current()[0]}  protocol {PROTO}")
+        selftest()
         return
     if args.cmd == "version":
         from .version import current

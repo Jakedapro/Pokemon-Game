@@ -393,3 +393,55 @@ class LanScanner:
 
     def close(self):
         self.running = False
+
+
+# ---------------------------------------------------------------------------- diagnostics
+def selftest(log=print):
+    """`pokebrawl nettest`: checks every online server end to end and prints what works."""
+    import platform
+    log(f"PokeBrawl network test  (protocol {PROTO}, {platform.system()} {platform.mac_ver()[0]})")
+    try:
+        _mqtt()
+    except RuntimeError as e:
+        log(f"  FAIL  {e}")
+        return False
+    any_ok = False
+    for host, port in brokers():
+        t0 = time.time()
+        try:
+            c = _connect(host, port, timeout=8)
+        except Exception as e:  # noqa: BLE001
+            log(f"  FAIL  {host}:{port}  can't connect ({e}) - blocked network or server down")
+            continue
+        ms = int((time.time() - t0) * 1000)
+        got = threading.Event()
+        code = new_code()
+        t_room = topic("TEST" + code, "open")
+
+        def on_message(client, userdata, msg):
+            if msg.topic == t_room and msg.payload:
+                got.set()
+        c.on_message = on_message
+        c.publish(t_room, _pack({"hi": 1}), qos=1, retain=True)   # like a host opening a room
+        time.sleep(0.5)
+        c2 = None
+        try:
+            c2 = _connect(host, port, timeout=8)                   # like a friend looking for it
+            c2.on_message = on_message
+            c2.subscribe(t_room, qos=1)
+            ok = got.wait(5)
+        except Exception:  # noqa: BLE001
+            ok = False
+        c.publish(t_room, b"", qos=1, retain=True)
+        for x in (c, c2):
+            if x:
+                x.disconnect()
+                x.loop_stop()
+        if ok:
+            any_ok = True
+            log(f"  OK    {host}:{port}  connect {ms} ms, rooms work")
+        else:
+            log(f"  FAIL  {host}:{port}  connected ({ms} ms) but room messages didn't arrive")
+    log("RESULT: online rooms should work" if any_ok else
+        "RESULT: no online server works from this network - try a phone hotspot, or use Same Wi-Fi / Direct IP")
+    return any_ok
