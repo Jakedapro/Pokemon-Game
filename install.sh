@@ -40,33 +40,85 @@ if ! curl -fsS --max-time 15 https://github.com >/dev/null 2>&1; then
   fi
 fi
 
-# --- 1. git + python -----------------------------------------------------------------
-if [ "$OS" = "Darwin" ] && ! xcode-select -p >/dev/null 2>&1; then
-  say "Installing Apple Command Line Tools (gives you git + python3)..."
-  xcode-select --install || true
-  die "Finish the Command Line Tools install in the popup window, then run this command again."
-fi
-command -v git >/dev/null 2>&1 || die "git is required (macOS: xcode-select --install)"
+# --- 1. tools (no Apple Command Line Tools needed) -------------------------------------
+# Without the Command Line Tools, /usr/bin/git and /usr/bin/python3 are stubs that pop up an install dialog,
+# so we never run them. Instead: no git -> download the code as an archive; no Python -> download a
+# self-contained Python just for PokeBrawl into ~/.pokebrawl/python.
+HAS_CLT=1
+if [ "$OS" = "Darwin" ] && ! xcode-select -p >/dev/null 2>&1; then HAS_CLT=0; fi
+usable() {  # usable <command>: exists and isn't a Command Line Tools stub
+  local p; p="$(command -v "$1" 2>/dev/null)" || return 1
+  if [ "$HAS_CLT" = 0 ] && { [ "$p" = "/usr/bin/git" ] || [ "$p" = "/usr/bin/python3" ]; }; then return 1; fi
+  return 0
+}
+GIT=""
+if [ -z "${POKEBRAWL_NO_GIT:-}" ] && usable git; then GIT="$(command -v git)"; fi
+
+OWNER_REPO="$(printf '%s' "$REPO" | sed -E 's#^https://github.com/##; s#\.git$##')"
+STANDALONE="$ROOT/python/bin/python3"
+
+download_python() {
+  local arch os_tag url
+  arch="$(uname -m)"; [ "$arch" = "arm64" ] && arch="aarch64"
+  if [ "$OS" = "Darwin" ]; then os_tag="apple-darwin"; else os_tag="unknown-linux-gnu"; fi
+  say "Downloading a private copy of Python for PokeBrawl (one time, ~20 MB)..."
+  url="${POKEBRAWL_PYTHON_URL:-}"
+  if [ -z "$url" ]; then
+    url="$(curl -fsSL https://api.github.com/repos/astral-sh/python-build-standalone/releases/latest 2>/dev/null \
+      | grep -o "https://[^\"]*cpython-3\.12\.[0-9]*+[0-9]*-$arch-$os_tag-install_only\.tar\.gz" | head -1 || true)"
+  fi
+  if [ -z "$url" ]; then
+    url="https://github.com/astral-sh/python-build-standalone/releases/download/20241016/cpython-3.12.7+20241016-$arch-$os_tag-install_only.tar.gz"
+  fi
+  rm -rf "$ROOT/python"
+  curl -fsSL "$url" | tar -xz -C "$ROOT" || die "Couldn't download Python ($url)"
+  [ -x "$STANDALONE" ] || die "Python download looks broken ($url)"
+}
 
 PY=""
-for cand in python3.13 python3.12 python3.11 python3.10 python3 /opt/homebrew/bin/python3 /usr/local/bin/python3; do
-  if command -v "$cand" >/dev/null 2>&1 && "$cand" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 9) else 1)' 2>/dev/null; then
-    PY="$(command -v "$cand")"; break
-  fi
-done
-[ -n "$PY" ] || die "Python 3.9+ is required. Install it from https://www.python.org/downloads/ or: brew install python"
+if [ -x "$STANDALONE" ]; then
+  PY="$STANDALONE"
+elif [ -z "${POKEBRAWL_FORCE_STANDALONE:-}" ]; then
+  for cand in python3.12 python3.13 python3.11 python3.10 /opt/homebrew/bin/python3.12 /opt/homebrew/bin/python3 \
+              /usr/local/bin/python3 /Library/Frameworks/Python.framework/Versions/Current/bin/python3 python3; do
+    if usable "$cand" && "$cand" -c 'import sys; sys.exit(0 if (3, 9) <= sys.version_info < (3, 14) else 1)' 2>/dev/null; then
+      PY="$(command -v "$cand")"; break
+    fi
+  done
+fi
+if [ -z "$PY" ]; then
+  download_python
+  PY="$STANDALONE"
+fi
 say "Using $("$PY" --version) at $PY"
 
 # --- 2. get the game -----------------------------------------------------------------
 mkdir -p "$ROOT"
+version_of() {  # short version of the installed copy
+  if [ -d "$APP/.git" ] && [ -n "$GIT" ]; then git -C "$APP" rev-parse --short HEAD 2>/dev/null || echo none
+  elif [ -f "$APP/VERSION" ]; then cut -c1-7 "$APP/VERSION"
+  else echo none; fi
+}
+fetch_archive() {  # download the code without git
+  local tmp sha url
+  tmp="$(mktemp -d)"
+  url="${POKEBRAWL_ARCHIVE_URL:-https://github.com/$OWNER_REPO/archive/${BRANCH:-HEAD}.tar.gz}"
+  curl -fsSL "$url" | tar -xz -C "$tmp" || die "Couldn't download $url (check your internet)"
+  rm -rf "$APP"
+  mv "$tmp"/*/ "$APP"
+  rmdir "$tmp" 2>/dev/null || true
+  sha="${POKEBRAWL_ARCHIVE_SHA:-$(curl -fsSL "https://api.github.com/repos/$OWNER_REPO/commits/${BRANCH:-HEAD}" 2>/dev/null \
+        | grep -m1 '"sha"' | sed -E 's/.*"sha": *"([0-9a-f]+)".*/\1/' || true)}"
+  printf '%s %s\n' "${sha:-unknown}" "$(date '+%b %d')" > "$APP/VERSION"
+}
 fresh_clone() {
   rm -rf "$APP"
   git clone --depth 1 ${BRANCH:+-b "$BRANCH"} "$REPO" "$APP" \
     || die "Couldn't download $REPO (check your internet; the repo must be public)."
 }
-if [ -d "$APP/.git" ]; then
+OLD="$(version_of)"
+if [ -d "$APP/.git" ] && [ -n "$GIT" ]; then
   say "Updating PokeBrawl..."
-  OLD="$(git -C "$APP" rev-parse --short HEAD 2>/dev/null || echo none)"
   git -C "$APP" remote set-url origin "$REPO"
   if git -C "$APP" fetch --depth 1 origin ${BRANCH:+"$BRANCH"} && git -C "$APP" reset --hard FETCH_HEAD >/dev/null; then
     :
@@ -74,21 +126,39 @@ if [ -d "$APP/.git" ]; then
     warn "Updating in place failed - downloading a fresh copy instead"
     fresh_clone
   fi
-  NEW="$(git -C "$APP" rev-parse --short HEAD)"
-  if [ "$OLD" = "$NEW" ]; then say "Already up to date ($NEW)"; else say "Updated $OLD -> $NEW"; fi
-else
+elif [ -n "$GIT" ]; then
   say "Downloading PokeBrawl..."
   fresh_clone
+else
+  [ -d "$APP" ] && say "Updating PokeBrawl..." || say "Downloading PokeBrawl..."
+  fetch_archive
 fi
+NEW="$(version_of)"
+if [ "$OLD" = "none" ]; then :; elif [ "$OLD" = "$NEW" ]; then say "Already up to date ($NEW)"; else say "Updated $OLD -> $NEW"; fi
 
 # --- 3. python environment -----------------------------------------------------------
-if [ ! -x "$VENV/bin/python" ]; then
-  say "Creating Python environment..."
+make_venv() {
+  rm -rf "$VENV"
   "$PY" -m venv "$VENV"
+}
+if [ ! -x "$VENV/bin/python" ] || ! "$VENV/bin/python" -c 'import sys' 2>/dev/null; then
+  say "Creating Python environment..."
+  make_venv
 fi
 say "Installing game engine (pygame-ce)..."
 "$VENV/bin/python" -m pip install --quiet --upgrade pip >/dev/null 2>&1 || true
-"$VENV/bin/python" -m pip install --quiet --upgrade -r "$APP/requirements.txt"
+if ! "$VENV/bin/python" -m pip install --quiet --upgrade -r "$APP/requirements.txt"; then
+  if [ "$PY" != "$STANDALONE" ]; then
+    warn "Your Python couldn't install the game engine - switching to PokeBrawl's own Python"
+    download_python
+    PY="$STANDALONE"
+    make_venv
+    "$VENV/bin/python" -m pip install --quiet --upgrade pip >/dev/null 2>&1 || true
+    "$VENV/bin/python" -m pip install --quiet --upgrade -r "$APP/requirements.txt" || die "Couldn't install pygame-ce"
+  else
+    die "Couldn't install pygame-ce"
+  fi
+fi
 
 # --- 4. launcher ---------------------------------------------------------------------
 mkdir -p "$BIN"
@@ -142,18 +212,20 @@ if ! command -v ffmpeg >/dev/null 2>&1; then
     say "Installing ffmpeg (for recording showcase MP4s)..."
     brew install ffmpeg >/dev/null 2>&1 || warn "ffmpeg install failed - recording videos won't work until you: brew install ffmpeg"
   else
-    warn "ffmpeg not found - install it later to record showcase MP4s (https://brew.sh then: brew install ffmpeg)"
+    warn "ffmpeg not found - recording showcase MP4s needs it (https://brew.sh then: brew install ffmpeg)"
   fi
 fi
 
 # --- 7. download the Pokedex + sprites -----------------------------------------------
 say "Downloading all Pokemon, moves and sprites (one time, ~20 MB)..."
-if ! "$BIN/pokebrawl" download; then
+if [ -n "${POKEBRAWL_SKIP_DOWNLOAD:-}" ]; then
+  :
+elif ! "$BIN/pokebrawl" download; then
   warn "Couldn't download the Pokemon data right now - the game will retry when you open it."
 fi
 
 echo
-say "PokeBrawl is installed! Version $(git -C "$APP" log -1 --format='%h (%cd)' --date=format:'%b %d %H:%M')"
+say "PokeBrawl is installed! Version $(version_of)"
 echo "   Play:        pokebrawl            (or open PokeBrawl in ~/Applications)"
 echo "   Update:      pokebrawl update"
 echo "   Showcase:    pokebrawl showcase $APP/showcases/gen1_vs_gen3.json --record gen1v3.mp4"

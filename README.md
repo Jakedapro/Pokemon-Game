@@ -29,7 +29,7 @@ Then type `pokebrawl` (or open **PokeBrawl** from `~/Applications`).
 
 The installer:
 - installs into `~/.pokebrawl`
-- uses the Mac's Python and installs the Apple Command Line Tools if needed
+- doesn't need Apple's Command Line Tools or git: if your Mac has no suitable Python, it downloads a private copy just for PokeBrawl
 - installs the game engine (`pygame-ce`)
 - installs `ffmpeg` with Homebrew for video recording, if you have Homebrew
 - downloads the Pokedex and sprites once (about 20 MB)
