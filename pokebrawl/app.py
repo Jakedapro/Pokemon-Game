@@ -6,6 +6,7 @@ import threading
 import pygame
 
 from . import gfx, pokedex, ui
+from .audio import AUDIO
 from .bot import DIFF_INFO, DIFFICULTIES, bot_team
 from .gfx import H, W
 from .session import RTLocal, TurnLocal
@@ -60,6 +61,7 @@ class App:
         self.t = 0.0
         self.settings = load_settings()
         pygame.key.set_repeat(350, 35)
+        AUDIO.init(self.settings, headless=headless)
 
     def push(self, scene):
         self.stack.append(scene)
@@ -92,6 +94,9 @@ class App:
                     pos = self.display.to_canvas(ev.pos)
                 elif ev.type == pygame.MOUSEWHEEL:
                     pos = self.display.to_canvas(pygame.mouse.get_pos())
+                if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1 and pos and \
+                        any(b.rect.collidepoint(pos) and b.enabled for b in getattr(scene, "buttons", [])):
+                    AUDIO.play("click", 0.8)
                 scene.handle(ev, pos)
             scene = self.stack[-1] if self.stack else None
             if scene is None:
@@ -155,6 +160,8 @@ class PrefetchScene(Scene):
             self.done, self.total = d, t
         pokedex.prefetch(ids, prog)
         pokedex.ensure_item("poke-ball")
+        from .audio import prefetch_cries
+        prefetch_cries(ids)
         self.finished = True
 
     def update(self, dt):
@@ -180,6 +187,9 @@ class MainMenu(Scene):
             ui.Button((x, 810, w, 90), "TEAM BUILDER", ui.PANEL2, 30, tag="teams"),
             ui.Button((x, 930, w, 70), "QUIT", (60, 58, 70), 24, tag="quit"),
         ]
+
+    def update(self, dt):
+        AUDIO.music("menu")
 
     def handle(self, ev, pos):
         if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:

@@ -10,7 +10,8 @@ import pygame
 from . import gfx, ui
 from .app import Scene, save_settings
 from .gfx import H, W
-from .showcase import ShowcaseScene, list_presets, load_config
+from .audio import AUDIO
+from .showcase import ShowcaseScene, finish_video, list_presets, load_config
 from .types import TYPES
 
 GROUPS = [(f"Gen {g}", {"gen": g}) for g in range(1, 10)] + [
@@ -194,16 +195,21 @@ class ShowcaseRecord(Scene):
         self.path = os.path.join(video_dir(), f"{name}_{time.strftime('%Y%m%d_%H%M%S')}.mp4")
         self.error = None
         self.finished = False
+        self.mixing = False
         try:
-            self.rec = Recorder(self.path, W, H, fps)
+            self.rec = Recorder(self.path + ".video.mp4", W, H, fps)
+            self.prev_track = AUDIO.track
+            AUDIO.capture, AUDIO.clock = [], (lambda: self.frames / self.fps)
         except RuntimeError as e:
             self.rec = None
             self.error = str(e)
         self.buttons = [ui.Button((160, 1000, 400, 90), "CANCEL", ui.PANEL2, 30)]
 
     def close(self):
-        if self.rec and not self.finished:
+        if self.rec and not self.finished and not self.mixing:
             self.rec.close()
+        if AUDIO.capture is not None:
+            AUDIO.capture, AUDIO.clock = None, None
 
     def handle(self, ev, pos):
         if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1 and self.buttons[0].hit(pos):
@@ -214,7 +220,7 @@ class ShowcaseRecord(Scene):
             self.app.pop()
 
     def update(self, dt):
-        if self.error or self.finished:
+        if self.error or self.finished or self.mixing:
             return
         start = time.time()
         while time.time() - start < 0.03 and not self.sc.done:
@@ -224,8 +230,15 @@ class ShowcaseRecord(Scene):
             self.frames += 1
         if self.sc.done:
             self.rec.close()
-            self.finished = True
-            self.buttons = [ui.Button((160, 1000, 400, 90), "OPEN FOLDER", (60, 160, 90), 30)]
+            events, AUDIO.capture, AUDIO.clock = AUDIO.capture, None, None
+            self.mixing = True
+
+            def mix():
+                finish_video(self.path, events, self.frames / self.fps, log=lambda m: None)
+                self.mixing = False
+                self.finished = True
+                self.buttons = [ui.Button((160, 1000, 400, 90), "OPEN FOLDER", (60, 160, 90), 30)]
+            threading.Thread(target=mix, daemon=True).start()
 
     def draw(self, surf):
         ui.menu_background(surf, self.app.t)
@@ -235,7 +248,8 @@ class ShowcaseRecord(Scene):
             thumb = pygame.transform.smoothscale(self.canvas, (W // 2, H // 2))
             surf.blit(thumb, thumb.get_rect(center=(W / 2, 470)))
             secs = self.frames / self.fps
-            msg = f"Saved! {secs:.0f}s video" if self.finished else f"Recording... {secs:.0f}s  ({self.sc.phase})"
+            msg = f"Saved! {secs:.0f}s video" if self.finished else "Adding sound..." if self.mixing else \
+                f"Recording... {secs:.0f}s  ({self.sc.phase})"
             gfx.text(surf, msg, (W / 2, 840), 28)
             gfx.text(surf, self.path, (W / 2, 890), 15, ui.MUTED, ow=1, chunky=False)
         for b in self.buttons:

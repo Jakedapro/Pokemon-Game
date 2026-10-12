@@ -3,6 +3,7 @@ import pygame
 
 from . import gfx, ui
 from .app import Scene
+from .audio import AUDIO
 from .battle_common import BattleExtras
 from .gfx import H, W, WHITE
 from .render import FX, ArenaRenderer
@@ -134,6 +135,8 @@ class RTBattle(Scene):
 
     # ------------------------------------------------------------------ loop
     def update(self, dt):
+        if self.t == 0:
+            AUDIO.music("battle")
         self.t += dt
         for snap in self.s.step(dt):
             self.r.feed(snap)
@@ -141,6 +144,8 @@ class RTBattle(Scene):
             if snap["over"] and not self.over:
                 self.over = True
                 self.winner = snap["win"]
+                AUDIO.music(None)
+                AUDIO.play("win" if self.winner == self.me else "lose")
         if self.over:
             self.x.finish(self.winner)
             self.end_buttons = self.x.end_buttons(620)

@@ -5,6 +5,7 @@ import pygame
 
 from . import gfx, ui
 from .app import Scene
+from .audio import AUDIO
 from .battle_common import BattleExtras
 from .battlecore import STATUS_NAMES
 from .gfx import H, INK, SPRITES, W, WHITE
@@ -65,6 +66,8 @@ class TurnBattleScene(Scene):
                 self.faint[side] = 0.0
 
     def update(self, dt):
+        if self.t == 0:
+            AUDIO.music("battle")
         self.t += dt
         if self._finished() and self.state and self.state["over"]:
             self.x.finish(self.state["winner"])
@@ -132,6 +135,34 @@ class TurnBattleScene(Scene):
         if not a:
             return
         kind = a[0]
+        snd = {"miss": "miss", "stat": "boost" if len(a) > 2 and a[2] else "drop", "hazard": "status",
+               "protect": "select", "screen": "heal", "crit": "hit_super"}.get(kind)
+        if snd:
+            AUDIO.play(snd, 0.7)
+        if kind == "hit":
+            AUDIO.play("hit_super" if a[3] > 1 else "hit_weak" if a[3] < 1 else "hit", 0.9)
+        elif kind == "move":
+            AUDIO.play("beam" if a[4] == "spec" else "melee" if a[4] == "phys" else "select", 0.5)
+        elif kind == "faint":
+            v = self.vis.get(a[1], {})
+            if "id" in v:
+                AUDIO.cry(v["id"], 0.9)
+            AUDIO.play("faint", 0.8)
+        elif kind == "switch":
+            AUDIO.play("ball", 0.6)
+            AUDIO.cry(a[3], 0.8)
+        elif kind == "mega":
+            AUDIO.play("mega")
+            AUDIO.cry(a[2], 1.0)
+        elif kind == "tera":
+            AUDIO.play("tera")
+        elif kind == "status" and a[2]:
+            AUDIO.play("status", 0.7)
+        elif kind == "hp" and len(a) > 2 and self.vis.get(a[1], {}).get("frac", 0) < a[2] - 0.01:
+            AUDIO.play("heal", 0.5)
+        elif kind == "end":
+            AUDIO.music(None)
+            AUDIO.play("win" if a[1] == self.me else "lose")
         if kind in ("hp", "hit"):
             side = a[1]
             self.vis[side]["frac"] = a[2]

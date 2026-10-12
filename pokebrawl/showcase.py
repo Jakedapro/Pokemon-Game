@@ -9,6 +9,7 @@ import random
 import pygame
 
 from . import gfx
+from .audio import AUDIO
 from .gfx import H, W
 from .pokedex import prefetch
 from .render import ArenaRenderer
@@ -115,6 +116,13 @@ class ShowcaseScene:
         self.mvp = None
         self.counts = [len(t) for t in teams]
         self.intro_len = 7.6
+        self.cues = set()
+
+    def _once(self, key):
+        if key in self.cues:
+            return False
+        self.cues.add(key)
+        return True
 
     # ------------------------------------------------------------------ input
     def handle(self, ev, pos=None):
@@ -134,7 +142,12 @@ class ShowcaseScene:
             return
         self.t += dt
         t = self.t
+        if self._once("music"):
+            AUDIO.music("showcase")
         if self.phase == "intro":
+            for i, at in enumerate((5.0, 5.8, 6.6)):
+                if t >= at and self._once(f"count{i}"):
+                    AUDIO.play("count")
             # balls pop open left->right starting at 2.0s
             if t > 2.0:
                 xs = sorted(self.balls.items(), key=lambda kv: kv[1][0] + kv[1][1] * 0.05)
@@ -146,7 +159,9 @@ class ShowcaseScene:
                         if uid in self.r.units:
                             self.r.units[uid].spawn = 0.0
                         self.r._burst(x, y, (240, 240, 240), 3, 60, 7, 0.5)
+                        AUDIO.play("ball", 0.45)
             if t >= self.intro_len:
+                AUDIO.play("go")
                 self.phase = "battle"
                 self.r.auto_zoom = True
                 self.r.show_boss_bars = True
@@ -168,6 +183,10 @@ class ShowcaseScene:
         self.r.update(dt)
         since = t - self.end_t
         if self.phase == "won":
+            if since > 0.4 and self._once("win"):
+                AUDIO.play("win")
+                if self.mvp:
+                    AUDIO.cry(self.mvp.mon.entry["id"], 1.0)
             if since > 3.0:
                 if self.cfg.get("finale", True) and self.mvp:
                     self._start_finale()
@@ -200,8 +219,15 @@ class ShowcaseScene:
         f["t"] += dt
         t = f["t"]
         uid = self.mvp.uid
-        if t > 2.0 and t < 2.7:  # ball in the air
-            pass
+        if t > 2.0 and self._once("throw"):
+            AUDIO.play("select")
+        if t > 2.7 and self._once("capture"):
+            AUDIO.play("ball")
+        for k in range(3):
+            if t > 3.4 + k * 0.93 and self._once(f"wiggle{k}"):
+                AUDIO.play("wiggle")
+        if t > 6.2 and self._once("caught"):
+            AUDIO.play("catch")
         if 2.7 <= t < 3.3:
             k = (t - 2.7) / 0.6
             self.r.white[uid] = min(1.0, k * 2)
@@ -324,8 +350,10 @@ def record(dex, cfg, out_path, fps=30, log=print):
             log(f"[showcase] sprites {done}/{total}")
 
     scene = ShowcaseScene(dex, cfg, prog)
-    rec = Recorder(out_path, gfx.W, gfx.H, fps)
+    AUDIO.init(headless=True)
+    rec = Recorder(out_path + ".video.mp4", gfx.W, gfx.H, fps)
     frames = 0
+    AUDIO.capture, AUDIO.clock = [], (lambda: frames / fps)
     try:
         while not scene.done and frames < fps * 60 * 8:
             scene.update(1 / fps)
@@ -337,5 +365,23 @@ def record(dex, cfg, out_path, fps=30, log=print):
                 log(f"[showcase] rendered {frames // fps}s ({scene.phase})")
     finally:
         rec.close()
+        events, AUDIO.capture, AUDIO.clock = AUDIO.capture, None, None
+    finish_video(out_path, events, frames / fps, log)
     log(f"[showcase] saved {out_path} ({frames / fps:.1f}s, seed {scene.seed})")
     return out_path
+
+
+def finish_video(out_path, events, duration, log=print):
+    """Mix the captured sounds and put them on the silent video."""
+    from .audio import mix, mux_track
+    video = out_path + ".video.mp4"
+    try:
+        log("[showcase] mixing audio...")
+        wav = out_path + ".wav"
+        mix(events, duration, wav)
+        mux_track(video, wav, out_path)
+        os.remove(wav)
+        os.remove(video)
+    except Exception as e:  # noqa: BLE001 - keep the silent video rather than nothing
+        log(f"[showcase] audio failed ({e}); saving without sound")
+        os.replace(video, out_path)

@@ -380,4 +380,9 @@ def download_all():
         sys.stdout.flush()
 
     prefetch(list(dex.all), bar)
+    print()
+    from .audio import ensure_assets, prefetch_cries
+    ensure_assets()
+    prefetch_cries([e["id"] for e in dex.all.values()],
+                   lambda d, t: sys.stdout.write(f"\r[pokebrawl] cries [{'#' * int(30 * d / t)}{'.' * (30 - int(30 * d / t))}] {d}/{t}"))
     print(f"\n[pokebrawl] ready: {len(dex.all)} Pokemon and {len(dex.moves)} moves cached in {HOME}")

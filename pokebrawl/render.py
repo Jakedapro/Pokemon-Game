@@ -5,6 +5,7 @@ import random
 import pygame
 
 from . import gfx
+from .audio import AUDIO
 from .battlecore import STATUS_NAMES
 from .gfx import H, INK, SPRITES, W, WHITE, type_color
 
@@ -127,12 +128,16 @@ class ArenaRenderer:
         if kind == "use":
             _, uid, name, mtype, mkind = ev
             self._label(uid, name, mtype)
+            if mkind == "melee":
+                AUDIO.play("melee", 0.6)
         elif kind == "charge":
             self._label(ev[1], ev[2], ev[3])
         elif kind == "label":
             self._label(ev[1], ev[2], ev[3])
         elif kind == "hit":
             _, uid, pct, eff, crit = ev
+            AUDIO.play("hit_super" if eff > 1 else "hit_weak" if eff < 1 else "hit",
+                       0.5 if self.mode == "showcase" else 0.8)
             u = self.units.get(uid)
             if u:
                 u.flash = 0.14
@@ -143,11 +148,13 @@ class ArenaRenderer:
                 if eff > 1 and self.mode != "showcase":
                     self.fx.append(FX("pop", 0.6, x=u.x, y=u.y - u.r, text="SUPER EFFECTIVE", color=(255, 220, 80)))
         elif kind == "miss":
+            AUDIO.play("miss", 0.5)
             u = self.units.get(ev[1])
             if u:
                 self.fx.append(FX("pop", 0.7, x=u.x, y=u.y - u.r * 1.6, text="MISSED", color=(230, 230, 240)))
         elif kind == "beam":
             _, uid, x1, y1, x2, y2, mtype, width = ev
+            AUDIO.play("beam", 0.5)
             self.fx.append(FX("beam", 0.28, x1=x1, y1=y1, x2=x2, y2=y2, type=mtype, w=width))
         elif kind == "melee":
             u, t = self.units.get(ev[1]), self.units.get(ev[2])
@@ -158,12 +165,15 @@ class ArenaRenderer:
             self.fx.append(FX("telegraph", delay, x=x, y=y, r=rad, type=mtype))
         elif kind == "blast":
             _, x, y, rad, mtype = ev
+            AUDIO.play("blast", 0.55)
             self._blast(x, y, rad, mtype)
         elif kind == "impact":
             _, x, y, mtype = ev
+            AUDIO.play("impact", 0.4)
             self._burst(x, y, type_color(mtype, 1), 6, 90, 3, 0.3)
         elif kind == "boom":
             _, x, y, rad = ev
+            AUDIO.play("boom", 0.9)
             self.fx.append(FX("boom", 0.7, x=x, y=y, r=rad))
             self._burst(x, y, (255, 200, 80), 30, 260, 5, 0.7)
             self._burst(x, y, (120, 110, 110), 18, 120, 7, 1.0)
@@ -175,15 +185,21 @@ class ArenaRenderer:
             face = u.face if u else 1
             team = u.team if u else 0
             self.dead.append([form, x, y, r, 0.0, face, team])
+            AUDIO.play("faint", 0.4 if self.mode == "showcase" else 0.7)
+            if self.mode != "showcase":
+                AUDIO.cry(form, 0.8)
             self._burst(x, y, (235, 235, 235), 8, 50, 6, 0.6)
         elif kind == "mega":
             _, uid, form, name = ev
+            AUDIO.play("mega", 0.9)
+            AUDIO.cry(form, 1.0)
             u = self.units.get(uid)
             if u:
                 self.fx.append(FX("mega", 1.6, uid=uid, form=form, name=name.upper()))
                 self._burst(u.x, u.y, (255, 255, 255), 24, 200, 4, 0.8)
         elif kind == "tera":
             _, uid, ttype = ev
+            AUDIO.play("tera", 0.9)
             u = self.units.get(uid)
             if u:
                 self.fx.append(FX("tera", 1.4, uid=uid, type=ttype))
@@ -192,16 +208,19 @@ class ArenaRenderer:
         elif kind == "status":
             _, uid, st = ev
             if st in STATUS_COLORS:
+                AUDIO.play("status", 0.5)
                 u = self.units.get(uid)
                 if u:
                     self._burst(u.x, u.y, STATUS_COLORS[st], 8, 70, 3, 0.5)
         elif kind == "heal":
+            AUDIO.play("heal", 0.5)
             u = self.units.get(ev[1])
             if u:
                 for _ in range(5 if ev[2] else 2):
                     self.particles.append(Particle(u.x + self.rng.uniform(-u.r, u.r), u.y, 0, -50, 0.8,
                                                    (120, 240, 120), 4))
         elif kind == "boost":
+            AUDIO.play("boost" if ev[2] else "drop", 0.45)
             u = self.units.get(ev[1])
             if u:
                 col = (255, 110, 90) if ev[2] else (90, 150, 255)
