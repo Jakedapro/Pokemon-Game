@@ -1,0 +1,6 @@
+{"title": "10 Legends vs 200 Pokemon!", "subtitle": "CAN THEY SURVIVE???",
+ "teams": [
+   {"name": "Legends", "pokemon": ["mewtwo", "rayquaza", "kyogre", "groudon", "arceus", "dialga", "palkia", "giratina", "lugia", "ho-oh"]},
+   {"name": "The Army", "filter": {"legendary": false, "fully_evolved": true}, "count": 200}
+ ],
+ "boss_hp_mult": 6}

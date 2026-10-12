@@ -1,0 +1,344 @@
+"""Turn-based (Showdown-style) battle screen."""
+import math
+
+import pygame
+
+from . import gfx, ui
+from .app import Scene
+from .battlecore import STATUS_NAMES
+from .gfx import H, INK, SPRITES, W, WHITE
+from .render import STATUS_COLORS
+
+FOE_POS = (510, 440)
+MY_POS = (220, 780)
+
+
+class TurnBattleScene(Scene):
+    def __init__(self, app, session):
+        super().__init__(app)
+        self.s = session
+        self.me = session.my_side
+        self.foe = 1 - self.me
+        self.bg = gfx.turn_background()
+        self.state = None
+        self.req = None
+        self.queue = []          # log entries waiting to be shown
+        self.cur = None
+        self.cur_t = 0.0
+        self.msg = ""
+        self.history = []
+        self.vis = {0: {}, 1: {}}  # displayed id/frac/status per side
+        self.shake = {0: 0.0, 1: 0.0}
+        self.flash = {0: 0.0, 1: 0.0}
+        self.faint = {0: 0.0, 1: 0.0}
+        self.mega_on = False
+        self.waiting = False
+        self.t = 0.0
+        self.buttons = []
+        self.move_btns = []
+        self.party_btns = []
+        self.mega_btn = None
+        self.end_btns = [ui.Button((160, 700, 400, 90), "MAIN MENU", ui.PANEL2, 30, tag="menu")]
+        self.pending_updates = []
+
+    def close(self):
+        self.s.close()
+
+    # ------------------------------------------------------------------ state flow
+    def _sync_vis(self):
+        if not self.state:
+            return
+        for side in (0, 1):
+            sd = self.state["sides"][side]
+            if sd["active"] is None:
+                continue
+            m = sd["mons"][sd["active"]]
+            self.vis[side] = {"id": m["id"], "frac": m["frac"], "status": m["status"], "name": m["name"],
+                              "idx": sd["active"], "fainted": m["fainted"]}
+            if not m["fainted"]:
+                self.faint[side] = 0.0
+
+    def update(self, dt):
+        self.t += dt
+        for side in (0, 1):
+            self.shake[side] = max(0.0, self.shake[side] - dt)
+            self.flash[side] = max(0.0, self.flash[side] - dt)
+        for u in self.s.pump():
+            self.pending_updates.append(u)
+        # play log entries one by one
+        if self.cur is None and not self.queue and self.pending_updates:
+            u = self.pending_updates.pop(0)
+            self.queue = list(u["log"])
+            self._next_state = u
+            if self.state is None:
+                self.state = u["state"]
+                self._sync_vis()
+        if self.cur is None and self.queue:
+            self.cur = self.queue.pop(0)
+            self.cur_t = 0.0
+            self._apply_anim(self.cur.get("a"))
+            if self.cur["t"]:
+                self.msg = self.cur["t"]
+                self.history.append(self.cur["t"])
+        if self.cur is not None:
+            self.cur_t += dt
+            a = self.cur.get("a") or [None]
+            dur = 0.95 if self.cur["t"] else 0.45
+            if a[0] == "turn":
+                dur = 0.3
+            if self.cur_t >= dur:
+                self.cur = None
+        elif not self.queue and getattr(self, "_next_state", None):
+            u = self._next_state
+            self._next_state = None
+            self.state = u["state"]
+            self.req = u["req"]
+            self.waiting = False
+            self._sync_vis()
+            self.mega_on = False
+            if self.req and self.req["kind"] in ("lead", "switch"):
+                self.msg = "Choose your lead Pokemon!" if self.req["kind"] == "lead" else "Choose a Pokemon to send out!"
+            elif self.req:
+                name = self.vis[self.me].get("name", "")
+                self.msg = f"What will {name} do?"
+            elif not self.state["over"]:
+                self.msg = "Waiting for your opponent..."
+        self._layout()
+
+    def _apply_anim(self, a):
+        if not a:
+            return
+        kind = a[0]
+        if kind in ("hp", "hit"):
+            side = a[1]
+            self.vis[side]["frac"] = a[2]
+            if kind == "hit":
+                self.shake[side] = 0.4
+                self.flash[side] = 0.3
+        elif kind == "faint":
+            self.faint[a[1]] = 0.001
+            self.vis[a[1]]["frac"] = 0
+        elif kind == "switch":
+            side, idx, pid = a[1], a[2], a[3]
+            m = self.state["sides"][side]["mons"][idx] if self.state else {}
+            self.vis[side] = {"id": pid, "frac": m.get("frac", 1.0), "status": m.get("status"),
+                              "name": m.get("name", "?"), "idx": idx, "fainted": False}
+            self.faint[side] = 0.0
+        elif kind == "mega":
+            self.vis[a[1]]["id"] = a[2]
+            e = self.app.dex.all.get(a[2])
+            if e:
+                self.vis[a[1]]["name"] = e["name"]
+            self.flash[a[1]] = 0.8
+        elif kind == "status":
+            self.vis[a[1]]["status"] = a[2]
+        elif kind == "move":
+            self.shake[a[1]] = 0.15
+
+    # ------------------------------------------------------------------ layout + input
+    def _busy(self):
+        return self.cur is not None or bool(self.queue) or bool(self.pending_updates)
+
+    def _layout(self):
+        self.move_btns, self.party_btns, self.mega_btn = [], [], None
+        req = self.req if not self._busy() else None
+        if req and req["kind"] == "move":
+            for i, m in enumerate(req["moves"]):
+                x = 20 + (i % 2) * 345
+                y = 960 + (i // 2) * 88
+                sub = f"{m['pp']}/{m['maxpp']} PP   {m['power'] or '-'} pow   {m['cls'].upper()}"
+                b = ui.Button((x, y, 335, 80), m["name"], gfx.type_color(m["type"], 2), 24, sub,
+                              enabled=not m["disabled"], tag=m["slot"])
+                self.move_btns.append(b)
+            if req["can_mega"]:
+                self.mega_btn = ui.Button((20, 1150, 160, 100), "MEGA", (150, 70, 210) if self.mega_on else ui.PANEL2,
+                                          28, "ON" if self.mega_on else "off")
+        if self.state and req:
+            sd = self.state["sides"][self.me]
+            allowed = set(req.get("switches", []))
+            x0 = 200 if self.mega_btn or (req["kind"] == "move") else 20
+            for i, m in enumerate(sd["mons"]):
+                x = x0 + i * ((W - 20 - x0) // 6)
+                self.party_btns.append((pygame.Rect(x, 1150, (W - 20 - x0) // 6 - 8, 100), i, i in allowed, m))
+        self.buttons = self.move_btns + ([self.mega_btn] if self.mega_btn else []) + \
+            (self.end_btns if self._finished() else [])
+
+    def _finished(self):
+        return (self.state and self.state["over"] and not self._busy()) or (self.s.error and not self._busy())
+
+    def handle(self, ev, pos):
+        if self._finished():
+            if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1 and self.end_btns[0].hit(pos):
+                self.app.home()
+            if ev.type == pygame.KEYDOWN and ev.key in (pygame.K_ESCAPE, pygame.K_RETURN):
+                self.app.home()
+            return
+        if ev.type == pygame.KEYDOWN:
+            if ev.key == pygame.K_ESCAPE:
+                self.app.home()
+            elif ev.key == pygame.K_m and self.mega_btn:
+                self.mega_on = not self.mega_on
+            elif ev.key in (pygame.K_1, pygame.K_2, pygame.K_3, pygame.K_4):
+                i = ev.key - pygame.K_1
+                if i < len(self.move_btns) and self.move_btns[i].enabled:
+                    self._send({"type": "move", "slot": self.move_btns[i].tag, "mega": self.mega_on})
+            elif ev.key == pygame.K_SPACE and self._busy():
+                self.cur_t = 99  # skip ahead
+            return
+        if ev.type != pygame.MOUSEBUTTONDOWN or ev.button != 1 or pos is None:
+            return
+        if self._busy():
+            self.cur_t = 99
+            return
+        for b in self.move_btns:
+            if b.hit(pos):
+                self._send({"type": "move", "slot": b.tag, "mega": self.mega_on})
+                return
+        if self.mega_btn and self.mega_btn.hit(pos):
+            self.mega_on = not self.mega_on
+            return
+        for rect, i, ok, m in self.party_btns:
+            if ok and rect.collidepoint(pos):
+                self._send({"type": "switch", "index": i})
+                return
+
+    def _send(self, choice):
+        if not self.req:
+            return
+        if self.s.choose(choice):
+            self.req = None
+            self.waiting = True
+            self.msg = "Waiting for your opponent..." if self.s.online else "..."
+
+    # ------------------------------------------------------------------ drawing
+    def draw(self, surf):
+        surf.blit(self.bg, (0, 0))
+        if self.state:
+            self._draw_field_info(surf)
+            for side in (self.foe, self.me):
+                self._draw_mon(surf, side)
+            self._draw_hp_box(surf, self.foe, (30, 120))
+            self._draw_hp_box(surf, self.me, (330, 580))
+        if self.req and self.req["kind"] == "lead" and not self._busy():
+            self._draw_preview(surf)
+        # message box
+        ui.panel(surf, (20, 840, 680, 100), (36, 34, 50), 12)
+        gfx.text(surf, self.msg, (40, 880), 23, anchor="midleft", chunky=False, ow=1)
+        for b in self.move_btns:
+            b.draw(surf)
+        if self.mega_btn:
+            self.mega_btn.draw(surf)
+        for rect, i, ok, m in self.party_btns:
+            col = (60, 56, 80) if ok else (36, 34, 44)
+            pygame.draw.rect(surf, INK, rect.inflate(4, 4), border_radius=10)
+            pygame.draw.rect(surf, col, rect, border_radius=8)
+            img = SPRITES.get(m["id"], 60)
+            if m["fainted"]:
+                img = img.copy()
+                img.set_alpha(70)
+            surf.blit(img, img.get_rect(center=(rect.centerx, rect.centery - 8)))
+            gfx.hp_bar(surf, (rect.x + 8, rect.bottom - 14, rect.w - 16, 6), m["frac"])
+        if self.req and self.req["kind"] == "move" and not self._busy():
+            gfx.text(surf, "Pick a move (1-4)  -  or tap a Pokemon below to switch  -  M = Mega", (40, 922), 14,
+                     ui.MUTED, anchor="midleft", ow=1, chunky=False)
+        if self._finished():
+            shade = pygame.Surface((W, H), pygame.SRCALPHA)
+            shade.fill((0, 0, 0, 150))
+            surf.blit(shade, (0, 0))
+            if self.s.error and not (self.state and self.state["over"]):
+                gfx.title_text(surf, "DISCONNECTED", (W / 2, 450), 56)
+                gfx.text(surf, self.s.error, (W / 2, 520), 22, chunky=False)
+            else:
+                won = self.state["winner"] == self.me
+                gfx.title_text(surf, "VICTORY!" if won else "DEFEAT", (W / 2, 470), 90,
+                               color=(255, 230, 110) if won else WHITE)
+            for b in self.end_btns:
+                b.draw(surf)
+
+    def _draw_field_info(self, surf):
+        st = self.state
+        bits = []
+        if st["weather"]:
+            bits.append({"rain": "Rain", "sun": "Harsh sun", "sand": "Sandstorm", "snow": "Snow"}[st["weather"]])
+        if st["trick_room"]:
+            bits.append("Trick Room")
+        for side, label in ((self.foe, "Foe"), (self.me, "You")):
+            sd = st["sides"][side]
+            hz = (["Stealth Rock"] if sd["rocks"] else []) + ([f"Spikes x{sd['spikes']}"] if sd["spikes"] else []) + \
+                 ([f"Toxic Spikes x{sd['tspikes']}"] if sd["tspikes"] else []) + sd["screens"]
+            if hz:
+                bits.append(f"{label}: " + ", ".join(hz))
+        gfx.text(surf, f"Turn {st['turn']}" + ("   " + "   |   ".join(bits) if bits else ""), (W / 2, 30), 17,
+                 ow=1, chunky=False)
+        names = self.s.names
+        gfx.text(surf, f"{names[self.foe]}", (W - 20, 70), 20, gfx.TEAM_COLORS[1], anchor="midright", ow=1)
+
+    def _draw_mon(self, surf, side):
+        v = self.vis.get(side)
+        if not v or "id" not in v:
+            return
+        if self.faint[side] > 0:
+            self.faint[side] += 1 / 60
+            if self.faint[side] > 0.6:
+                return
+        mine = side == self.me
+        x, y = MY_POS if mine else FOE_POS
+        hgt = 250 if mine else 190
+        white = 0.8 if self.flash[side] > 0 and int(self.flash[side] * 20) % 2 else 0.0
+        img = SPRITES.get(v["id"], hgt, back=mine, white=white)
+        dx = math.sin(self.shake[side] * 60) * 10 * (self.shake[side] > 0)
+        dy = self.faint[side] * 300
+        clip = surf.get_clip()
+        if self.faint[side] > 0:
+            surf.set_clip(pygame.Rect(0, 0, W, y + 10))
+        surf.blit(img, img.get_rect(midbottom=(x + dx, y + 30 + dy)))
+        surf.set_clip(clip)
+
+    def _draw_hp_box(self, surf, side, pos):
+        v = self.vis.get(side)
+        if not v or "id" not in v:
+            return
+        x, y = pos
+        ui.panel(surf, (x, y, 360, 96), (248, 246, 236), 12)
+        gfx.text(surf, v["name"], (x + 16, y + 24), 24, INK, None, anchor="midleft")
+        if v.get("status"):
+            gfx.pill(surf, STATUS_NAMES.get(v["status"], ""), (x + 300, y + 24), STATUS_COLORS.get(v["status"],
+                                                                                              (90, 90, 90)), 13)
+        gfx.hp_bar(surf, (x + 16, y + 48, 328, 12), v["frac"])
+        sd = self.state["sides"][side]
+        if side == self.me and v.get("idx") is not None:
+            m = sd["mons"][v["idx"]]
+            hp = round(m["maxhp"] * v["frac"])
+            gfx.text(surf, f"{hp} / {m['maxhp']}", (x + 344, y + 78), 18, INK, None, anchor="midright", chunky=False)
+        else:
+            gfx.text(surf, f"{int(math.ceil(v['frac'] * 100))}%", (x + 344, y + 78), 18, INK, None,
+                     anchor="midright", chunky=False)
+        for i, m in enumerate(sd["mons"]):  # party balls
+            col = (90, 90, 90) if m["fainted"] else (230, 60, 60)
+            pygame.draw.circle(surf, col, (x + 22 + i * 20, y + 78), 7)
+            pygame.draw.circle(surf, INK, (x + 22 + i * 20, y + 78), 7, 2)
+        stages = sd["stages"]
+        if stages:
+            txt = " ".join(f"{k.upper()}{'+' if v_ > 0 else ''}{v_}" for k, v_ in stages.items())
+            gfx.text(surf, txt, (x + 180, y + 108), 15, (255, 240, 160), ow=1, chunky=False)
+
+    def _draw_preview(self, surf):
+        shade = pygame.Surface((W, 820), pygame.SRCALPHA)
+        shade.fill((10, 10, 20, 200))
+        surf.blit(shade, (0, 0))
+        gfx.title_text(surf, "TEAM PREVIEW", (W / 2, 80), 46)
+        foe = self.state["sides"][self.foe]["mons"]
+        gfx.text(surf, f"{self.s.names[self.foe]}'s team", (W / 2, 150), 22, gfx.TEAM_COLORS[1])
+        for i, m in enumerate(foe):
+            img = SPRITES.get(m["id"], 80)
+            cx = 75 + i * 114
+            surf.blit(img, img.get_rect(center=(cx, 240)))
+            gfx.text(surf, m["name"][:11], (cx, 300), 14, ow=1, chunky=False)
+        gfx.text(surf, "Tap your lead below", (W / 2, 420), 26, (255, 240, 150))
+        mine = self.state["sides"][self.me]["mons"]
+        for i, m in enumerate(mine):
+            img = SPRITES.get(m["id"], 90)
+            cx = 75 + i * 114
+            surf.blit(img, img.get_rect(center=(cx, 540)))
+            gfx.text(surf, m["name"][:11], (cx, 606), 14, ow=1, chunky=False)
+            gfx.text(surf, m["item"][:14], (cx, 628), 12, ui.MUTED, ow=1, chunky=False)

@@ -1,0 +1,6 @@
+{"title": "Kanto Starters vs Hoenn Starters!", "subtitle": "WHO WILL WIN???",
+ "teams": [
+   {"name": "Kanto", "pokemon": ["venusaur", "charizard", "blastoise", "pikachu"]},
+   {"name": "Hoenn", "pokemon": ["sceptile", "blaziken", "swampert", "jirachi"]}
+ ],
+ "hp_mult": 8, "bosses": "none"}

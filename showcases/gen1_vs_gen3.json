@@ -1,0 +1,11 @@
+{
+  "title": "Gen 1 vs Gen 3!",
+  "subtitle": "WHO WILL WIN???",
+  "teams": [
+    {"name": "Gen 1", "filter": {"gen": 1}},
+    {"name": "Gen 3", "filter": {"gen": 3}}
+  ],
+  "bosses": "legendary",
+  "megas": true,
+  "hp_mult": 12
+}
