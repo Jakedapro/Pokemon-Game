@@ -1,0 +1,6 @@
+{"title": "Every Pokemon vs Every Pokemon!", "subtitle": "...UNTIL A GOD SHOWS UP",
+ "teams": [
+   {"name": "Team Red", "filter": {"fully_evolved": true}, "count": 150},
+   {"name": "Team Blue", "filter": {"fully_evolved": true}, "count": 150}
+ ],
+ "events": ["arceus", "meteor"]}

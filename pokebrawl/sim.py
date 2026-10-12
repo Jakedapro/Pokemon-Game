@@ -135,6 +135,8 @@ class Sim:
         self.over = False
         self.megas_used = {}
         self.teras_used = {}
+        self.domain = None     # "sea" (Primal Kyogre), "land" (Primal Groudon), "sky" (Mega Rayquaza)
+        self.env_blasts = []   # [x, y, rad, frac, type, delay] - meteors etc. that hurt everyone
         self.tick = 0
         self.cmd_log = []      # [tick, team, cmd] - everything needed to replay the battle
         self.started = False
@@ -157,6 +159,7 @@ class Sim:
                 self.units.append(u)
                 uid += 1
         self.by_id = {u.uid: u for u in self.units}
+        self._hp_mult, self._boss_mult, self._radius = hp_mult, boss_mult, radius
 
     # ------------------------------------------------------------------ helpers
     def team_units(self, team):
@@ -215,6 +218,31 @@ class Sim:
         limit = self.opts.get("mega_limit", {}).get(u.team)
         return limit is None or self.megas_used.get(u.team, 0) < limit
 
+    def spawn(self, member, team, pos, boss=True, hp_scale=1.0, radius_scale=1.0):
+        """Add a Pokemon mid-battle (event bosses like Arceus). Returns the new unit."""
+        uid = max(self.by_id) + 1 if self.by_id else 1
+        mon = Mon(self.dex, member, uid, team)
+        r = self._radius * (1.7 if boss else 1.0) * radius_scale
+        u = Unit(mon, uid, team, pos[0], pos[1], r, boss,
+                 self._hp_mult * (self._boss_mult if boss else 1.0) * hp_scale)
+        u.cd = 0.6
+        if mon.can_mega:
+            u.mega_at = self.t + 0.1
+        self.units.append(u)
+        self.by_id[uid] = u
+        return u
+
+    def env_blast(self, x, y, rad, frac, mtype="rock", delay=0.6):
+        """A hazard that hurts everyone in range by `frac` of their max HP (meteors, eruptions)."""
+        self.env_blasts.append([x, y, rad, frac, mtype, delay])
+        self.emit("aoe", round(x), round(y), round(rad), mtype, delay, "env")
+
+    def set_domain(self, d):
+        if d == self.domain:
+            return
+        self.domain = d
+        self.emit("domain", d)
+
     def tera_allowed(self, u):
         limit = self.opts.get("tera_limit", {}).get(u.team, 0)
         return (limit is None or self.teras_used.get(u.team, 0) < limit) and not u.mon.terastallized \
@@ -264,6 +292,11 @@ class Sim:
         self.emit("mega", u.uid, form["id"], form["name"])
         if form["key"] in PRIMAL_WEATHER:
             self.set_weather(PRIMAL_WEATHER[form["key"]], 9999)
+            self.set_domain("sea" if "kyogre" in form["key"] else "land")
+        elif form["key"] == "rayquaza-mega":
+            self.weather = None  # Delta Stream: the sky calms every other weather
+            self.emit("weather", None)
+            self.set_domain("sky")
         else:
             for kind, payload in AB.entry_effects(u.mon, None):
                 if kind == "weather" and self.weather != payload[0]:
@@ -298,6 +331,7 @@ class Sim:
         self._separate(alive, grid)
         self._update_projectiles(dt)
         self._update_blasts(dt)
+        self._update_env(dt)
         teams = self.alive_teams()
         if len(teams) <= 1:
             self.over = True
@@ -700,6 +734,20 @@ class Sim:
                         self._hit(b.src, e, b.move, spread=True)
         self.blasts = keep
 
+    def _update_env(self, dt):
+        keep = []
+        for b in self.env_blasts:
+            b[5] -= dt
+            if b[5] > 0:
+                keep.append(b)
+                continue
+            x, y, rad, frac, mtype, _ = b
+            self.emit("blast", round(x), round(y), round(rad), mtype)
+            for u in self.units:
+                if u.alive and math.hypot(u.x - x, u.y - y) < rad + u.r * 0.5:
+                    self._hurt(u, u.mon.maxhp * frac * (0.35 if u.boss else 1.0), None)
+        self.env_blasts = keep
+
     # ------------------------------------------------------------------ damage
     def _hit(self, u, tgt, move, spread=False):
         if not tgt.alive:
@@ -717,6 +765,10 @@ class Sim:
             elif eff_[0] == "flash_fire":
                 tmon.flags["flash_fire"] = True
             return
+        if move["power"] > 0 and ((self.domain == "sea" and mtype == "fire") or
+                                  (self.domain == "land" and mtype == "water")):
+            self.emit("label", tgt.uid, "EVAPORATED", mtype)
+            return
         acc = move["acc"]
         accm = AB.accuracy(mon, tmon, move)
         if acc <= 100 and accm is not None:
@@ -727,6 +779,8 @@ class Sim:
                 return
         if move["power"] > 0:
             dmg, eff, crit = damage(mon, tmon, move, self.rng, self.weather, spread=spread)
+            if self.domain == "sky" and eff > 1 and "flying" in tmon.types:
+                dmg, eff = dmg / 2, eff / 2  # Delta Stream: Flying types lose their weaknesses
             if eff == 0:
                 self.emit("label", tgt.uid, "NO EFFECT", "normal")
                 return

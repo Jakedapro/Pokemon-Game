@@ -1,0 +1,3 @@
+{"title": "Gen 1 vs Gen 4!", "subtitle": "TOTAL CHAOS MODE",
+ "teams": [{"name": "Gen 1", "filter": {"gen": 1}}, {"name": "Gen 4", "filter": {"gen": 4}}],
+ "events": "chaos"}

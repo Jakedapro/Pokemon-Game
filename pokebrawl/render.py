@@ -78,6 +78,8 @@ class ArenaRenderer:
         self.shake = 0.0
         self.show_boss_bars = True
         self.smooth = False
+        self.domain = None
+        self._cracks = None
 
     # ------------------------------------------------------------------ feeding state
     def feed(self, snap):
@@ -229,6 +231,8 @@ class ArenaRenderer:
                                                    col, 4))
         elif kind == "protect":
             pass
+        elif kind == "domain":
+            self.domain = ev[1]
         elif kind == "weather":
             if ev[1]:
                 self.fx.append(FX("banner", 1.8, text={"rain": "HEAVY RAIN", "sun": "HARSH SUNLIGHT",
@@ -329,6 +333,7 @@ class ArenaRenderer:
     def draw(self, surf):
         w = self.world
         w.blit(self.bg, (0, 0))
+        self._draw_domain_under(w)
         self._draw_weather_under(w)
         for f in self.fx:
             if f.kind == "telegraph":
@@ -368,6 +373,7 @@ class ArenaRenderer:
             s = max(1, int(p.size * (0.5 + a * 0.5)))
             pygame.draw.rect(w, p.color, (int(p.x) - s // 2, int(p.y) - s // 2, s, s))
         self._draw_weather_over(w)
+        self._draw_domain_over(w)
         # camera
         r = self.view_rect()
         if self.shake > 0:
@@ -394,6 +400,8 @@ class ArenaRenderer:
         outline = None
         if self.mode == "team":
             outline = gfx.TEAM_COLORS[u.team % 4]
+        elif u.team >= 2:
+            outline = (255, 210, 60)  # event bosses (Arceus, primals...) glow gold
         elif u.flags & 1:
             outline = (230, 50, 50)
         white = self.white.get(u.uid, 0.0)
@@ -481,6 +489,17 @@ class ArenaRenderer:
                        for a in [i * math.tau / 6 + p * 2 for i in range(6)]]
                 pygame.draw.polygon(w, col, pts, max(1, int(6 * (1 - p))))
                 pygame.draw.polygon(w, (255, 255, 255), pts, max(1, int(2 * (1 - p))))
+        elif f.kind == "godbeam":
+            a = 1 - p
+            bw = int(90 * (0.4 + 0.6 * math.sin(min(1.0, p * 3) * math.pi / 2)) * a) + 4
+            beam = pygame.Surface((bw * 2, d["y"] + 40), pygame.SRCALPHA)
+            for i in range(bw, 0, -6):
+                pygame.draw.rect(beam, (255, 235, 150, int(40 * a)), (bw - i, 0, i * 2, d["y"] + 40))
+            pygame.draw.rect(beam, (255, 255, 230, int(220 * a)), (bw - bw // 4, 0, bw // 2, d["y"] + 40))
+            w.blit(beam, (d["x"] - bw, 0))
+            for k in range(3):
+                rr = int((60 + 140 * ((p * 2 + k / 3) % 1)) * 1.0)
+                pygame.draw.ellipse(w, (255, 220, 120), (d["x"] - rr, d["y"] - rr / 3, rr * 2, rr * 2 / 3), 3)
         elif f.kind == "boom":
             rr = int(d["r"] * (0.3 + p))
             pygame.draw.circle(w, (255, 230, 140), (d["x"], d["y"]), rr, max(1, int(14 * (1 - p))))
@@ -551,6 +570,68 @@ class ArenaRenderer:
                 pygame.draw.rect(surf, INK, (ox - 1, y + 35, ow + 2, 9), border_radius=3)
                 pygame.draw.rect(surf, (70, 30, 30), (ox, y + 36, ow, 7), border_radius=2)
                 pygame.draw.rect(surf, (225, 60, 50), (ox, y + 36, int(ow * u.hp), 7), border_radius=2)
+
+    def god_beam(self, x, y):
+        self.fx.append(FX("godbeam", 2.4, x=x, y=y))
+        for _ in range(40):
+            a = self.rng.random() * math.tau
+            sp = 120 + self.rng.random() * 260
+            self.particles.append(Particle(x, y, math.cos(a) * sp, math.sin(a) * sp * 0.5, 1.2,
+                                           (255, 230, 140), 5))
+
+    def _crack_lines(self):
+        if self._cracks is None:
+            rng = random.Random(11)
+            self._cracks = []
+            for _ in range(16):
+                x, y = rng.uniform(80, W - 80), rng.uniform(120, H - 120)
+                pts = [(x, y)]
+                for _ in range(rng.randint(4, 8)):
+                    x += rng.uniform(-60, 60)
+                    y += rng.uniform(-60, 60)
+                    pts.append((x, y))
+                self._cracks.append(pts)
+        return self._cracks
+
+    def _draw_domain_under(self, w):
+        d = self.domain
+        if d == "sea":
+            tint = pygame.Surface((W, H), pygame.SRCALPHA)
+            tint.fill((40, 110, 220, 95))
+            w.blit(tint, (0, 0))
+            for row in range(0, H, 46):  # rolling waves
+                pts = [(x, row + math.sin(x / 40 + self.t * 2 + row) * 6) for x in range(0, W + 20, 20)]
+                pygame.draw.lines(w, (150, 200, 255), False, pts, 2)
+        elif d == "land":
+            tint = pygame.Surface((W, H), pygame.SRCALPHA)
+            tint.fill((200, 70, 20, 80))
+            w.blit(tint, (0, 0))
+            glow = 160 + int(80 * math.sin(self.t * 3))
+            for pts in self._crack_lines():
+                pygame.draw.lines(w, (90, 20, 10), False, pts, 9)
+                pygame.draw.lines(w, (255, glow, 40), False, pts, 4)
+        elif d == "sky":
+            tint = pygame.Surface((W, H), pygame.SRCALPHA)
+            tint.fill((60, 190, 120, 50))
+            w.blit(tint, (0, 0))
+
+    def _draw_domain_over(self, w):
+        d = self.domain
+        if d == "land":
+            for i in range(40):  # embers rising
+                x = (i * 97 + math.sin(self.t + i) * 30) % W
+                y = H - (i * 131 + self.t * 90) % H
+                pygame.draw.circle(w, (255, 150 + (i * 7) % 100, 40), (int(x), int(y)), 2)
+        elif d == "sea":
+            for i in range(140):  # heavy rain
+                x = (i * 53 + self.t * 260) % W
+                y = (i * 89 + self.t * 1300) % H
+                pygame.draw.line(w, (190, 220, 255), (x, y), (x - 6, y + 24), 2)
+        elif d == "sky":
+            for i in range(30):  # wind streaks
+                x = (i * 151 + self.t * 900) % (W + 300) - 150
+                y = (i * 97) % H
+                pygame.draw.line(w, (200, 255, 220), (x, y), (x + 120, y - 10), 2)
 
     def _draw_weather_under(self, w):
         if self.weather == "sun":

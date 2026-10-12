@@ -1,0 +1,7 @@
+{"title": "Water vs Fire!", "subtitle": "THE PRIMALS ARE WAKING UP...",
+ "teams": [
+   {"name": "Water", "filter": {"type": "water", "fully_evolved": true}, "count": 120},
+   {"name": "Fire", "filter": {"type": "fire", "fully_evolved": true}, "count": 120}
+ ],
+ "bosses": "none",
+ "events": ["primal", "rayquaza"]}

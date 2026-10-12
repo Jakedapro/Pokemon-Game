@@ -40,6 +40,11 @@ def open_path(path):
         pass
 
 
+# "Random" keeps a preset's own events (most presets: one or two random ones)
+EVENT_CHOICES = {"Random": "random", "Off": "none", "Arceus": ["arceus"], "Primal clash": ["primal"],
+                 "Rayquaza": ["rayquaza"], "Meteors": ["meteor"], "CHAOS (all)": "chaos"}
+
+
 class ShowcaseMenu(Scene):
     def __init__(self, app):
         super().__init__(app)
@@ -54,11 +59,13 @@ class ShowcaseMenu(Scene):
         self.b.set(s.get("sc_b", "Gen 3"))
         self.size = ui.Cycle((40, 712, 640, 62), "Per team", SIZES)
         self.size.set(s.get("sc_size", "All"))
-        self.megas = ui.Cycle((40, 788, 310, 62), "Megas", ["On", "Off"])
-        self.bosses = ui.Cycle((370, 788, 310, 62), "Bosses", ["On", "Off"])
-        self.finale = ui.Cycle((40, 864, 310, 62), "Catch", ["On", "Off"])
-        self.speed = ui.Cycle((370, 864, 310, 62), "Speed", ["1x", "2x", "0.5x"])
-        self.cycles = [self.a, self.b, self.size, self.megas, self.bosses, self.finale, self.speed]
+        self.megas = ui.Cycle((40, 788, 200, 62), "Megas", ["On", "Off"])
+        self.bosses = ui.Cycle((260, 788, 200, 62), "Bosses", ["On", "Off"])
+        self.finale = ui.Cycle((480, 788, 200, 62), "Catch", ["On", "Off"])
+        self.speed = ui.Cycle((40, 864, 240, 62), "Speed", ["1x", "2x", "0.5x"])
+        self.events = ui.Cycle((300, 864, 380, 62), "Events", list(EVENT_CHOICES))
+        self.events.set(s.get("sc_events", "Random"))
+        self.cycles = [self.a, self.b, self.size, self.megas, self.bosses, self.finale, self.speed, self.events]
         self.custom = s.get("sc_mode", "custom") == "custom"
         self.buttons = [ui.Button((40, 960, 310, 110), "PLAY", (70, 120, 220), 40, "watch it live"),
                         ui.Button((370, 960, 310, 110), "RECORD MP4", (196, 60, 60), 34, "vertical 720x1280"),
@@ -86,6 +93,8 @@ class ShowcaseMenu(Scene):
         cfg["bosses"] = "legendary" if self.bosses.value == "On" else "none"
         cfg["finale"] = self.finale.value == "On"
         cfg["speed"] = {"1x": 1.0, "2x": 2.0, "0.5x": 0.5}[self.speed.value]
+        if self.events.value != "Random" or self.custom:
+            cfg["events"] = EVENT_CHOICES[self.events.value]
         return cfg
 
     def handle(self, ev, pos):
@@ -103,7 +112,8 @@ class ShowcaseMenu(Scene):
             self.app.pop()
         elif self.buttons[0].hit(pos) or self.buttons[1].hit(pos):
             self.app.settings.update(sc_a=self.a.value, sc_b=self.b.value, sc_size=self.size.value,
-                                     sc_mode="custom" if self.custom else "preset")
+                                     sc_mode="custom" if self.custom else "preset",
+                                     sc_events=self.events.value)
             save_settings(self.app.settings)
             cfg = self.config()
             if self.buttons[0].hit(pos):
