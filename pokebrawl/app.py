@@ -190,6 +190,9 @@ class MainMenu(Scene):
             ui.Button((x, 860, 245, 70), "SETTINGS", (60, 58, 70), 24, tag="settings"),
             ui.Button((x + 255, 860, 245, 70), "QUIT", (60, 58, 70), 24, tag="quit"),
         ]
+        from .version import UpdateCheck, current
+        self.version = current()
+        self.update_check = UpdateCheck()
 
     def update(self, dt):
         AUDIO.music("menu")
@@ -236,6 +239,11 @@ class MainMenu(Scene):
             b.draw(surf)
         gfx.text(surf, "Fan-made, not affiliated with Nintendo / Game Freak / The Pokemon Company", (W / 2, H - 30),
                  13, (110, 110, 125), ow=1, chunky=False)
+        h, d = self.version
+        gfx.text(surf, f"version {h}  {d}", (W / 2, H - 52), 14, (130, 130, 150), ow=1, chunky=False)
+        if self.update_check.available:
+            ui.panel(surf, (110, 950, 500, 56), (60, 140, 80), 12)
+            gfx.text(surf, "Update available!  Run:  pokebrawl update", (W / 2, 978), 20)
 
 
 def team_options(app):

@@ -26,6 +26,7 @@ def main(argv=None):
     sub.add_parser("download", help="download all Pokemon data and sprites")
     sub.add_parser("spritetest", help="save a picture of sprite effects to your Desktop (for bug reports)")
     sub.add_parser("update", help="update the game")
+    sub.add_parser("version", help="show the installed version")
     args = p.parse_args(argv)
 
     if args.cmd == "relay":
@@ -46,6 +47,11 @@ def main(argv=None):
         return
     if args.cmd == "spritetest":
         _spritetest()
+        return
+    if args.cmd == "version":
+        from .version import current
+        h, d = current()
+        print(f"PokeBrawl {h} ({d})")
         return
     if args.cmd == "update":
         if os.path.isdir(os.path.join(APP_DIR, ".git")):

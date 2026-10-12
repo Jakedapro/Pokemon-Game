@@ -39,15 +39,26 @@ say "Using $("$PY" --version) at $PY"
 
 # --- 2. get the game -----------------------------------------------------------------
 mkdir -p "$ROOT"
+fresh_clone() {
+  rm -rf "$APP"
+  git clone --depth 1 ${BRANCH:+-b "$BRANCH"} "$REPO" "$APP" \
+    || die "Couldn't download $REPO (check your internet; the repo must be public)."
+}
 if [ -d "$APP/.git" ]; then
   say "Updating PokeBrawl..."
-  git -C "$APP" fetch --depth 1 origin ${BRANCH:+"$BRANCH"} >/dev/null 2>&1 || warn "couldn't fetch updates"
-  git -C "$APP" reset --hard FETCH_HEAD >/dev/null 2>&1 || true
+  OLD="$(git -C "$APP" rev-parse --short HEAD 2>/dev/null || echo none)"
+  git -C "$APP" remote set-url origin "$REPO"
+  if git -C "$APP" fetch --depth 1 origin ${BRANCH:+"$BRANCH"} && git -C "$APP" reset --hard FETCH_HEAD >/dev/null; then
+    :
+  else
+    warn "Updating in place failed - downloading a fresh copy instead"
+    fresh_clone
+  fi
+  NEW="$(git -C "$APP" rev-parse --short HEAD)"
+  if [ "$OLD" = "$NEW" ]; then say "Already up to date ($NEW)"; else say "Updated $OLD -> $NEW"; fi
 else
   say "Downloading PokeBrawl..."
-  rm -rf "$APP"
-  git clone --depth 1 ${BRANCH:+-b "$BRANCH"} "$REPO" "$APP" >/dev/null 2>&1 \
-    || die "Couldn't download $REPO (if the repo is private, the owner needs to make it public or add you)."
+  fresh_clone
 fi
 
 # --- 3. python environment -----------------------------------------------------------
@@ -122,7 +133,7 @@ if ! "$BIN/pokebrawl" download; then
 fi
 
 echo
-say "PokeBrawl is installed!"
+say "PokeBrawl is installed! Version $(git -C "$APP" log -1 --format='%h (%cd)' --date=format:'%b %d %H:%M')"
 echo "   Play:        pokebrawl            (or open PokeBrawl in ~/Applications)"
 echo "   Update:      pokebrawl update"
 echo "   Showcase:    pokebrawl showcase $APP/showcases/gen1_vs_gen3.json --record gen1v3.mp4"
