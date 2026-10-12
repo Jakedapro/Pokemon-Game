@@ -212,7 +212,7 @@ if ! command -v ffmpeg >/dev/null 2>&1; then
     say "Installing ffmpeg (for recording showcase MP4s)..."
     brew install ffmpeg >/dev/null 2>&1 || warn "ffmpeg install failed - recording videos won't work until you: brew install ffmpeg"
   else
-    warn "ffmpeg not found - recording showcase MP4s needs it (https://brew.sh then: brew install ffmpeg)"
+    say "Skipping video recording (needs Homebrew). Everything else works - the Record buttons are just hidden."
   fi
 fi
 

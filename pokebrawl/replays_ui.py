@@ -4,7 +4,7 @@ import time
 
 import pygame
 
-from . import gfx, replays, ui
+from . import gfx, recorder, replays, ui
 from .app import STYLE_NAMES, PrefetchScene, Scene
 from .battle_turn import TurnBattleScene
 from .gfx import W
@@ -129,6 +129,10 @@ class ReplayList(Scene):
                         ui.Button((260, 1020, 200, 80), "EXPORT MP4", (196, 60, 60), 24, "share it"),
                         ui.Button((480, 1020, 200, 80), "DELETE", (150, 50, 50), 26),
                         ui.Button((40, 1160, 200, 70), "BACK", ui.PANEL2, 24)]
+        if not recorder.available():  # no ffmpeg: no video export, just watch / delete
+            self.buttons[1].enabled = False
+            self.buttons[0].rect.width = self.buttons[2].rect.width = 310
+            self.buttons[2].rect.x = 370
         self.msg = ""
         self.refresh()
 
@@ -186,6 +190,7 @@ class ReplayList(Scene):
         if not self.items:
             gfx.text(surf, "No replays yet - go battle!", (W / 2, 480), 24, ui.MUTED)
         for b in self.buttons:
-            b.draw(surf)
+            if b.enabled:
+                b.draw(surf)
         if self.msg:
             gfx.text(surf, self.msg, (W / 2, 1125), 18, (255, 240, 150), ow=1, chunky=False)

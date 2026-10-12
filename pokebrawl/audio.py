@@ -4,7 +4,6 @@ import array
 import math
 import os
 import random
-import shutil
 import subprocess
 import time
 import wave
@@ -361,11 +360,12 @@ def _read_wav(path):
 
 def _decode_cry(pid):
     """Cries are OGG: let ffmpeg decode them to mono 44.1 kHz."""
-    path = ensure_cry(pid)
-    if not path or not shutil.which("ffmpeg"):
+    from .recorder import ffmpeg_path
+    path, exe = ensure_cry(pid), ffmpeg_path()
+    if not path or not exe:
         return None
     try:
-        raw = subprocess.run(["ffmpeg", "-loglevel", "error", "-i", path, "-f", "s16le", "-ac", "1", "-ar",
+        raw = subprocess.run([exe, "-loglevel", "error", "-i", path, "-f", "s16le", "-ac", "1", "-ar",
                               str(RATE), "-"], capture_output=True, check=True, timeout=20).stdout
         return array.array("h", raw)
     except (OSError, subprocess.SubprocessError):
@@ -418,5 +418,6 @@ def mix(events, duration, out_wav):
 
 
 def mux_track(video, wav, out):
-    subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-i", video, "-i", wav, "-c:v", "copy", "-c:a", "aac",
+    from .recorder import ffmpeg_path
+    subprocess.run([ffmpeg_path() or "ffmpeg", "-loglevel", "error", "-y", "-i", video, "-i", wav, "-c:v", "copy", "-c:a", "aac",
                     "-b:a", "160k", "-shortest", "-movflags", "+faststart", out], check=True)

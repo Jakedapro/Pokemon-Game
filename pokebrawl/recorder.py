@@ -1,13 +1,28 @@
 """Pipes frames into ffmpeg to make vertical MP4s (TikTok / Reels / Shorts ready)."""
+import os
 import shutil
 import subprocess
 
 import pygame
 
 
+def ffmpeg_path():
+    """ffmpeg comes from Homebrew, which needs Apple's Command Line Tools - so it may simply not be there.
+    The .app launcher doesn't always have Homebrew on PATH, so look in its usual spots too."""
+    exe = shutil.which("ffmpeg")
+    for cand in (exe, "/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg"):
+        if cand and os.path.isfile(cand) and os.access(cand, os.X_OK):
+            return cand
+    return None
+
+
+def available():
+    return ffmpeg_path() is not None
+
+
 class Recorder:
     def __init__(self, path, w, h, fps=30):
-        exe = shutil.which("ffmpeg")
+        exe = ffmpeg_path()
         if not exe:
             raise RuntimeError("ffmpeg not found. On Mac: brew install ffmpeg")
         self.proc = subprocess.Popen(

@@ -7,7 +7,7 @@ import time
 
 import pygame
 
-from . import gfx, ui
+from . import gfx, recorder, ui
 from .app import Scene, save_settings
 from .gfx import H, W
 from .audio import AUDIO
@@ -70,6 +70,9 @@ class ShowcaseMenu(Scene):
         self.buttons = [ui.Button((40, 960, 310, 110), "PLAY", (70, 120, 220), 40, "watch it live"),
                         ui.Button((370, 960, 310, 110), "RECORD MP4", (196, 60, 60), 34, "vertical 720x1280"),
                         ui.Button((40, 1160, 200, 70), "BACK", ui.PANEL2, 24)]
+        if not recorder.available():  # no ffmpeg (no Homebrew / Command Line Tools): watch only
+            self.buttons[0].rect.width = 640
+            self.buttons[1].enabled = False
 
     def _row(self, title):
         def draw(surf, r, sel):
@@ -133,10 +136,13 @@ class ShowcaseMenu(Scene):
         for c in self.cycles:
             c.draw(surf)
         for b in self.buttons:
-            b.draw(surf)
+            if b.enabled:
+                b.draw(surf)
         gfx.text(surf, "While watching: Space = pause, +/- = speed, Esc = exit", (W / 2, 1100), 16, ui.MUTED,
                  ow=1, chunky=False)
-        gfx.text(surf, f"Videos are saved to {video_dir()}", (W / 2, 1126), 15, ui.MUTED, ow=1, chunky=False)
+        if self.buttons[1].enabled:
+            gfx.text(surf, f"Videos are saved to {video_dir()}", (W / 2, 1126), 15, ui.MUTED, ow=1,
+                     chunky=False)
 
 
 class ShowcaseLoad(Scene):
