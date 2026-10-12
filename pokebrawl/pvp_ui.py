@@ -176,7 +176,7 @@ class RoomBrowser(Scene):
         if picked:
             r = next(x for x in self.rooms if x["code"] == picked)
             self.app.replace(LobbyScene(self.app, "join", "room", r.get("style", "turn"), self.team, self.name,
-                                        code=r["code"], broker=tuple(r["broker"])))
+                                        code=r["code"], broker=r["broker"] if r["broker"] == "https" else tuple(r["broker"])))
             return
         if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
             if self.buttons[0].hit(pos):

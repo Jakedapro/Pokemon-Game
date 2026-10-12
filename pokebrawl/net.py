@@ -26,6 +26,7 @@ class BaseConn:
         self.rtt = None           # seconds, measured by the heartbeat
         self.last_rx = time.time()
         self.kind = "direct"
+        self.timeout = TIMEOUT
         self._hb_started = False
 
     # subclasses implement _send_raw(obj) and _close_raw()
@@ -59,7 +60,7 @@ class BaseConn:
 
     @property
     def closed(self):
-        if not self._closed and time.time() - self.last_rx > TIMEOUT:
+        if not self._closed and time.time() - self.last_rx > self.timeout:
             self.error = self.error or "Connection timed out"
             self._closed = True
         return self._closed

@@ -174,6 +174,20 @@ class RoomHost:
         return {"name": self.name, "style": self.style, "code": self.code, "v": PROTO, "ts": time.time()}
 
     def _run(self):
+        from . import ntfy
+        if not os.environ.get("POKEBRAWL_BROKERS") or os.environ.get("POKEBRAWL_NTFY"):
+            self.status = "Opening room..."
+            if ntfy.reachable():
+                try:
+                    room = ntfy.NtfyRoom(self.code, self.name, self.style, self.public,
+                                         lambda m: setattr(self, "status", m))
+                    self.broker = "https"
+                    conn = room.run(lambda: self._stop)
+                    if conn:
+                        self.conn = conn
+                    return
+                except Exception as e:  # noqa: BLE001 - fall back to the MQTT servers
+                    self.status = f"HTTPS rooms failed ({e}), trying other servers..."
         errors = []
         for host, port in brokers():
             if self._stop:
@@ -237,6 +251,14 @@ class RoomHost:
 def join_room(code, name, timeout=10.0, broker=None):
     """Find the room on the brokers and join it. Returns a MqttConn (blocking - run in a thread)."""
     code = code.strip().upper()
+    from . import ntfy
+    if (broker in (None, "https")) and (not os.environ.get("POKEBRAWL_BROKERS") or os.environ.get("POKEBRAWL_NTFY")):
+        if ntfy.reachable():
+            conn = ntfy.join(code, name)
+            if conn:
+                return conn
+        if broker == "https":
+            raise ConnectionError(f"No room {code} found")
     tried = []
     for host, port in ([broker] if broker else brokers()):
         try:
@@ -310,7 +332,16 @@ def list_public_rooms(wait=2.5):
         time.sleep(wait)
         c.disconnect()
         c.loop_stop()
+    def scan_https():
+        from . import ntfy
+        try:
+            for r in ntfy.list_rooms():
+                with lock:
+                    rooms.setdefault(r["code"], r)
+        except Exception:  # noqa: BLE001
+            pass
     threads = [threading.Thread(target=scan, args=b, daemon=True) for b in brokers()]
+    threads.append(threading.Thread(target=scan_https, daemon=True))
     for t in threads:
         t.start()
     for t in threads:
@@ -400,12 +431,30 @@ def selftest(log=print):
     """`pokebrawl nettest`: checks every online server end to end and prints what works."""
     import platform
     log(f"PokeBrawl network test  (protocol {PROTO}, {platform.system()} {platform.mac_ver()[0]})")
+    from . import ntfy
+    any_ok = False
+    t0 = time.time()
+    if ntfy.reachable():
+        code = "T" + new_code()
+        err = "the test message never came back"
+        try:
+            ntfy._post(f"{ntfy.SERVER}/{ntfy.topic(code, 'open')}", ntfy._encode({"hi": 1}, 0)[0].encode())
+            ok = bool(ntfy.poll(ntfy.topic(code, "open")))
+        except Exception as e:  # noqa: BLE001
+            ok, err = False, e
+        ms = int((time.time() - t0) * 1000)
+        if ok:
+            any_ok = True
+            log(f"  OK    {ntfy.SERVER} (HTTPS)  rooms work ({ms} ms)")
+        else:
+            log(f"  FAIL  {ntfy.SERVER} (HTTPS)  reachable but messages failed: {err}")
+    else:
+        log(f"  FAIL  {ntfy.SERVER} (HTTPS)  can't connect")
     try:
         _mqtt()
     except RuntimeError as e:
         log(f"  FAIL  {e}")
-        return False
-    any_ok = False
+        return any_ok
     for host, port in brokers():
         t0 = time.time()
         try:
