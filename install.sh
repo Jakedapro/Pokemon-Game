@@ -20,6 +20,26 @@ die()  { printf "\033[1;31mError:\033[0m %s\n" "$*" >&2; exit 1; }
 
 OS="$(uname -s)"
 
+# --- 0. HTTPS trust ------------------------------------------------------------------
+# On networks/Macs that inspect HTTPS (school or work Wi-Fi, managed Macs, some antivirus), curl/git/pip
+# don't trust the inspection certificate even though the Mac's Keychain does. If GitHub can't be verified,
+# export the Keychain's trusted certificates and use them for every download in this install.
+mkdir -p "$ROOT"
+if ! curl -fsS --max-time 15 https://github.com >/dev/null 2>&1; then
+  if [ "$OS" = "Darwin" ] && command -v security >/dev/null 2>&1; then
+    warn "HTTPS check failed - using the certificates your Mac's Keychain trusts"
+    PEM="$ROOT/keychain-certs.pem"
+    security find-certificate -a -p /System/Library/Keychains/SystemRootCertificates.keychain \
+      /Library/Keychains/System.keychain "$HOME/Library/Keychains/login.keychain-db" > "$PEM" 2>/dev/null || true
+    if [ -s "$PEM" ] && curl -fsS --max-time 15 --cacert "$PEM" https://github.com >/dev/null 2>&1; then
+      export CURL_CA_BUNDLE="$PEM" GIT_SSL_CAINFO="$PEM" PIP_CERT="$PEM" SSL_CERT_FILE="$PEM" REQUESTS_CA_BUNDLE="$PEM"
+    else
+      die "Can't make a secure connection to GitHub. Check your Mac's date & time is set automatically
+       (System Settings > General > Date & Time), or try another network (e.g. a phone hotspot)."
+    fi
+  fi
+fi
+
 # --- 1. git + python -----------------------------------------------------------------
 if [ "$OS" = "Darwin" ] && ! xcode-select -p >/dev/null 2>&1; then
   say "Installing Apple Command Line Tools (gives you git + python3)..."
