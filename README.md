@@ -34,7 +34,9 @@ The installer:
 - installs `ffmpeg` with Homebrew for video recording, if you have Homebrew
 - downloads the Pokedex and sprites once (about 20 MB)
 
-Run the same command again, or `pokebrawl update`, to update. Your friends install it the same way.
+The game **updates itself**: it downloads new versions in the background while you're in the menu and installs
+them the next time you open it (or hit *Update ready - Restart*). Turn it off in Settings. You can also run the
+install command again, or `pokebrawl update`. Your friends install it the same way.
 
 > The repo must be **public** for the one-liner to work for your friends (or add them as collaborators and have them `git clone` it).
 

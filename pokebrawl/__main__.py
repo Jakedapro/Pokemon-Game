@@ -29,6 +29,9 @@ def main(argv=None):
     sub.add_parser("version", help="show the installed version")
     sub.add_parser("nettest", help="check that online rooms can work from this network")
     args = p.parse_args(argv)
+    if args.cmd in (None, "showcase", "version"):
+        from .updater import apply_staged
+        apply_staged()  # swaps in a downloaded update and restarts (does nothing otherwise)
 
     if args.cmd == "relay":
         from .net import run_relay

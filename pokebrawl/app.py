@@ -180,7 +180,7 @@ class MainMenu(Scene):
         x, w = 110, 500
         self.buttons = [
             ui.Button((x, 340, w, 120), "PRACTICE", (196, 60, 60), 40, "Turn-based vs a bot - easy to insane", tag="practice"),
-            ui.Button((x, 480, w, 120), "SHOWCASE", (70, 120, 220), 40, "Mass battles, royales, tournaments + MP4",
+            ui.Button((x, 480, w, 120), "SHOWCASE", (70, 120, 220), 40, "Mass battles, legendary events + cutscenes",
                       tag="showcase"),
             ui.Button((x, 620, w, 120), "PVP", (60, 160, 90), 40, "Play your friends online - just a room code",
                       tag="pvp"),
@@ -189,15 +189,21 @@ class MainMenu(Scene):
             ui.Button((x, 860, 245, 70), "SETTINGS", (60, 58, 70), 24, tag="settings"),
             ui.Button((x + 255, 860, 245, 70), "QUIT", (60, 58, 70), 24, tag="quit"),
         ]
-        from .version import UpdateCheck, current
+        from .updater import AutoUpdater
+        from .version import current
         self.version = current()
-        self.update_check = UpdateCheck()
+        self.updater = AutoUpdater(auto=app.settings.get("auto_update", "On") == "On")
+        self.restart_btn = ui.Button((110, 946, 500, 64), "UPDATE READY - RESTART", (60, 150, 80), 26,
+                                     "or it installs next time you open the game")
 
     def update(self, dt):
         AUDIO.music("menu")
 
     def handle(self, ev, pos):
         if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
+            if self.updater.state == "ready" and self.restart_btn.hit(pos):
+                from .updater import restart
+                restart()
             for b in self.buttons:
                 if b.hit(pos):
                     self.go(b.tag)
@@ -240,7 +246,12 @@ class MainMenu(Scene):
                  13, (110, 110, 125), ow=1, chunky=False)
         h, d = self.version
         gfx.text(surf, f"version {h}  {d}", (W / 2, H - 52), 14, (130, 130, 150), ow=1, chunky=False)
-        if self.update_check.available:
+        st = self.updater.state
+        if st == "ready":
+            self.restart_btn.draw(surf)
+        elif st == "downloading":
+            gfx.text(surf, "Downloading update...", (W / 2, 978), 18, ui.MUTED, ow=1, chunky=False)
+        elif st in ("available", "error"):
             ui.panel(surf, (110, 950, 500, 56), (60, 140, 80), 12)
             gfx.text(surf, "Update available!  Run:  pokebrawl update", (W / 2, 978), 20)
 

@@ -117,6 +117,7 @@ fresh_clone() {
     || die "Couldn't download $REPO (check your internet; the repo must be public)."
 }
 OLD="$(version_of)"
+rm -rf "$APP.new" "$APP.old" "$APP.download"  # leftovers from the in-game auto-updater
 if [ -d "$APP/.git" ] && [ -n "$GIT" ]; then
   say "Updating PokeBrawl..."
   git -C "$APP" remote set-url origin "$REPO"
