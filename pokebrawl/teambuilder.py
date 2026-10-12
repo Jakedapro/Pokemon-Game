@@ -5,7 +5,7 @@ import pygame
 
 from . import clip, gfx, ui
 from .app import Scene
-from .gfx import H, SPRITES, W
+from .gfx import SPRITES, W
 from .team import (BUILDS, ITEMS, NATURES, STAT_NAMES, Member, auto_member, auto_moves, calc_stats, delete_team,
                    export_showdown, import_showdown, load_saved, mega_item_name, random_team, save_team, validate)
 

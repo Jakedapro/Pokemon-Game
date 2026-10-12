@@ -102,7 +102,6 @@ class TurnBattle:
         self.log = []
         if not self.ready():
             return self.log
-        kinds = dict(self.pending)
         choices, self.choices, self.pending = self.choices, {}, {}
         if self.stage == "preview":
             for side in (0, 1):

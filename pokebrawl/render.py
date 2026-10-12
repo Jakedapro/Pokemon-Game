@@ -89,7 +89,7 @@ class ArenaRenderer:
         for uid in list(self.units):
             if uid not in seen:
                 del self.units[uid]
-        self.projectiles = snap["p"]
+        self.projectiles = [] if snap.get("over") else snap["p"]
         self.weather = snap.get("w")
         for ev in snap["e"]:
             self._event(ev)
