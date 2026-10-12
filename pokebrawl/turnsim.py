@@ -71,6 +71,7 @@ class TurnBattle:
         self.queue = []
         self.stage = "preview"
         self.vol = [self._fresh_vol(), self._fresh_vol()]
+        self.choice_log = []   # [side, choice] in order - with the seed this replays the whole battle
 
     # ------------------------------------------------------------------ public API
     def requests(self):
@@ -94,6 +95,7 @@ class TurnBattle:
         if not self._valid(req, choice):
             return False
         self.choices[side] = choice
+        self.choice_log.append([side, choice])
         return True
 
     def ready(self):

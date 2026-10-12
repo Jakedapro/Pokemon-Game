@@ -5,6 +5,7 @@ import pygame
 
 from . import gfx, ui
 from .app import Scene
+from .battle_common import BattleExtras
 from .battlecore import STATUS_NAMES
 from .gfx import H, INK, SPRITES, W, WHITE
 from .render import STATUS_COLORS
@@ -40,7 +41,9 @@ class TurnBattleScene(Scene):
         self.move_btns = []
         self.party_btns = []
         self.mega_btn = None
-        self.end_btns = [ui.Button((160, 700, 400, 90), "MAIN MENU", ui.PANEL2, 30, tag="menu")]
+        self.x = BattleExtras(app, session, 798)
+        self.end_btns = self.x.end_buttons(640)
+        self.timer = None  # online: seconds left to choose
         self.pending_updates = []
 
     def close(self):
@@ -63,6 +66,19 @@ class TurnBattleScene(Scene):
 
     def update(self, dt):
         self.t += dt
+        if self._finished() and self.state and self.state["over"]:
+            self.x.finish(self.state["winner"])
+            self.end_btns = self.x.end_buttons(640)
+            if self.x.check_rematch():
+                return
+        if self.s.online and self.req and not self._busy():
+            if self.timer is None:
+                self.timer = 60.0
+            self.timer -= dt
+            if self.timer <= 0:
+                self._send(self._auto_choice())
+        else:
+            self.timer = None
         if self.ability_pop:
             self.ability_pop[2] -= dt
             if self.ability_pop[2] <= 0:
@@ -186,10 +202,14 @@ class TurnBattleScene(Scene):
         return (self.state and self.state["over"] and not self._busy()) or (self.s.error and not self._busy())
 
     def handle(self, ev, pos):
+        if self.x.handle(ev, pos):
+            return
         if self._finished():
-            if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1 and self.end_btns[0].hit(pos):
-                self.app.home()
-            if ev.type == pygame.KEYDOWN and ev.key in (pygame.K_ESCAPE, pygame.K_RETURN):
+            if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
+                for b in self.end_btns:
+                    if b.hit(pos):
+                        self._end_action(b.tag)
+            if ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE:
                 self.app.home()
             return
         if ev.type == pygame.KEYDOWN:
@@ -227,6 +247,25 @@ class TurnBattleScene(Scene):
             c[self.gimmick] = True
         return c
 
+    def _end_action(self, tag):
+        if tag == "menu":
+            self.app.home()
+        elif self.s.online:
+            if not self.s.error:
+                self.s.request_rematch()
+        else:
+            from .session import TurnLocal
+            mine, theirs = self.s.teams
+            self.app.replace(TurnBattleScene(self.app, TurnLocal(self.app.dex, mine, theirs, self.s.bot.level)))
+
+    def _auto_choice(self):
+        """Turn timer ran out: pick something legal."""
+        req = self.req
+        if req["kind"] in ("lead", "switch"):
+            return {"type": "switch", "index": req["switches"][0]}
+        ok = [m for m in req["moves"] if not m["disabled"]]
+        return {"type": "move", "slot": ok[0]["slot"]}
+
     def _send(self, choice):
         if not self.req:
             return
@@ -249,6 +288,9 @@ class TurnBattleScene(Scene):
         # message box
         ui.panel(surf, (20, 840, 680, 100), (36, 34, 50), 12)
         gfx.text(surf, self.msg, (40, 880), 23, anchor="midleft", chunky=False, ow=1)
+        if self.timer is not None:
+            col = (255, 110, 100) if self.timer < 10 else (220, 220, 230)
+            gfx.text(surf, f"{int(self.timer) + 1}s", (686, 880), 24, col, anchor="midright")
         for b in self.move_btns:
             b.draw(surf)
         if self.mega_btn:
@@ -264,7 +306,7 @@ class TurnBattleScene(Scene):
             surf.blit(img, img.get_rect(center=(rect.centerx, rect.centery - 8)))
             gfx.hp_bar(surf, (rect.x + 8, rect.bottom - 14, rect.w - 16, 6), m["frac"])
         if self.req and self.req["kind"] == "move" and not self._busy():
-            gfx.text(surf, "Pick a move (1-4)  -  or tap a Pokemon below to switch  -  M = Mega", (40, 922), 14,
+            gfx.text(surf, "Pick a move (1-4)  -  tap a Pokemon below to switch  -  M = Mega, T = Tera", (40, 922), 14,
                      ui.MUTED, anchor="midleft", ow=1, chunky=False)
         if self._finished():
             shade = pygame.Surface((W, H), pygame.SRCALPHA)
@@ -277,8 +319,12 @@ class TurnBattleScene(Scene):
                 won = self.state["winner"] == self.me
                 gfx.title_text(surf, "VICTORY!" if won else "DEFEAT", (W / 2, 470), 90,
                                color=(255, 230, 110) if won else WHITE)
+                gfx.text(surf, self.x.result_text, (W / 2, 545), 22)
+                if self.s.online and self.s.rematch_them and not self.s.rematch_me:
+                    gfx.text(surf, f"{self.s.names[self.foe]} wants a rematch!", (W / 2, 590), 22, (255, 230, 120))
             for b in self.end_btns:
                 b.draw(surf)
+        self.x.draw(surf, lambda i: (200, 640) if i == self.me else (520, 300))
 
     def _draw_field_info(self, surf):
         st = self.state

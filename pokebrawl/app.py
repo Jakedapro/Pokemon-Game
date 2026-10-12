@@ -5,10 +5,10 @@ import threading
 
 import pygame
 
-from . import gfx, net, pokedex, ui
+from . import gfx, pokedex, ui
 from .bot import DIFF_INFO, DIFFICULTIES, bot_team
 from .gfx import H, W
-from .session import Lobby, RTLocal, TurnLocal
+from .session import RTLocal, TurnLocal
 from .team import load_saved, random_team, validate
 
 STYLES = ["realtime", "turn"]
@@ -196,6 +196,7 @@ class MainMenu(Scene):
             from .showcase_ui import ShowcaseMenu
             self.app.push(ShowcaseMenu(self.app))
         elif tag == "pvp":
+            from .pvp_ui import PvPSetup
             self.app.push(PvPSetup(self.app))
         elif tag == "teams":
             from .teambuilder import TeamList
@@ -294,182 +295,3 @@ class PracticeSetup(Scene):
                 "Turn-based: pick a move or switch each turn, Showdown style."]
         for i, t in enumerate(tips):
             gfx.text(surf, t, (W / 2, 870 + i * 34), 18, (190, 190, 205), ow=1, chunky=False)
-
-
-# ---------------------------------------------------------------------------- pvp
-class PvPSetup(Scene):
-    def __init__(self, app):
-        super().__init__(app)
-        s = app.settings
-        opts, self.saved = team_options(app)
-        self.style = ui.Cycle((60, 200, 600, 66), "Battle style", STYLES, fmt=lambda v: STYLE_NAMES[v])
-        self.style.set(s.get("pvp_style", "turn"))
-        self.team = ui.Cycle((60, 286, 600, 66), "Your team", opts)
-        self.team.set(s.get("pvp_team", "Random"))
-        self.conn = ui.Cycle((60, 372, 600, 66), "Connection", ["direct", "relay"],
-                             fmt=lambda v: {"direct": "Direct (LAN / IP)", "relay": "Relay server"}[v])
-        self.conn.set(s.get("pvp_conn", "direct"))
-        self.name = ui.TextInput((60, 490, 600, 56), "Your name", s.get("name", os.environ.get("USER", "Trainer")))
-        self.addr = ui.TextInput((60, 590, 600, 56), "Friend's address (to join)", s.get("join_addr", ""),
-                                 "e.g. 192.168.1.20 or 100.x.y.z:7777")
-        self.relay = ui.TextInput((60, 590, 380, 56), "Relay server", s.get("relay", ""), "relay.example.com:7778")
-        self.room = ui.TextInput((460, 590, 200, 56), "Room code", s.get("room", ""), "ABCD")
-        self.inputs = [self.name, self.addr, self.relay, self.room]
-        self.buttons = [ui.Button((60, 690, 290, 110), "HOST", (60, 160, 90), 38, "you run the battle"),
-                        ui.Button((370, 690, 290, 110), "JOIN", (70, 120, 220), 38, "connect to a host"),
-                        ui.Button((60, 1150, 200, 70), "BACK", ui.PANEL2, 24)]
-        self.error = None
-
-    def visible_inputs(self):
-        if self.conn.value == "relay":
-            return [self.name, self.relay, self.room]
-        return [self.name, self.addr]
-
-    def handle(self, ev, pos):
-        for i in self.visible_inputs():
-            if i.handle(ev, pos):
-                return
-        if ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE:
-            self.app.pop()
-        if ev.type != pygame.MOUSEBUTTONDOWN or ev.button != 1:
-            return
-        for c in (self.style, self.team, self.conn):
-            c.click(pos)
-        if self.buttons[2].hit(pos):
-            self.app.pop()
-        elif self.buttons[0].hit(pos):
-            self.go("host")
-        elif self.buttons[1].hit(pos):
-            self.go("join")
-
-    def go(self, role):
-        app = self.app
-        app.settings.update(pvp_style=self.style.value, pvp_team=self.team.value, pvp_conn=self.conn.value,
-                            name=self.name.value or "Trainer", join_addr=self.addr.value, relay=self.relay.value,
-                            room=self.room.value)
-        save_settings(app.settings)
-        team = pick_team(app, self.team.value, self.saved)
-        errs = validate(app.dex, team)
-        if errs:
-            self.error = errs[0]
-            return
-        relay = self.conn.value == "relay"
-        if relay and (not self.relay.value or not self.room.value):
-            self.error = "Enter the relay server and a room code (same code as your friend)"
-            return
-        if role == "join" and not relay and not self.addr.value:
-            self.error = "Enter your friend's address"
-            return
-        app.push(LobbyScene(app, role, self.style.value, team, self.name.value or "Trainer",
-                            addr=self.addr.value, relay=self.relay.value if relay else None, room=self.room.value))
-
-    def draw(self, surf):
-        ui.menu_background(surf, self.app.t)
-        ui.header(surf, "PVP", "Battle your friends with your comp teams")
-        for c in (self.style, self.team, self.conn):
-            c.draw(surf)
-        for i in self.visible_inputs():
-            i.draw(surf)
-        for b in self.buttons:
-            b.draw(surf)
-        if self.error:
-            gfx.text(surf, self.error, (W / 2, 830), 19, (255, 120, 120), chunky=False)
-        lines = (["HOST: share your address (shown next) with your friend.",
-                  "Same Wi-Fi works right away. Over the internet: use Tailscale",
-                  "(free, easiest), forward port 7777, or a relay server."]
-                 if self.conn.value == "direct" else
-                 ["Relay: both players enter the same relay server + room code.",
-                  "Anyone can run one on a cheap VPS with: pokebrawl relay",
-                  "One player presses HOST, the other JOIN."])
-        lines += ["", "The host picks the battle style. Species + Item Clause, 1 Mega per team."]
-        for i, t in enumerate(lines):
-            gfx.text(surf, t, (W / 2, 900 + i * 32), 17, (190, 190, 205), ow=1, chunky=False)
-
-
-class LobbyScene(Scene):
-    def __init__(self, app, role, style, team, name, addr="", relay=None, room=""):
-        super().__init__(app)
-        self.role, self.style, self.team, self.name = role, style, team, name
-        self.host = None
-        self.conn = None
-        self.lobby = None
-        self.error = None
-        self.status = "Starting..."
-        self.buttons = [ui.Button((260, 1100, 200, 70), "CANCEL", ui.PANEL2, 24)]
-        self.ips = net.local_ips()
-        if role == "host":
-            try:
-                self.host = net.Host(net.DEFAULT_PORT, relay=relay, room=room)
-                self.status = "Waiting for your friend to join..." if not relay else f"Waiting in room {room.upper()}..."
-            except OSError as e:
-                self.error = f"Couldn't open port {net.DEFAULT_PORT}: {e}"
-        else:
-            self.status = "Connecting..."
-            threading.Thread(target=self._join, args=(addr, relay, room), daemon=True).start()
-        self.relay = relay
-
-    def _join(self, addr, relay, room):
-        try:
-            self.conn = net.relay_connect(relay, room, "join") if relay else net.connect(addr)
-        except Exception as e:  # noqa: BLE001
-            self.error = f"Couldn't connect: {e}"
-
-    def close(self):
-        if self.host:
-            self.host.close()
-        if self.conn and not self.lobby:
-            self.conn.close()
-
-    def handle(self, ev, pos):
-        if (ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1 and self.buttons[0].hit(pos)) or \
-                (ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE):
-            self.app.pop()
-
-    def update(self, dt):
-        if self.error:
-            return
-        if self.host and self.host.error:
-            self.error = self.host.error
-        if self.conn is None and self.host and self.host.conn:
-            self.conn = self.host.conn
-        if self.conn and not self.lobby:
-            self.status = "Connected! Exchanging teams..."
-            self.lobby = Lobby(self.app.dex, self.conn, self.role, self.style, self.team, self.name)
-        if self.lobby:
-            session = self.lobby.poll()
-            if self.lobby.error:
-                self.error = self.lobby.error
-            elif session:
-                app = self.app
-                if self.lobby.style == "realtime":
-                    from .battle_rt import RTBattle
-                    scene = RTBattle(app, session)
-                    ids = [r["species"] for r in session.roster.values()]
-                else:
-                    from .battle_turn import TurnBattleScene
-                    scene = TurnBattleScene(app, session)
-                    ids = [m.species for m in self.team]
-                self.lobby = None  # the session owns the connection now
-                self.conn = None
-                if self.host:
-                    self.host.close()
-                    self.host = None
-                app.replace(PrefetchScene(app, ids, lambda: scene))
-
-    def draw(self, surf):
-        ui.menu_background(surf, self.app.t)
-        ui.header(surf, "HOSTING" if self.role == "host" else "JOINING", STYLE_NAMES[self.style]
-                  if self.role == "host" else None)
-        ui.panel(surf, (60, 260, 600, 420))
-        if self.error:
-            gfx.text(surf, self.error, (W / 2, 420), 20, (255, 120, 120), chunky=False)
-        else:
-            gfx.text(surf, self.status, (W / 2, 320), 26)
-            dots = "." * (int(self.app.t * 2) % 4)
-            gfx.text(surf, dots, (W / 2, 360), 30)
-            if self.role == "host" and not self.relay:
-                gfx.text(surf, "Tell your friend to JOIN one of:", (W / 2, 430), 20, ui.MUTED, chunky=False)
-                for i, ip in enumerate(self.ips[:4]):
-                    gfx.text(surf, f"{ip}:{net.DEFAULT_PORT}", (W / 2, 480 + i * 44), 30, (255, 240, 150))
-        for b in self.buttons:
-            b.draw(surf)

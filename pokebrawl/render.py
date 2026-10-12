@@ -29,7 +29,7 @@ class Particle:
 
 class UnitView:
     __slots__ = ("uid", "team", "form", "x", "y", "hp", "r", "flags", "status", "face", "anim", "target",
-                 "flash", "spawn", "name", "seen")
+                 "flash", "spawn", "name", "seen", "tx", "ty")
 
     def __init__(self, row, name):
         self.uid = row[0]
@@ -38,9 +38,11 @@ class UnitView:
         self.name = name
         self.update(row)
 
-    def update(self, row):
-        (_, self.team, self.form, self.x, self.y, self.hp, self.r, self.flags, self.status, self.face,
+    def update(self, row, smooth=False):
+        (_, self.team, self.form, self.tx, self.ty, self.hp, self.r, self.flags, self.status, self.face,
          self.anim, self.target) = row
+        if not smooth or not hasattr(self, "x") or abs(self.tx - self.x) + abs(self.ty - self.y) > 160:
+            self.x, self.y = self.tx, self.ty
 
 
 class ArenaRenderer:
@@ -74,6 +76,7 @@ class ArenaRenderer:
         self.last_snapshot_t = 0.0
         self.shake = 0.0
         self.show_boss_bars = True
+        self.smooth = False
 
     # ------------------------------------------------------------------ feeding state
     def feed(self, snap):
@@ -82,7 +85,7 @@ class ArenaRenderer:
             uid = row[0]
             seen.add(uid)
             if uid in self.units:
-                self.units[uid].update(row)
+                self.units[uid].update(row, self.smooth)
             else:
                 info = self.roster.get(uid, {})
                 self.units[uid] = UnitView(row, info.get("name", "?"))
@@ -232,9 +235,12 @@ class ArenaRenderer:
     def update(self, dt):
         self.t += dt
         self.shake = max(0.0, self.shake - dt)
+        k_move = min(1.0, dt * 16)
         for u in self.units.values():
             u.flash = max(0.0, u.flash - dt)
             u.spawn += dt
+            u.x += (u.tx - u.x) * k_move
+            u.y += (u.ty - u.y) * k_move
         for d in self.dead:
             d[4] += dt
         self.dead = [d for d in self.dead if d[4] < 0.7]

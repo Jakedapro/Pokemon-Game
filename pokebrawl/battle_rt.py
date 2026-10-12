@@ -3,6 +3,7 @@ import pygame
 
 from . import gfx, ui
 from .app import Scene
+from .battle_common import BattleExtras
 from .gfx import H, W, WHITE
 from .render import FX, ArenaRenderer
 from .session import INTRO_HOLD
@@ -25,9 +26,9 @@ class RTBattle(Scene):
         self.move_buttons = []
         self.mega_button = None
         self.buttons = []
-        self.end_buttons = [ui.Button((160, 760, 400, 90), "MAIN MENU", ui.PANEL2, 30, tag="menu")]
-        if not session.online:
-            self.end_buttons.insert(0, ui.Button((160, 650, 400, 90), "REMATCH", (196, 60, 60), 30, tag="rematch"))
+        self.x = BattleExtras(app, session, PANEL_Y - 44)
+        self.end_buttons = self.x.end_buttons(620)
+        self.r.smooth = not hasattr(session, "sim")  # online client: glide between network snapshots
 
     def close(self):
         self.s.close()
@@ -60,6 +61,8 @@ class RTBattle(Scene):
 
     # ------------------------------------------------------------------ input
     def handle(self, ev, pos):
+        if self.x.handle(ev, pos):
+            return
         if self.over or self.s.error:
             if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
                 for b in self.end_buttons:
@@ -119,15 +122,15 @@ class RTBattle(Scene):
     def _end_action(self, tag):
         if tag == "menu":
             self.app.home()
+        elif tag == "rematch" and self.s.online:
+            if not self.s.error:
+                self.s.request_rematch()
         elif tag == "rematch" and self.rematch:
             self.app.replace(self.rematch())
         elif tag == "rematch":
             from .session import RTLocal
-            sim = self.s.sim
-            mine = [u.mon.member for u in sim.units if u.team == 0]
-            theirs = [u.mon.member for u in sim.units if u.team == 1]
-            diff = self.s.bot.level
-            self.app.replace(RTBattle(self.app, RTLocal(self.app.dex, mine, theirs, diff)))
+            mine, theirs = self.s.teams
+            self.app.replace(RTBattle(self.app, RTLocal(self.app.dex, mine, theirs, self.s.bot.level)))
 
     # ------------------------------------------------------------------ loop
     def update(self, dt):
@@ -138,6 +141,11 @@ class RTBattle(Scene):
             if snap["over"] and not self.over:
                 self.over = True
                 self.winner = snap["win"]
+        if self.over:
+            self.x.finish(self.winner)
+            self.end_buttons = self.x.end_buttons(620)
+            if self.x.check_rematch():
+                return
         if self.selected and self.selected not in self.r.units:
             self.selected = None
         self.r.selected = self.selected
@@ -164,8 +172,13 @@ class RTBattle(Scene):
                 won = self.winner == self.me
                 gfx.title_text(surf, "VICTORY!" if won else ("DRAW" if self.winner is None else "DEFEAT"),
                                (W / 2, 470), 90, color=(255, 230, 110) if won else WHITE)
+                gfx.text(surf, self.x.result_text, (W / 2, 545), 22)
+                if self.s.online and self.s.rematch_them and not self.s.rematch_me:
+                    gfx.text(surf, f"{self.s.names[1 - self.me]} wants a rematch!", (W / 2, 590), 22,
+                             (255, 230, 120))
             for b in self.end_buttons:
                 b.draw(surf)
+        self.x.draw(surf, lambda i: (130 if i == 0 else W - 130, 130))
 
     def _draw_top(self, surf):
         bar = pygame.Surface((W, 74), pygame.SRCALPHA)

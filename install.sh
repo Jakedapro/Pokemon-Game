@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # PokeBrawl one-command installer (macOS, also works on Linux).
 #
-#   curl -fsSL https://raw.githubusercontent.com/jamalmusialla81-hub/Pok-mon-Game/HEAD/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/jamalmusialla81-hub/Pokemon-Game/HEAD/install.sh | bash
 #
 # Installs into ~/.pokebrawl, adds a `pokebrawl` command and a PokeBrawl app in ~/Applications.
 # Re-running it updates the game.
 set -euo pipefail
 
-REPO="${POKEBRAWL_REPO:-https://github.com/jamalmusialla81-hub/Pok-mon-Game.git}"
+REPO="${POKEBRAWL_REPO:-https://github.com/jamalmusialla81-hub/Pokemon-Game.git}"
 BRANCH="${POKEBRAWL_BRANCH:-}"
 ROOT="${POKEBRAWL_HOME:-$HOME/.pokebrawl}"
 APP="$ROOT/app"
@@ -65,7 +65,7 @@ cat > "$BIN/pokebrawl" <<EOF
 #!/usr/bin/env bash
 export PYTHONPATH="$APP\${PYTHONPATH:+:\$PYTHONPATH}"
 if [ "\${1:-}" = "update" ]; then
-  exec bash -c "curl -fsSL https://raw.githubusercontent.com/jamalmusialla81-hub/Pok-mon-Game/HEAD/install.sh | bash"
+  exec bash -c "curl -fsSL https://raw.githubusercontent.com/jamalmusialla81-hub/Pokemon-Game/HEAD/install.sh | bash"
 fi
 exec "$VENV/bin/python" -m pokebrawl "\$@"
 EOF

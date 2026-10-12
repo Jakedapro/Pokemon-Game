@@ -1,55 +1,76 @@
-"""Networking: JSON-lines over TCP, direct host/join, and a tiny relay server for playing over the internet
-without port forwarding (run `pokebrawl relay` on any server both players can reach)."""
+"""Networking: JSON messages over TCP, direct host/join, and a tiny relay server for playing over the internet
+without port forwarding (run `pokebrawl relay` on any server both players can reach).
+
+Every connection type (direct TCP, relay, online rooms in online.py) shares BaseConn: an inbox drained with
+poll(), a heartbeat that measures ping and notices dead connections, and send()/close().
+"""
 import json
 import queue
 import socket
 import threading
+import time
 
-PROTO = 1
+PROTO = 2
 DEFAULT_PORT = 7777
 RELAY_PORT = 7778
+HEARTBEAT = 2.0      # seconds between pings
+TIMEOUT = 20.0       # no traffic for this long = connection lost
 
 
-class Conn:
-    """A message connection. Incoming messages are queued; `poll()` drains them."""
-
-    def __init__(self, sock, buffered=b""):
-        self.sock = sock
-        self.sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+class BaseConn:
+    def __init__(self):
         self.inbox = queue.Queue()
-        self.closed = False
-        self.error = None
-        self._lock = threading.Lock()
-        self._buf = buffered
         self._unread = []
-        threading.Thread(target=self._reader, daemon=True).start()
+        self._closed = False
+        self.error = None
+        self.rtt = None           # seconds, measured by the heartbeat
+        self.last_rx = time.time()
+        self.kind = "direct"
+        self._hb_started = False
 
-    def _reader(self):
-        buf = self._buf
-        try:
-            while True:
-                while b"\n" in buf:
-                    line, buf = buf.split(b"\n", 1)
-                    if line.strip():
-                        self.inbox.put(json.loads(line))
-                data = self.sock.recv(65536)
-                if not data:
-                    break
-                buf += data
-        except (OSError, ValueError) as e:
-            self.error = str(e)
-        self.closed = True
+    # subclasses implement _send_raw(obj) and _close_raw()
+    def _deliver(self, msg):
+        """Called by the receive thread for every incoming message."""
+        self.last_rx = time.time()
+        t = msg.get("t")
+        if t == "ping":
+            self.send({"t": "pong", "ts": msg.get("ts")})
+        elif t == "pong":
+            try:
+                self.rtt = max(0.0, time.time() - float(msg.get("ts")))
+            except (TypeError, ValueError):
+                pass
+        elif t == "bye":
+            self.error = self.error or "Your opponent left"
+            self._closed = True
+        else:
+            self.inbox.put(msg)
+
+    def start_heartbeat(self):
+        if self._hb_started:
+            return
+        self._hb_started = True
+
+        def beat():
+            while not self.closed:
+                self.send({"t": "ping", "ts": time.time()})
+                time.sleep(HEARTBEAT)
+        threading.Thread(target=beat, daemon=True).start()
+
+    @property
+    def closed(self):
+        if not self._closed and time.time() - self.last_rx > TIMEOUT:
+            self.error = self.error or "Connection timed out"
+            self._closed = True
+        return self._closed
+
+    @closed.setter
+    def closed(self, v):
+        self._closed = v
 
     def send(self, obj):
-        if self.closed:
-            return
-        data = (json.dumps(obj, separators=(",", ":")) + "\n").encode()
-        try:
-            with self._lock:
-                self.sock.sendall(data)
-        except OSError as e:
-            self.error = str(e)
-            self.closed = True
+        if not self._closed:
+            self._send_raw(obj)
 
     def unread(self, msgs):
         """Put messages back so the next poll() returns them first."""
@@ -64,7 +85,56 @@ class Conn:
                 return out
 
     def close(self):
-        self.closed = True
+        if not self._closed:
+            try:
+                self._send_raw({"t": "bye"})
+            except Exception:  # noqa: BLE001
+                pass
+        self._closed = True
+        self._close_raw()
+
+
+class Conn(BaseConn):
+    """A TCP connection carrying newline-delimited JSON."""
+
+    def __init__(self, sock, buffered=b"", kind="direct"):
+        super().__init__()
+        self.kind = kind
+        self.sock = sock
+        self.sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        self._lock = threading.Lock()
+        self._buf = buffered
+        threading.Thread(target=self._reader, daemon=True).start()
+        self.start_heartbeat()
+
+    def _reader(self):
+        buf = self._buf
+        try:
+            while True:
+                while b"\n" in buf:
+                    line, buf = buf.split(b"\n", 1)
+                    if line.strip():
+                        self._deliver(json.loads(line))
+                data = self.sock.recv(65536)
+                if not data:
+                    break
+                buf += data
+        except (OSError, ValueError) as e:
+            self.error = self.error or str(e)
+        if not self._closed:
+            self.error = self.error or "Connection closed"
+        self._closed = True
+
+    def _send_raw(self, obj):
+        data = (json.dumps(obj, separators=(",", ":")) + "\n").encode()
+        try:
+            with self._lock:
+                self.sock.sendall(data)
+        except OSError as e:
+            self.error = str(e)
+            self._closed = True
+
+    def _close_raw(self):
         try:
             self.sock.shutdown(socket.SHUT_RDWR)
         except OSError:
@@ -91,6 +161,7 @@ class Host:
         self.error = None
         self.port = port
         self._srv = None
+        self.status = "Waiting for your friend to join..."
         if relay:
             threading.Thread(target=self._via_relay, args=(relay, room), daemon=True).start()
         else:
@@ -141,7 +212,7 @@ def relay_connect(relay_addr, room, role, timeout=8):
     msg, rest = _read_line(sock)  # blocks until the other player arrives
     if not msg.get("paired"):
         raise ConnectionError(msg.get("error", "relay refused"))
-    return Conn(sock, rest)
+    return Conn(sock, rest, kind="relay")
 
 
 def local_ips():

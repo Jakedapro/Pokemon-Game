@@ -18,7 +18,7 @@ Two battle styles (for Practice and PvP):
 Open **Terminal** and paste:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/jamalmusialla81-hub/Pok-mon-Game/HEAD/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/jamalmusialla81-hub/Pokemon-Game/HEAD/install.sh | bash
 ```
 
 Then type `pokebrawl` (or open **PokeBrawl** from `~/Applications`).
