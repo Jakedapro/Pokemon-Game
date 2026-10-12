@@ -179,6 +179,13 @@ class ArenaRenderer:
             if u:
                 self.fx.append(FX("mega", 1.6, uid=uid, form=form, name=name.upper()))
                 self._burst(u.x, u.y, (255, 255, 255), 24, 200, 4, 0.8)
+        elif kind == "tera":
+            _, uid, ttype = ev
+            u = self.units.get(uid)
+            if u:
+                self.fx.append(FX("tera", 1.4, uid=uid, type=ttype))
+                self._burst(u.x, u.y, type_color(ttype, 1), 28, 220, 5, 0.9)
+                self._label(uid, f"TERA {ttype.upper()}", ttype)
         elif kind == "status":
             _, uid, st = ev
             if st in STATUS_COLORS:
@@ -369,6 +376,8 @@ class ArenaRenderer:
             white = max(white, 0.7)
         if u.status in ("frz",):
             white = max(white, 0.3)
+        if u.flags & 32:  # terastallized: crystal outline in the tera type's color
+            outline = type_color(self.roster.get(u.uid, {}).get("tera", "normal"), 1)
         img = SPRITES.get(u.form, hgt, flip=u.face > 0, outline=outline, white=round(white, 1))
         bob = math.sin(self.t * 6 + u.uid) * 1.5 if u.status not in ("slp", "frz") else 0
         lunge = u.anim * 18 * u.face
@@ -380,6 +389,12 @@ class ArenaRenderer:
         if self.selected == u.uid:
             pygame.draw.ellipse(w, (255, 255, 120), (u.x - u.r * 1.1, u.y + u.r * 0.3, u.r * 2.2, u.r * 0.8), 3)
         w.blit(img, rect)
+        if u.flags & 32:
+            col = type_color(self.roster.get(u.uid, {}).get("tera", "normal"), 1)
+            cx, top = rect.centerx, rect.top - 6
+            pygame.draw.polygon(w, col, [(cx, top - 12), (cx + 7, top - 4), (cx, top + 4), (cx - 7, top - 4)])
+            pygame.draw.polygon(w, (255, 255, 255), [(cx, top - 12), (cx + 7, top - 4), (cx, top + 4),
+                                                     (cx - 7, top - 4)], 2)
         if u.status and self.mode == "showcase":
             gfx.pill(w, STATUS_NAMES.get(u.status, u.status.upper()), (u.x, rect.bottom + 6),
                      STATUS_COLORS.get(u.status, (120, 120, 120)), 9)
@@ -432,6 +447,15 @@ class ArenaRenderer:
             y = d["y"] - 300 * (1 - p)
             pygame.draw.circle(w, d["color"], (d["x"] + 60 * (1 - p), y), 14)
             pygame.draw.circle(w, (255, 200, 120), (d["x"] + 60 * (1 - p), y), 7)
+        elif f.kind == "tera":
+            u = self.units.get(d["uid"])
+            if u:
+                col = type_color(d["type"], 1)
+                rr = u.r * (1.2 + p * 1.8)
+                pts = [(u.x + math.cos(a) * rr, u.y - u.r * 0.4 + math.sin(a) * rr)
+                       for a in [i * math.tau / 6 + p * 2 for i in range(6)]]
+                pygame.draw.polygon(w, col, pts, max(1, int(6 * (1 - p))))
+                pygame.draw.polygon(w, (255, 255, 255), pts, max(1, int(2 * (1 - p))))
         elif f.kind == "boom":
             rr = int(d["r"] * (0.3 + p))
             pygame.draw.circle(w, (255, 230, 140), (d["x"], d["y"]), rr, max(1, int(14 * (1 - p))))

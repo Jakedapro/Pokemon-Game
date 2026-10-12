@@ -32,6 +32,8 @@ class TurnBattleScene(Scene):
         self.flash = {0: 0.0, 1: 0.0}
         self.faint = {0: 0.0, 1: 0.0}
         self.mega_on = False
+        self.gimmick = "mega"
+        self.ability_pop = None
         self.waiting = False
         self.t = 0.0
         self.buttons = []
@@ -54,12 +56,17 @@ class TurnBattleScene(Scene):
                 continue
             m = sd["mons"][sd["active"]]
             self.vis[side] = {"id": m["id"], "frac": m["frac"], "status": m["status"], "name": m["name"],
-                              "idx": sd["active"], "fainted": m["fainted"]}
+                              "idx": sd["active"], "fainted": m["fainted"],
+                              "tera": m.get("tera") if m.get("terastallized") else None}
             if not m["fainted"]:
                 self.faint[side] = 0.0
 
     def update(self, dt):
         self.t += dt
+        if self.ability_pop:
+            self.ability_pop[2] -= dt
+            if self.ability_pop[2] <= 0:
+                self.ability_pop = None
         for side in (0, 1):
             self.shake[side] = max(0.0, self.shake[side] - dt)
             self.flash[side] = max(0.0, self.flash[side] - dt)
@@ -130,6 +137,11 @@ class TurnBattleScene(Scene):
             if e:
                 self.vis[a[1]]["name"] = e["name"]
             self.flash[a[1]] = 0.8
+        elif kind == "tera":
+            self.vis[a[1]]["tera"] = a[2]
+            self.flash[a[1]] = 0.8
+        elif kind == "ability":
+            self.ability_pop = [a[1], str(a[2]).replace("-", " ").title(), 1.4]
         elif kind == "status":
             self.vis[a[1]]["status"] = a[2]
         elif kind == "move":
@@ -151,8 +163,15 @@ class TurnBattleScene(Scene):
                               enabled=not m["disabled"], tag=m["slot"])
                 self.move_btns.append(b)
             if req["can_mega"]:
+                self.gimmick = "mega"
                 self.mega_btn = ui.Button((20, 1150, 160, 100), "MEGA", (150, 70, 210) if self.mega_on else ui.PANEL2,
                                           28, "ON" if self.mega_on else "off")
+            elif req.get("can_tera"):
+                self.gimmick = "tera"
+                tt = req.get("tera_type", "normal")
+                self.mega_btn = ui.Button((20, 1150, 160, 100), "TERA",
+                                          gfx.type_color(tt, 2) if self.mega_on else ui.PANEL2, 28,
+                                          f"{tt.upper()} {'ON' if self.mega_on else 'off'}")
         if self.state and req:
             sd = self.state["sides"][self.me]
             allowed = set(req.get("switches", []))
@@ -176,12 +195,12 @@ class TurnBattleScene(Scene):
         if ev.type == pygame.KEYDOWN:
             if ev.key == pygame.K_ESCAPE:
                 self.app.home()
-            elif ev.key == pygame.K_m and self.mega_btn:
+            elif ev.key in (pygame.K_m, pygame.K_t) and self.mega_btn:
                 self.mega_on = not self.mega_on
             elif ev.key in (pygame.K_1, pygame.K_2, pygame.K_3, pygame.K_4):
                 i = ev.key - pygame.K_1
                 if i < len(self.move_btns) and self.move_btns[i].enabled:
-                    self._send({"type": "move", "slot": self.move_btns[i].tag, "mega": self.mega_on})
+                    self._send(self._move_choice(self.move_btns[i].tag))
             elif ev.key == pygame.K_SPACE and self._busy():
                 self.cur_t = 99  # skip ahead
             return
@@ -192,7 +211,7 @@ class TurnBattleScene(Scene):
             return
         for b in self.move_btns:
             if b.hit(pos):
-                self._send({"type": "move", "slot": b.tag, "mega": self.mega_on})
+                self._send(self._move_choice(b.tag))
                 return
         if self.mega_btn and self.mega_btn.hit(pos):
             self.mega_on = not self.mega_on
@@ -201,6 +220,12 @@ class TurnBattleScene(Scene):
             if ok and rect.collidepoint(pos):
                 self._send({"type": "switch", "index": i})
                 return
+
+    def _move_choice(self, slot):
+        c = {"type": "move", "slot": slot}
+        if self.mega_on and self.mega_btn:
+            c[self.gimmick] = True
+        return c
 
     def _send(self, choice):
         if not self.req:
@@ -305,6 +330,11 @@ class TurnBattleScene(Scene):
             gfx.pill(surf, STATUS_NAMES.get(v["status"], ""), (x + 300, y + 24), STATUS_COLORS.get(v["status"],
                                                                                               (90, 90, 90)), 13)
         gfx.hp_bar(surf, (x + 16, y + 48, 328, 12), v["frac"])
+        if v.get("tera"):
+            gfx.pill(surf, f"TERA {v['tera'].upper()}", (x + 220, y + 78), gfx.type_color(v["tera"], 2), 12)
+        if self.ability_pop and self.ability_pop[0] == side:
+            ui.panel(surf, (x + 30, y - 46, 300, 38), (60, 50, 90), 8)
+            gfx.text(surf, self.ability_pop[1], (x + 180, y - 27), 20, (255, 230, 150))
         sd = self.state["sides"][side]
         if side == self.me and v.get("idx") is not None:
             m = sd["mons"][v["idx"]]

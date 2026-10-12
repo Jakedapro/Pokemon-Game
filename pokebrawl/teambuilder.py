@@ -6,8 +6,11 @@ import pygame
 from . import clip, gfx, ui
 from .app import Scene
 from .gfx import SPRITES, W
-from .team import (BUILDS, ITEMS, NATURES, STAT_NAMES, Member, auto_member, auto_moves, calc_stats, delete_team,
-                   export_showdown, import_showdown, load_saved, mega_item_name, random_team, save_team, validate)
+from . import abilities as AB
+from .team import (BUILDS, ITEMS, NATURES, STAT_NAMES, Member, auto_member, auto_moves, best_ability, calc_stats,
+                   delete_team, export_showdown, import_showdown, load_saved, mega_item_name, random_team,
+                   save_team, validate)
+from .types import TYPES
 
 ITEM_KEYS = [k for k in ITEMS if k != "mega-stone"]
 
@@ -138,11 +141,19 @@ class TeamEdit(Scene):
                 mc.set(m.mega)
                 self.cycles["mega"] = mc
             off = 66 if "mega" in self.cycles else 0
-            nat = ui.Cycle((40, y + 150 + off, 640, 56), "Nature", list(NATURES), fmt=self._nature_fmt)
+            abil = [a for a, _ in e["abilities"]] or [None]
+            ac = ui.Cycle((40, y + 150 + off, 315, 56), "Ability", abil,
+                          fmt=lambda a: AB.ability_name(a) + ("" if a in AB.DESCRIPTIONS or a is None else " *"))
+            ac.set(m.ability or best_ability(e))
+            self.cycles["ability"] = ac
+            tc = ui.Cycle((365, y + 150 + off, 315, 56), "Tera", TYPES, fmt=str.title)
+            tc.set(m.tera or e["types"][0])
+            self.cycles["tera"] = tc
+            nat = ui.Cycle((40, y + 216 + off, 315, 56), "Nature", list(NATURES), fmt=self._nature_fmt)
             nat.set(m.nature)
             self.cycles["nature"] = nat
             builds = list(BUILDS) + (["Custom"] if self._build_of(m) == "Custom" else [])
-            bc = ui.Cycle((40, y + 216 + off, 640, 56), "EV build", builds)
+            bc = ui.Cycle((365, y + 216 + off, 315, 56), "EVs", builds)
             bc.set(self._build_of(m))
             self.cycles["build"] = bc
             my = y + 290 + off
@@ -165,7 +176,7 @@ class TeamEdit(Scene):
 
     def _nature_fmt(self, n):
         up, down = NATURES[n]
-        return f"{n} (+{STAT_NAMES[up]} -{STAT_NAMES[down]})" if up else f"{n} (neutral)"
+        return f"{n} +{STAT_NAMES[up]}" if up else f"{n}"
 
     def _build_of(self, m):
         for name, (evs, nat) in BUILDS.items():
@@ -201,6 +212,10 @@ class TeamEdit(Scene):
                     m.mega = c.value
                 elif key == "nature":
                     m.nature = c.value
+                elif key == "ability":
+                    m.ability = c.value
+                elif key == "tera":
+                    m.tera = c.value
                 elif key == "build" and c.value in BUILDS:
                     m.evs = dict(BUILDS[c.value][0])
                 self.rebuild()
@@ -297,6 +312,10 @@ class TeamEdit(Scene):
             line = "  ".join(f"{STAT_NAMES[k]} {v}" for k, v in st.items())
             types = " / ".join(t.upper() for t in e["types"])
             gfx.text(surf, f"{types}   Lv{m.level}   {line}", (W / 2, 1140 - 10), 15, (200, 200, 215), ow=1,
+                     chunky=False)
+            ab_key = m.ability or best_ability(e)
+            desc = AB.DESCRIPTIONS.get(ab_key, "No battle effect in this game yet")
+            gfx.text(surf, f"{AB.ability_name(ab_key)}: {desc}", (W / 2, 1040), 15, (255, 230, 150), ow=1,
                      chunky=False)
         errs = validate(self.dex, self.members) if self.members else ["Add at least one Pokemon"]
         msg = self.msg or (errs[0] if errs else "Team is legal - ready for battle!")

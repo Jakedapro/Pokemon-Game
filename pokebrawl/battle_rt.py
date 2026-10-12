@@ -51,7 +51,12 @@ class RTBattle(Scene):
             y = PANEL_Y + 52 + (i // 2) * 62
             self.move_buttons.append(ui.Button((x, y, 236, 54), name, gfx.type_color(mtype, 2), 20, tag=i))
         if u.flags & 4:
-            self.mega_button = ui.Button((530, PANEL_Y + 52, 170, 116), "MEGA", (150, 70, 210), 32, "press M")
+            self.mega_button = ui.Button((530, PANEL_Y + 52, 170, 116), "MEGA", (150, 70, 210), 32, "press M",
+                                         tag="mega")
+        elif u.flags & 64:
+            tt = info.get("tera", "normal")
+            self.mega_button = ui.Button((530, PANEL_Y + 52, 170, 116), "TERA", gfx.type_color(tt, 2), 32,
+                                         f"{tt.upper()} - press T", tag="tera")
 
     # ------------------------------------------------------------------ input
     def handle(self, ev, pos):
@@ -78,6 +83,8 @@ class RTBattle(Scene):
                     cands = [pick]
                 if cands:
                     self.s.command({"cmd": "mega", "unit": cands[0].uid})
+            elif ev.key == pygame.K_t and self.selected:
+                self.s.command({"cmd": "tera", "unit": self.selected})
             elif ev.key == pygame.K_TAB:
                 mine = sorted(u.uid for u in self.my_units())
                 if mine:
@@ -92,7 +99,7 @@ class RTBattle(Scene):
                     self.s.command({"cmd": "move", "unit": self.selected, "slot": b.tag})
                     return
             if self.mega_button and self.mega_button.hit(pos):
-                self.s.command({"cmd": "mega", "unit": self.selected})
+                self.s.command({"cmd": self.mega_button.tag, "unit": self.selected})
             return
         u = self.r.unit_at(*pos)
         if ev.button == 1:
@@ -192,7 +199,7 @@ class RTBattle(Scene):
         u = self.r.units.get(self.selected)
         if not u:
             gfx.text(surf, "Click one of your Pokemon to control it", (W / 2, PANEL_Y + 50), 22)
-            gfx.text(surf, "Click an enemy = whole team focuses it  -  M = Mega  -  Tab = cycle",
+            gfx.text(surf, "Click an enemy = whole team focuses it  -  M = Mega  -  T = Tera  -  Tab = cycle",
                      (W / 2, PANEL_Y + 92), 17, ui.MUTED, ow=1, chunky=False)
             gfx.text(surf, "Selected: click enemy to focus, right-click ground to move, 1-4 = use move",
                      (W / 2, PANEL_Y + 124), 17, ui.MUTED, ow=1, chunky=False)
@@ -201,7 +208,8 @@ class RTBattle(Scene):
         e = self.app.dex.all.get(u.form, {})
         gfx.text(surf, e.get("name", info.get("name", "?")), (20, PANEL_Y + 24), 24, anchor="midleft")
         types = " / ".join(t.upper() for t in e.get("types", []))
-        gfx.text(surf, f"{types}   {info.get('item', '')}   HP {int(u.hp * 100)}%", (W - 20, PANEL_Y + 24), 16,
+        gfx.text(surf, f"{types}   {info.get('ability', '')}   {info.get('item', '')}   HP {int(u.hp * 100)}%",
+                 (W - 20, PANEL_Y + 24), 15,
                  ui.MUTED, anchor="midright", ow=1, chunky=False)
         for b in self.move_buttons:
             b.draw(surf)

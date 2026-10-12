@@ -11,7 +11,8 @@ Choices: {"type": "move", "slot": i, "mega": bool} or {"type": "switch", "index"
 """
 import random
 
-from .battlecore import AILMENT_TO_STATUS, STATUS_NAMES, Mon, acc_mult, damage
+from . import abilities as AB
+from .battlecore import AILMENT_TO_STATUS, STATUS_NAMES, Mon, acc_mult, damage, move_type_and_power
 from .types import effectiveness
 
 WEATHER_MOVES = {"rain-dance": "rain", "sunny-day": "sun", "sandstorm": "sand", "snowscape": "snow",
@@ -36,6 +37,7 @@ class Side:
         self.tspikes = 0
         self.reflect = self.light_screen = self.veil = self.tailwind = 0
         self.mega_used = False
+        self.tera_used = False
         self.wish = None  # (turns_left, amount)
         self.heal_next = False
         self.pass_stages = None
@@ -139,6 +141,8 @@ class TurnBattle:
                     slot = v["charging"]
                 if c.get("mega") and self.sides[side].mon.can_mega and not self.sides[side].mega_used:
                     actions.append(("mega", side, None))
+                elif c.get("tera") and not self.sides[side].tera_used and not self.sides[side].mon.megaed:
+                    actions.append(("tera", side, None))
                 actions.append(("move", side, slot))
         self.queue = self._order(actions)
         self._continue()
@@ -155,13 +159,16 @@ class TurnBattle:
                 "mons": [{"id": m.entry["id"], "name": m.name, "hp": m.hp, "maxhp": m.maxhp,
                           "frac": round(m.hp_frac(), 4), "status": m.status, "fainted": m.fainted,
                           "types": m.types, "item": m.member.item_name(self.dex) if m.item != "none" else "",
+                          "ability": AB.ability_name(m.ability) if viewer in (None, s.index) else "",
+                          "tera": m.tera_type if (m.terastallized or viewer in (None, s.index)) else None,
+                          "terastallized": m.terastallized,
                           "moves": [mv["name"] for mv in m.moves] if viewer in (None, s.index) else []}
                          for m in s.mons],
                 "stages": {k: v_ for k, v_ in s.mon.stages.items() if v_} if s.mon else {},
                 "rocks": s.rocks, "spikes": s.spikes, "tspikes": s.tspikes,
                 "screens": [n for n, t in (("Reflect", s.reflect), ("Light Screen", s.light_screen),
                                            ("Aurora Veil", s.veil), ("Tailwind", s.tailwind)) if t],
-                "sub": v["sub"] > 0, "mega_used": s.mega_used,
+                "sub": v["sub"] > 0, "mega_used": s.mega_used, "tera_used": s.tera_used,
             })
         return out
 
@@ -190,6 +197,7 @@ class TurnBattle:
                       "acc": 101, "cls": "phys", "disabled": False}]
         forced = v["charging"] is not None or v["recharge"]
         return {"kind": "move", "moves": moves, "can_mega": mon.can_mega and not s.mega_used,
+                "can_tera": not s.tera_used and not mon.megaed and not mon.can_mega, "tera_type": mon.tera_type,
                 "switches": [] if forced else s.bench(), "forced": forced}
 
     def _valid(self, req, c):
@@ -213,11 +221,11 @@ class TurnBattle:
             kind, side, arg = a
             if kind == "switch":
                 pri = 7
-            elif kind == "mega":
+            elif kind in ("mega", "tera"):
                 pri = 6
             else:
                 mv = self._move_obj(side, arg)
-                pri = mv["pri"]
+                pri = mv["pri"] + AB.priority(self.sides[side].mon, mv)
             sp = self._speed(side)
             if self.trick_room and kind == "move":
                 sp = -sp
@@ -239,9 +247,9 @@ class TurnBattle:
                 self._switch_out(side)
                 self._switch_in(side, arg)
                 self._after_switch_ins([side])
-            elif kind == "mega":
+            elif kind in ("mega", "tera"):
                 if s.mon and not s.mon.fainted:
-                    self._mega(side)
+                    self._mega(side) if kind == "mega" else self._tera(side)
                 # re-sort: megas can change speed
                 self.queue = self._order(self.queue)
             elif kind == "move":
@@ -292,6 +300,10 @@ class TurnBattle:
     def _switch_out(self, side):
         s = self.sides[side]
         if s.mon:
+            AB.on_switch_out(s.mon)
+            s.mon.type_override = None
+            s.mon.flags.pop("protean_used", None)
+            s.mon.flags.pop("flash_fire", None)
             s.mon.choice_lock = None
             s.mon.stages = {k: 0 for k in s.mon.stages}
             if s.mon.status == "tox":
@@ -328,10 +340,10 @@ class TurnBattle:
             grounded = "flying" not in mon.types and mon.item != "air-balloon"
             if s.rocks:
                 dmg = mon.maxhp * effectiveness("rock", mon.types) / 8
-                mon.take(dmg, from_full_ok=False)
+                mon.indirect(dmg)
                 self.emit(f"Pointed stones dug into {mon.name}!", ["hp", side, mon.hp_frac()])
             if s.spikes and grounded:
-                mon.take(mon.maxhp * {1: 1 / 8, 2: 1 / 6, 3: 1 / 4}[s.spikes], from_full_ok=False)
+                mon.indirect(mon.maxhp * {1: 1 / 8, 2: 1 / 6, 3: 1 / 4}[s.spikes])
                 self.emit(f"{mon.name} was hurt by the spikes!", ["hp", side, mon.hp_frac()])
             if s.tspikes and grounded:
                 if "poison" in mon.types:
@@ -342,9 +354,40 @@ class TurnBattle:
                     self._inflict(side, st)
             if mon.fainted:
                 self.emit(f"{mon.name} fainted!", ["faint", side])
+        for side in sorted(sides, key=lambda i: -self._speed(i)):
+            if not self.sides[side].mon.fainted:
+                self._entry_ability(side)
         for side in sides:
             if self.sides[side].mon.item == "air-balloon" and not self.sides[side].mon.fainted:
                 self.emit(f"{self.sides[side].mon.name} floats in the air with its Air Balloon!")
+
+    def _entry_ability(self, side, weather_only=False):
+        mon = self.sides[side].mon
+        foe = self.sides[1 - side].mon
+        if foe is not None and foe.fainted:
+            foe = None
+        for kind, payload in AB.entry_effects(mon, foe):
+            name = AB.ability_name(mon.ability)
+            if kind == "weather":
+                w, turns = payload
+                if self.weather == w or (self.weather_turns > 100 and turns < 100):
+                    continue
+                self.emit(f"[{mon.name}'s {name}]", ["ability", side, name])
+                self._set_weather(w, turns)
+            elif weather_only:
+                continue
+            elif kind == "intimidate":
+                self.emit(f"[{mon.name}'s Intimidate]", ["ability", side, name])
+                self._boost(1 - side, {"atk": -1}, from_foe=True)
+            elif kind == "boost":
+                self.emit(f"[{mon.name}'s {name}]", ["ability", side, name])
+                self._boost(side, payload)
+
+    def _tera(self, side):
+        s = self.sides[side]
+        t = s.mon.terastallize()
+        s.tera_used = True
+        self.emit(f"{s.mon.name} has Terastallized into the {t.title()} type!", ["tera", side, t])
 
     def _mega(self, side):
         s = self.sides[side]
@@ -355,6 +398,8 @@ class TurnBattle:
         self.emit(f"{old} has {verb}! It became {form['name']}!", ["mega", side, form["id"]])
         if form["key"] in PRIMAL_WEATHER:
             self._set_weather(PRIMAL_WEATHER[form["key"]], 999)
+        else:
+            self._entry_ability(side, weather_only=True)
 
     def _set_weather(self, w, turns=5):
         self.weather = w
@@ -374,11 +419,15 @@ class TurnBattle:
             self.emit(f"{mon.name}'s Lum Berry cured its {STATUS_NAMES[status].lower()}!", ["status", side, None])
         return True
 
-    def _boost(self, side, changes):
+    def _boost(self, side, changes, from_foe=False):
         mon = self.sides[side].mon
         if mon.fainted:
             return
-        for k, d in mon.apply_stages(changes):
+        res = mon.apply_stages(changes, from_foe)
+        blocked = mon.flags.pop("blocked_drop", None)
+        if blocked:
+            self.emit(f"[{mon.name}'s {blocked}] Its stats were not lowered!", ["ability", side, blocked])
+        for k, d in res:
             if d == 0:
                 self.emit(f"{mon.name}'s {STAT_TEXT[k]} won't go any {'higher' if changes[k] > 0 else 'lower'}!")
                 continue
@@ -387,7 +436,7 @@ class TurnBattle:
             self.emit(f"{mon.name}'s {STAT_TEXT[k]} {word}!", ["stat", side, d > 0])
         if mon.item == "white-herb" and any(v < 0 for v in mon.stages.values()):
             mon.stages = {k: max(0, v) for k, v in mon.stages.items()}
-            mon.item = "none"
+            mon.lose_item()
             self.emit(f"{mon.name} returned its stats to normal using its White Herb!")
 
     def _can_act(self, side, mv):
@@ -445,7 +494,11 @@ class TurnBattle:
             self.emit(f"{user.name} is charging up {mv['name']}!", ["charge", side, mv["type"]])
             return
         v["charging"] = None
-        self.emit(f"{user.name} used {mv['name']}!", ["move", side, mv["name"], mv["type"], mv["cls"]])
+        mtype = move_type_and_power(user, mv, self.weather)[0]
+        self.emit(f"{user.name} used {mv['name']}!", ["move", side, mv["name"], mtype, mv["cls"]])
+        if AB.protean(user, mtype):
+            self.emit(f"[{user.name}'s {AB.ability_name(user.ability)}] It became the {mtype.title()} type!",
+                      ["ability", side, AB.ability_name(user.ability)])
         if key not in PROTECTS:
             v["protect_chain"] = 0
         target = foe.mon
@@ -466,9 +519,18 @@ class TurnBattle:
         if key in ("fake-out", "first-impression") and v["turns_out"] > 0:
             self.emit("But it failed!")
             return
+        if hits_foe and mv["cls"] == "status" and user.ability == "prankster" and "dark" in target.types:
+            self.emit(f"It doesn't affect {target.name}...", ["immune", foe_i])
+            return
+        if hits_foe:
+            imm = AB.immunity(target, user, mv, mtype, effectiveness(mtype, target.types))
+            if imm:
+                self._absorb(foe_i, imm)
+                return
         # accuracy
-        if hits_foe and mv["acc"] <= 100:
-            acc = mv["acc"]
+        accm = AB.accuracy(user, target, mv) if hits_foe else None
+        if hits_foe and mv["acc"] <= 100 and accm is not None:
+            acc = mv["acc"] * accm
             if self.weather == "rain" and key in ("thunder", "hurricane"):
                 acc = 101
             if self.weather == "snow" and key == "blizzard":
@@ -483,8 +545,8 @@ class TurnBattle:
             self._status_move(side, mv)
         else:
             self._damage_move(side, mv)
-        if user.item == "life-orb" and mv["power"] > 0 and not user.fainted and v.get("_hit"):
-            user.take(user.maxhp / 10, False)
+        if user.item == "life-orb" and mv["power"] > 0 and not user.fainted and v.get("_hit") \
+                and user.ability != "sheer-force" and user.indirect(user.maxhp / 10):
             self.emit(f"{user.name} lost some of its HP!", ["hp", side, user.hp_frac()])
             if user.fainted:
                 self.emit(f"{user.name} fainted!", ["faint", side])
@@ -495,6 +557,23 @@ class TurnBattle:
             if key == "baton-pass":
                 s.pass_stages = dict(user.stages)
             self.pending[side] = "switch"
+
+    def _absorb(self, side, imm):
+        mon = self.sides[side].mon
+        verb, eff = imm
+        self.emit(f"[{mon.name}'s {verb}]", ["ability", side, verb])
+        if eff[0] == "heal":
+            if mon.heal(mon.maxhp * eff[1]):
+                self.emit(f"{mon.name} restored HP!", ["hp", side, mon.hp_frac()])
+            else:
+                self.emit(f"It doesn't affect {mon.name}...", ["immune", side])
+        elif eff[0] == "boost":
+            self._boost(side, eff[1])
+        elif eff[0] == "flash_fire":
+            mon.flags["flash_fire"] = True
+            self.emit(f"{mon.name}'s Fire-type moves were powered up!")
+        else:
+            self.emit(f"It doesn't affect {mon.name}...", ["immune", side])
 
     def _foe_attacking(self, foe_i):
         for kind, side, arg in self.queue:
@@ -510,19 +589,23 @@ class TurnBattle:
         hits = self.rng.randint(*mv["hits"]) if mv["hits"][1] > 1 else 1
         if mv["hits"] == [2, 5] and self.rng.random() < 0.5:
             hits = self.rng.choice([2, 3])
+        hits = AB.hit_count(user, mv, hits)
+        sec = AB.secondary_mult(user, mv)
+        mtype = move_type_and_power(user, mv, self.weather)[0]
         total, landed = 0, 0
         eff = 1.0
         for h in range(hits):
             if target.fainted:
                 break
             screen = 1.0
-            crit_stage = mv["crit"]
+            crit_stage = mv["crit"] + AB.crit_bonus(user)
             crit = self.rng.random() < (1 / 24, 1 / 8, 1 / 2, 1, 1)[min(crit_stage, 4)]
             foe_side = self.sides[foe_i]
             if not crit and (foe_side.veil or (mv["cls"] == "phys" and foe_side.reflect) or
                              (mv["cls"] == "spec" and foe_side.light_screen)):
                 screen = 0.5
-            dmg, eff, crit = damage(user, target, mv, self.rng, self.weather, force_crit=crit, extra=screen)
+            dmg, eff, crit = damage(user, target, mv, self.rng, self.weather, force_crit=crit, extra=screen,
+                                    moved_last=fv["moved"])
             if eff == 0:
                 self.emit(f"It doesn't affect {target.name}...", ["immune", foe_i])
                 return
@@ -534,9 +617,18 @@ class TurnBattle:
                     self.emit(f"{target.name}'s substitute faded!", ["sub", foe_i])
                 landed += 1
                 continue
+            if AB.ab(target, user) == "disguise" and not target.flags.get("busted"):
+                target.flags["busted"] = True
+                self.emit(f"[{target.name}'s Disguise] Its disguise served it as a decoy!", ["ability", foe_i, "Disguise"])
+                target.indirect(target.maxhp / 8)
+                self.emit("", ["hp", foe_i, target.hp_frac()])
+                landed += 1
+                continue
             had_full = target.hp == target.maxhp
             had_sash = target.item == "focus-sash"
-            dealt = target.take(dmg, from_full_ok=True)
+            dealt = target.take(dmg, from_full_ok=True, attacker=user)
+            if target.flags.pop("sturdy_hit", False):
+                self.emit(f"[{target.name}'s Sturdy] It endured the hit!", ["ability", foe_i, "Sturdy"])
             if had_full and had_sash and target.item == "none" and not target.fainted and dealt == target.maxhp - 1:
                 self.emit(f"{target.name} hung on using its Focus Sash!")
             total += dealt
@@ -545,11 +637,24 @@ class TurnBattle:
                 self.emit("A critical hit!", ["crit", foe_i])
             self.emit("", ["hit", foe_i, target.hp_frac(), eff])
             if target.item == "air-balloon" and not target.fainted:
-                target.item = "none"
+                target.lose_item()
                 self.emit(f"{target.name}'s Air Balloon popped!")
             if "contact" in mv["flags"] and target.item == "rocky-helmet" and not user.fainted:
-                user.take(user.maxhp / 6, False)
-                self.emit(f"{user.name} was hurt by the Rocky Helmet!", ["hp", side, user.hp_frac()])
+                if user.indirect(user.maxhp / 6):
+                    self.emit(f"{user.name} was hurt by the Rocky Helmet!", ["hp", side, user.hp_frac()])
+            if "contact" in mv["flags"] and not user.fainted:
+                reacts, aname = AB.contact_reactions(user, target, self.rng)
+                for kind, val in reacts:
+                    if kind == "status" and user.can_status(val, self.weather):
+                        self.emit(f"[{target.name}'s {AB.ability_name(aname)}]", ["ability", foe_i, aname])
+                        self._inflict(side, val, "self")
+                    elif kind == "damage" and user.indirect(user.maxhp * val):
+                        self.emit(f"[{target.name}'s {AB.ability_name(aname)}] {user.name} was hurt!",
+                                  ["hp", side, user.hp_frac()])
+            if not target.fainted:
+                hb = AB.on_hit(target, mtype, user)
+                if hb:
+                    self._boost(foe_i, hb)
         v["_hit"] = landed > 0
         if hits > 1:
             self.emit(f"The Pokemon was hit {landed} time(s)!")
@@ -558,15 +663,15 @@ class TurnBattle:
         elif 0 < eff < 1:
             self.emit("It's not very effective...")
         if landed and eff > 1 and target.item == "weakness-policy" and not target.fainted:
-            target.item = "none"
+            target.lose_item()
             self.emit(f"{target.name}'s Weakness Policy activated!")
             self._boost(foe_i, {"atk": 2, "spa": 2})
         if total and mv["drain"] > 0 and not user.fainted:
             if user.heal(total * mv["drain"] / 100):
                 self.emit(f"{target.name} had its energy drained!", ["hp", side, user.hp_frac()])
-        if total and mv["drain"] < 0 and not user.fainted:
-            user.take(total * -mv["drain"] / 100, False)
-            self.emit(f"{user.name} is damaged by recoil!", ["hp", side, user.hp_frac()])
+        if total and mv["drain"] < 0 and not user.fainted and user.ability != "rock-head":
+            if user.indirect(total * -mv["drain"] / 100):
+                self.emit(f"{user.name} is damaged by recoil!", ["hp", side, user.hp_frac()])
         if key == "struggle":
             user.take(user.maxhp / 4, False)
             self.emit(f"{user.name} is damaged by recoil!", ["hp", side, user.hp_frac()])
@@ -574,13 +679,17 @@ class TurnBattle:
             user.take(user.hp, False)
         if key == "knock-off" and total and target.item not in ("none", "mega-stone") and not target.fainted:
             self.emit(f"{user.name} knocked off {target.name}'s {target.member.item_name(self.dex)}!")
-            target.item = "none"
+            target.lose_item()
         if key in ("rapid-spin", "mortal-spin") and not user.fainted:
             s.rocks, s.spikes, s.tspikes = False, 0, 0
         if "recharge" in mv["flags"]:
             v["recharge"] = True
         if target.fainted:
             self.emit(f"{target.name} fainted!", ["faint", foe_i])
+            kb = AB.on_ko(user) if not user.fainted else None
+            if kb:
+                self.emit(f"[{user.name}'s {AB.ability_name(user.ability)}]", ["ability", side, user.ability])
+                self._boost(side, kb)
             if fv["dbond"] and not user.fainted:
                 user.take(user.hp, False)
                 self.emit(f"{target.name} took its attacker down with it!")
@@ -588,20 +697,24 @@ class TurnBattle:
             if not landed:
                 return
             st = AILMENT_TO_STATUS.get(mv["ailment"])
-            if st and mv["ail_chance"] and self.rng.random() * 100 < mv["ail_chance"] and fv["sub"] == 0:
+            if st and mv["ail_chance"] and self.rng.random() * 100 < mv["ail_chance"] * sec and fv["sub"] == 0:
                 self._inflict(foe_i, st)
-            if mv["flinch"] and not fv["moved"] and self.rng.random() * 100 < mv["flinch"]:
+            if mv["flinch"] and not fv["moved"] and self.rng.random() * 100 < mv["flinch"] * sec \
+                    and AB.ab(target, user) != "inner-focus":
                 fv["flinch"] = True
             if target.item == "sitrus-berry" and target.hp_frac() <= 0.5:
-                target.item = "none"
+                target.lose_item()
                 target.heal(target.maxhp / 4)
                 self.emit(f"{target.name} restored HP using its Sitrus Berry!", ["hp", foe_i, target.hp_frac()])
-        if mv["stats"] and (mv["stat_chance"] == 0 or self.rng.random() * 100 < mv["stat_chance"]):
-            if mv["cat"] == "damage-raise" or key in ("rapid-spin",):
+        to_self = mv["cat"] == "damage-raise" or key in ("rapid-spin",)
+        chance = mv["stat_chance"] * (1 if to_self else sec)
+        if mv["stats"] and landed and (mv["stat_chance"] == 0 or self.rng.random() * 100 < chance) and \
+                (to_self or sec > 0):
+            if to_self:
                 if not user.fainted:
                     self._boost(side, mv["stats"])
             elif not target.fainted and fv["sub"] == 0:
-                self._boost(foe_i, mv["stats"])
+                self._boost(foe_i, mv["stats"], from_foe=True)
         if user.fainted:
             self.emit(f"{user.name} fainted!", ["faint", side])
 
@@ -649,7 +762,7 @@ class TurnBattle:
                 side_.rocks, side_.spikes, side_.tspikes = False, 0, 0
             foe.reflect = foe.light_screen = foe.veil = 0
             self.emit("The hazards and screens were blown away!")
-            self._boost(foe_i, {"eva": -1})
+            self._boost(foe_i, {"eva": -1}, from_foe=True)
             return
         if key in ("reflect", "light-screen", "aurora-veil"):
             attr = {"reflect": "reflect", "light-screen": "light_screen", "aurora-veil": "veil"}[key]
@@ -740,7 +853,7 @@ class TurnBattle:
             return
         if key in ("memento", "healing-wish"):
             if key == "memento":
-                self._boost(foe_i, {"atk": -2, "spa": -2})
+                self._boost(foe_i, {"atk": -2, "spa": -2}, from_foe=True)
             else:
                 s.heal_next = True
             user.take(user.hp, False)
@@ -750,7 +863,7 @@ class TurnBattle:
             if key == "chilly-reception":
                 self._set_weather("snow")
             if key == "parting-shot":
-                self._boost(foe_i, {"atk": -1, "spa": -1})
+                self._boost(foe_i, {"atk": -1, "spa": -1}, from_foe=True)
             return
         if key == "curse" and "ghost" in user.types:
             user.take(user.maxhp // 2, False)
@@ -786,7 +899,7 @@ class TurnBattle:
             return
         if mv["stats"]:
             to_self = mv["target"] == "user" or mv["cat"] == "net-good-stats"
-            self._boost(side if to_self else foe_i, mv["stats"])
+            self._boost(side if to_self else foe_i, mv["stats"], from_foe=not to_self)
             return
         fail()
 
@@ -803,8 +916,9 @@ class TurnBattle:
             if self.weather == "sand":
                 for side in (0, 1):
                     mon = self.sides[side].mon
-                    if mon and not mon.fainted and not any(t in mon.types for t in ("rock", "ground", "steel")):
-                        mon.take(mon.maxhp / 16, False)
+                    if mon and not mon.fainted and not any(t in mon.types for t in ("rock", "ground", "steel")) \
+                            and mon.ability not in ("sand-force", "sand-rush", "sand-veil", "overcoat") \
+                            and mon.indirect(mon.maxhp / 16):
                         self.emit(f"{mon.name} is buffeted by the sandstorm!", ["hp", side, mon.hp_frac()])
                         if mon.fainted:
                             self.emit(f"{mon.name} fainted!", ["faint", side])
@@ -830,27 +944,42 @@ class TurnBattle:
                 if mon.heal(mon.maxhp / 16):
                     self.emit(f"{mon.name} restored a little HP using its {mon.member.item_name(self.dex)}!",
                               ["hp", side, mon.hp_frac()])
-            elif mon.item == "black-sludge":
-                mon.take(mon.maxhp / 8, False)
+            elif mon.item == "black-sludge" and mon.indirect(mon.maxhp / 8):
                 self.emit(f"{mon.name} is hurt by its Black Sludge!", ["hp", side, mon.hp_frac()])
             if v["seeded"] and not mon.fainted:
                 foe = self.sides[1 - side].mon
-                drained = mon.take(mon.maxhp / 8, False)
+                drained = mon.indirect(mon.maxhp / 8)
                 self.emit(f"{mon.name}'s health is sapped by Leech Seed!", ["hp", side, mon.hp_frac()])
                 if foe and not foe.fainted:
                     foe.heal(drained)
                     self.emit("", ["hp", 1 - side, foe.hp_frac()])
             if mon.status == "brn" and not mon.fainted:
-                mon.take(mon.maxhp / 16, False)
-                self.emit(f"{mon.name} was hurt by its burn!", ["hp", side, mon.hp_frac()])
+                if mon.indirect(mon.maxhp / 16):
+                    self.emit(f"{mon.name} was hurt by its burn!", ["hp", side, mon.hp_frac()])
             elif mon.status in ("psn", "tox") and not mon.fainted:
-                if mon.status == "tox":
-                    mon.toxic_n = min(mon.toxic_n + 1, 15)
-                    frac = mon.toxic_n / 16
+                if mon.ability == "poison-heal":
+                    if mon.heal(mon.maxhp / 8):
+                        self.emit(f"[{mon.name}'s Poison Heal]", ["hp", side, mon.hp_frac()])
                 else:
-                    frac = 1 / 8
-                mon.take(mon.maxhp * frac, False)
-                self.emit(f"{mon.name} was hurt by poison!", ["hp", side, mon.hp_frac()])
+                    if mon.status == "tox":
+                        mon.toxic_n = min(mon.toxic_n + 1, 15)
+                        frac = mon.toxic_n / 16
+                    else:
+                        frac = 1 / 8
+                    if mon.indirect(mon.maxhp * frac):
+                        self.emit(f"{mon.name} was hurt by poison!", ["hp", side, mon.hp_frac()])
+            if not mon.fainted:
+                for kind, val, msg in AB.end_of_turn(mon, self.weather, self.rng):
+                    if kind == "boost" and v["turns_out"] > 0:
+                        self.emit(f"[{mon.name}'s {AB.ability_name(mon.ability)}]", ["ability", side, mon.ability])
+                        self._boost(side, val)
+                    elif kind == "heal" and mon.heal(mon.maxhp * val):
+                        self.emit(f"[{mon.name}'s {msg}]", ["hp", side, mon.hp_frac()])
+                    elif kind == "damage" and mon.indirect(mon.maxhp * val):
+                        self.emit(f"[{mon.name}'s {msg}]", ["hp", side, mon.hp_frac()])
+                    elif kind == "cure":
+                        mon.status = None
+                        self.emit(f"[{mon.name}'s {msg}] It was cured!", ["status", side, None])
             if v["yawn"]:
                 v["yawn"] -= 1
                 if v["yawn"] == 0 and not mon.fainted:

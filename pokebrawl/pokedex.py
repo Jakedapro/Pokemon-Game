@@ -18,7 +18,7 @@ HOME = os.environ.get("POKEBRAWL_HOME", os.path.join(os.path.expanduser("~"), ".
 DATA_DIR = os.path.join(HOME, "data")
 SPRITE_DIR = os.path.join(HOME, "sprites")
 DEX_FILE = os.path.join(DATA_DIR, "pokedex.json")
-DEX_VERSION = 4
+DEX_VERSION = 5
 
 CSV_URL = "https://raw.githubusercontent.com/PokeAPI/pokeapi/master/data/v2/csv/{}.csv"
 SPRITE_URL = "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/{}.png"
@@ -169,6 +169,13 @@ def build_dex(progress=print):
     for row in sorted(ptypes, key=lambda r: int(r["slot"])):
         ty.setdefault(int(row["pokemon_id"]), []).append(type_name[int(row["type_id"])])
 
+    ability_name = {int(r["id"]): r["identifier"] for r in _read_csv("abilities")}
+    abil = {}
+    for r in sorted(_read_csv("pokemon_abilities"), key=lambda r: int(r["slot"])):
+        a = ability_name.get(int(r["ability_id"]))
+        if a:
+            abil.setdefault(int(r["pokemon_id"]), []).append([a, r["is_hidden"] == "1"])
+
     progress("[pokebrawl] reading learnsets...")
     learn = {}
     with open(os.path.join(DATA_DIR, "pokemon_moves.csv") if os.path.exists(os.path.join(DATA_DIR, "pokemon_moves.csv"))
@@ -196,6 +203,7 @@ def build_dex(progress=print):
             "types": [t for t in ty[pid] if t in TYPES] or ["normal"],
             "stats": {k: v for k, v in st[pid].items() if k in ("hp", "atk", "def", "spa", "spd", "spe")},
             "megas": [], "base": None, "learn": sorted(learn.get(pid, ())),
+            "abilities": abil.get(pid, []),
         }
     default_for_species = {e["species"]: e["id"] for e in entries.values() if e["default"]}
     for e in entries.values():
@@ -205,6 +213,8 @@ def build_dex(progress=print):
             e["base"] = base
         if not e["learn"] and base:  # alternate forms without their own learnset use the base form's
             e["learn"] = sorted(learn.get(base, ()))
+        if not e["abilities"] and base:
+            e["abilities"] = list(entries[base]["abilities"])
     dex = {"version": DEX_VERSION, "pokemon": sorted(entries.values(), key=lambda e: e["id"]),
            "moves": sorted(moves.values(), key=lambda m: m["id"])}
     with open(DEX_FILE, "w") as f:

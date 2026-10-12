@@ -82,7 +82,8 @@ def mega_item_name(dex, form):
 class Member:
     """One Pokemon on a team."""
 
-    def __init__(self, species, moves, item="none", nature="Serious", evs=None, mega=None, level=100):
+    def __init__(self, species, moves, item="none", nature="Serious", evs=None, mega=None, level=100,
+                 ability=None, tera=None):
         self.species = species          # dex id of the (non-mega) form
         self.moves = list(moves)[:4]    # move ids
         self.item = item
@@ -90,15 +91,18 @@ class Member:
         self.evs = dict(evs or BUILDS["Balanced"][0])
         self.mega = mega                # dex id of the mega/primal form the stone unlocks
         self.level = level
+        self.ability = ability          # ability key; None = the species' best ability
+        self.tera = tera                # Tera type; None = its first type
 
     def to_dict(self):
         return {"species": self.species, "moves": self.moves, "item": self.item, "nature": self.nature,
-                "evs": self.evs, "mega": self.mega, "level": self.level}
+                "evs": self.evs, "mega": self.mega, "level": self.level, "ability": self.ability,
+                "tera": self.tera}
 
     @classmethod
     def from_dict(cls, d):
         return cls(d["species"], d.get("moves", []), d.get("item", "none"), d.get("nature", "Serious"),
-                   d.get("evs"), d.get("mega"), d.get("level", 100))
+                   d.get("evs"), d.get("mega"), d.get("level", 100), d.get("ability"), d.get("tera"))
 
     def item_name(self, dex):
         if self.item == "mega-stone" and self.mega and self.mega in dex.all:
@@ -155,7 +159,44 @@ def validate(dex, members):
             errs.append(f"{e['name']} can't use that Mega Stone")
         if sum(m.evs.values()) > 510 or any(v > 252 for v in m.evs.values()):
             errs.append(f"{e['name']} has too many EVs")
+        if m.ability and e["abilities"] and m.ability not in [a for a, _ in e["abilities"]]:
+            errs.append(f"{e['name']} can't have {m.ability.replace('-', ' ').title()}")
+        if m.tera and m.tera not in TYPES:
+            errs.append(f"{e['name']} has an unknown Tera type")
     return errs
+
+
+BAD_ABILITIES = {"truant", "slow-start", "defeatist", "klutz", "stall", "normalize", "comatose", "zen-mode",
+                 "imposter", "illusion", "rivalry", "forewarn", "run-away", "honey-gather", "pickup"}
+
+
+def best_ability(entry, rng=None):
+    """The ability the auto-builder picks: the strongest one this game models."""
+    from .abilities import DESCRIPTIONS
+    opts = [a for a, _ in entry["abilities"]]
+    if not opts:
+        return None
+    good = [a for a in opts if a in DESCRIPTIONS and a not in BAD_ABILITIES]
+    tier1 = {"huge-power", "pure-power", "speed-boost", "adaptability", "intimidate", "multiscale", "drought",
+             "drizzle", "sand-stream", "snow-warning", "regenerator", "magic-guard", "protean", "libero",
+             "technician", "tough-claws", "levitate", "moxie", "beast-boost", "sheer-force", "unaware",
+             "pixilate", "aerilate", "refrigerate", "galvanize", "prankster", "poison-heal", "skill-link",
+             "intrepid-sword", "disguise", "primordial-sea", "desolate-land", "gorilla-tactics", "sharpness",
+             "tinted-lens", "contrary", "dragons-maw", "transistor", "orichalcum-pulse", "hadron-engine",
+             "sword-of-ruin", "beads-of-ruin", "tablets-of-ruin", "vessel-of-ruin", "good-as-gold", "guts"}
+    best = [a for a in good if a in tier1]
+    pool = best or good or [a for a in opts if a not in BAD_ABILITIES] or opts
+    return pool[0] if rng is None else rng.choice(pool)
+
+
+def best_tera(entry, moves, dex):
+    """Tera into the type of its strongest attacking move (or its first type)."""
+    best, score = entry["types"][0], 0
+    for mid in moves:
+        mv = dex.moves.get(mid)
+        if mv and mv["power"] * (1.5 if mv["type"] in entry["types"] else 1) > score:
+            best, score = mv["type"], mv["power"] * (1.5 if mv["type"] in entry["types"] else 1)
+    return best
 
 
 # ---------------------------------------------------------------- auto building
@@ -249,7 +290,8 @@ def auto_member(dex, entry, rng, item_pool=None, allow_mega=True, level=100, com
                 item = p
                 item_pool.remove(p)
                 break
-    return Member(entry["id"], moves, item, nature, evs, mega, level)
+    return Member(entry["id"], moves, item, nature, evs, mega, level, best_ability(entry),
+                  best_tera(entry, moves, dex))
 
 
 def random_team(dex, rng=None, size=6, min_bst=480, max_bst=720, legendary=False, level=100):
@@ -285,8 +327,12 @@ def export_showdown(dex, members):
     for m in members:
         e = dex.all[m.species]
         lines = [f"{e['name']}" + (f" @ {m.item_name(dex)}" if m.item != "none" else "")]
+        if m.ability:
+            lines.append(f"Ability: {m.ability.replace('-', ' ').title()}")
         if m.level != 100:
             lines.append(f"Level: {m.level}")
+        if m.tera:
+            lines.append(f"Tera Type: {m.tera.title()}")
         evs = " / ".join(f"{v} {STAT_NAMES[k]}" for k, v in m.evs.items() if v)
         if evs:
             lines.append(f"EVs: {evs}")
@@ -330,9 +376,18 @@ def import_showdown(dex, text):
         item, mega = _find_item(dex, item_name, entry) if item_name else ("none", None)
         if item_name and item == "none":
             warnings.append(f"Item not supported: {item_name}")
-        evs, nature, moves, level = {}, "Serious", [], 100
+        evs, nature, moves, level, ability, tera = {}, "Serious", [], 100, None, None
         for l in lines[1:]:
-            if l.startswith("EVs:"):
+            if l.startswith("Ability:"):
+                key = l.split(":", 1)[1].strip().lower().replace(" ", "-").replace("'", "")
+                if key in [a for a, _ in entry["abilities"]]:
+                    ability = key
+                else:
+                    warnings.append(f"{entry['name']}: ability not available: {l.split(':', 1)[1].strip()}")
+            elif l.startswith("Tera Type:"):
+                t = l.split(":", 1)[1].strip().lower()
+                tera = t if t in TYPES else None
+            elif l.startswith("EVs:"):
                 for part in l[4:].split("/"):
                     num, stat = part.strip().split(" ", 1)
                     for k, n in STAT_NAMES.items():
@@ -350,7 +405,8 @@ def import_showdown(dex, text):
                     warnings.append(f"{entry['name']}: move not supported: {l[1:].strip()}")
         if not moves:
             moves = auto_moves(dex, entry, random.Random(entry["id"]))
-        members.append(Member(entry["id"], moves, item, nature, evs or None, mega, level))
+        members.append(Member(entry["id"], moves, item, nature, evs or None, mega, level,
+                              ability or best_ability(entry), tera))
     return members[:6], warnings
 
 

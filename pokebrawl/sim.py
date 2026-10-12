@@ -6,7 +6,8 @@ renderers (local or over the network) draw from `snapshot()`.
 import math
 import random
 
-from .battlecore import AILMENT_TO_STATUS, Mon, damage
+from . import abilities as AB
+from .battlecore import AILMENT_TO_STATUS, Mon, acc_mult, damage, move_type_and_power
 
 WORLD_W, WORLD_H = 720, 1280
 ARENA = (44, 66, 676, 1234)  # walkable x0, y0, x1, y1
@@ -133,6 +134,10 @@ class Sim:
         self.winner = None
         self.over = False
         self.megas_used = {}
+        self.teras_used = {}
+        self.tick = 0
+        self.cmd_log = []      # [tick, team, cmd] - everything needed to replay the battle
+        self.started = False
         hp_mult = opts.get("hp_mult", 9.0)
         boss_mult = opts.get("boss_hp_mult", 3.0)
         radius = opts.get("radius", 22)
@@ -177,6 +182,7 @@ class Sim:
 
     # ------------------------------------------------------------------ commands
     def command(self, team, cmd):
+        self.cmd_log.append([self.tick, team, cmd])
         kind = cmd.get("cmd")
         if kind == "focus":
             tgt = self.by_id.get(cmd.get("target"))
@@ -191,6 +197,10 @@ class Sim:
             u = self.by_id.get(cmd.get("unit"))
             if u and u.team == team and u.alive:
                 self.try_mega(u)
+        elif kind == "tera":
+            u = self.by_id.get(cmd.get("unit"))
+            if u and u.team == team and u.alive:
+                self.try_tera(u)
         elif kind == "move":
             u = self.by_id.get(cmd.get("unit"))
             if u and u.team == team and u.alive and 0 <= cmd.get("slot", -1) < len(u.mon.moves):
@@ -205,6 +215,44 @@ class Sim:
         limit = self.opts.get("mega_limit", {}).get(u.team)
         return limit is None or self.megas_used.get(u.team, 0) < limit
 
+    def tera_allowed(self, u):
+        limit = self.opts.get("tera_limit", {}).get(u.team, 0)
+        return (limit is None or self.teras_used.get(u.team, 0) < limit) and not u.mon.terastallized \
+            and not u.mon.megaed
+
+    def try_tera(self, u):
+        if not self.tera_allowed(u):
+            return False
+        t = u.mon.terastallize()
+        self.teras_used[u.team] = self.teras_used.get(u.team, 0) + 1
+        u.stun = max(u.stun, 0.6)
+        u.shield = max(u.shield, 0.6)
+        self.emit("tera", u.uid, t)
+        return True
+
+    def _ability_label(self, u, name=None):
+        self.emit("label", u.uid, AB.ability_name(name or u.mon.ability), "normal")
+
+    def _battle_start(self):
+        """Entry abilities for everyone: weather, Intimidate, Download..."""
+        self.started = True
+        for u in sorted(self.units, key=lambda u: u.mon.stat("spe")):
+            foes = self.enemies(u)
+            foe = min(foes, key=lambda f: math.hypot(f.x - u.x, f.y - u.y)) if foes else None
+            for kind, payload in AB.entry_effects(u.mon, foe.mon if foe else None):
+                if kind == "weather":
+                    self._ability_label(u)
+                    self.set_weather(payload[0], 9999 if payload[1] > 100 else 30.0)
+                elif kind == "intimidate":
+                    self._ability_label(u)
+                    for f in foes:
+                        if math.hypot(f.x - u.x, f.y - u.y) < 420 or len(foes) <= 6:
+                            if f.mon.apply_stages({"atk": -1}, from_foe=True):
+                                self.emit("boost", f.uid, 0)
+                elif kind == "boost":
+                    if u.mon.apply_stages(payload):
+                        self.emit("boost", u.uid, 1)
+
     def try_mega(self, u):
         if not u.mon.can_mega or not self.mega_allowed(u):
             return False
@@ -216,6 +264,11 @@ class Sim:
         self.emit("mega", u.uid, form["id"], form["name"])
         if form["key"] in PRIMAL_WEATHER:
             self.set_weather(PRIMAL_WEATHER[form["key"]], 9999)
+        else:
+            for kind, payload in AB.entry_effects(u.mon, None):
+                if kind == "weather" and self.weather != payload[0]:
+                    self._ability_label(u)
+                    self.set_weather(payload[0], 30.0)
         return True
 
     def set_weather(self, w, dur=20.0):
@@ -227,6 +280,9 @@ class Sim:
     def step(self, dt=TICK):
         if self.over or self.paused:
             return
+        if not self.started:
+            self._battle_start()
+        self.tick += 1
         self.t += dt
         if self.weather and self.weather_t < 9000:
             self.weather_t -= dt
@@ -382,12 +438,16 @@ class Sim:
             u.status_t += dt
             if u.status_t >= 3.0:
                 u.status_t = 0
-                if mon.status == "tox":
-                    mon.toxic_n = min(mon.toxic_n + 1, 15)
-                    frac = mon.toxic_n / 16
+                if mon.ability == "poison-heal" and mon.status != "brn":
+                    if mon.heal(mon.maxhp / 8):
+                        self.emit("heal", u.uid, 0)
                 else:
-                    frac = 1 / 16
-                self._hurt(u, mon.maxhp * frac * u.dmg_scale, None, chip=True)
+                    if mon.status == "tox":
+                        mon.toxic_n = min(mon.toxic_n + 1, 15)
+                        frac = mon.toxic_n / 16
+                    else:
+                        frac = 1 / 16
+                    self._hurt(u, mon.maxhp * frac * u.dmg_scale, None, chip=True)
                 if not u.alive:
                     return
         if mon.status in ("slp", "frz"):
@@ -408,8 +468,20 @@ class Sim:
                     self.emit("heal", u.uid, 0)
             elif mon.item == "black-sludge":
                 self._hurt(u, mon.maxhp / 8 * u.dmg_scale, None, chip=True)
-            if self.weather == "sand" and not any(t in mon.types for t in ("rock", "ground", "steel")):
+            if self.weather == "sand" and not any(t in mon.types for t in ("rock", "ground", "steel")) \
+                    and mon.ability not in ("sand-force", "sand-rush", "sand-veil", "overcoat"):
                 self._hurt(u, mon.maxhp / 16 * u.dmg_scale, None, chip=True)
+            for kind, val, msg in AB.end_of_turn(mon, self.weather, self.rng):
+                if kind == "boost":
+                    if mon.apply_stages(val):
+                        self.emit("boost", u.uid, 1)
+                elif kind == "heal" and mon.heal(mon.maxhp * val):
+                    self.emit("heal", u.uid, 0)
+                elif kind == "damage":
+                    self._hurt(u, mon.maxhp * val * u.dmg_scale, None, chip=True)
+                elif kind == "cure":
+                    mon.status = None
+                    self.emit("status", u.uid, "cure")
         if not u.alive:
             return
         if u.stun > 0:
@@ -496,7 +568,10 @@ class Sim:
     def _execute(self, u, move, tgt, grid, charged=False):
         kind = move_kind(move)
         mon = u.mon
-        self.emit("use", u.uid, move["name"], move["type"], kind)
+        mtype = move_type_and_power(mon, move, self.weather)[0]
+        self.emit("use", u.uid, move["name"], mtype, kind)
+        if AB.protean(mon, mtype):
+            self._ability_label(u)
         u.anim = 0.25
         key = move["key"]
         if kind == "melee":
@@ -505,6 +580,13 @@ class Sim:
                 self._hit(u, tgt, move)
             if "contact" in move["flags"] and tgt.mon.item == "rocky-helmet" and u.alive:
                 self._hurt(u, mon.maxhp / 6 * u.dmg_scale, None, chip=True)
+            if "contact" in move["flags"] and u.alive:
+                reacts, aname = AB.contact_reactions(mon, tgt.mon, self.rng)
+                for rk, val in reacts:
+                    if rk == "status" and mon.can_status(val, self.weather):
+                        self.emit("status", u.uid, mon.set_status(val, self.rng))
+                    elif rk == "damage":
+                        self._hurt(u, mon.maxhp * val * u.dmg_scale, None, chip=True)
             if key in PIVOT_MOVES and u.alive:
                 self._pivot(u)
         elif kind == "projectile":
@@ -547,7 +629,7 @@ class Sim:
             if mon.heal(mon.maxhp * frac):
                 self.emit("heal", u.uid, 1)
         elif kind == "buff":
-            ch = mon.apply_stages(move["stats"])
+            ch = mon.apply_stages(move["stats"], from_foe=False)
             if key == "belly-drum":
                 mon.hp = max(1, mon.hp - mon.maxhp // 2)
                 mon.stages["atk"] = 6
@@ -623,12 +705,24 @@ class Sim:
         if not tgt.alive:
             return
         mon, tmon = u.mon, tgt.mon
+        mtype = move_type_and_power(mon, move, self.weather)[0]
+        imm = AB.immunity(tmon, mon, move, mtype)
+        if imm:
+            verb, eff_ = imm
+            self.emit("label", tgt.uid, verb, mtype)
+            if eff_[0] == "heal" and tmon.heal(tmon.maxhp * eff_[1]):
+                self.emit("heal", tgt.uid, 1)
+            elif eff_[0] == "boost" and tmon.apply_stages(eff_[1]):
+                self.emit("boost", tgt.uid, 1)
+            elif eff_[0] == "flash_fire":
+                tmon.flags["flash_fire"] = True
+            return
         acc = move["acc"]
-        if acc <= 100:
-            from .battlecore import acc_mult
+        accm = AB.accuracy(mon, tmon, move)
+        if acc <= 100 and accm is not None:
             if self.weather == "rain" and move["key"] in ("thunder", "hurricane"):
                 acc = 101
-            elif self.rng.random() * 100 >= acc * acc_mult(mon.stages["acc"] - tmon.stages["eva"]):
+            elif self.rng.random() * 100 >= acc * accm * acc_mult(mon.stages["acc"] - tmon.stages["eva"]):
                 self.emit("miss", tgt.uid)
                 return
         if move["power"] > 0:
@@ -638,22 +732,29 @@ class Sim:
                 return
             dmg *= u.dmg_scale if not tgt.boss else tgt.dmg_scale
             dmg *= self.ramp
-            if tgt.mon.item == "air-balloon":
-                tmon.item = "none"
+            if tmon.item == "air-balloon":
+                tmon.lose_item()
+            if AB.ab(tmon, mon) == "disguise" and not tmon.flags.get("busted"):
+                tmon.flags["busted"] = True
+                self._ability_label(tgt, "disguise")
+                dmg = tmon.maxhp / 8 * tgt.dmg_scale
             dealt = self._hurt(tgt, dmg, u, eff=eff, crit=crit)
+            hb = AB.on_hit(tmon, mtype, mon) if tgt.alive else None
+            if hb and tmon.apply_stages(hb):
+                self.emit("boost", tgt.uid, 1)
             if move["drain"] > 0 and u.alive:
                 mon.heal(dealt * move["drain"] / 100)
-            elif move["drain"] < 0 and u.alive:
+            elif move["drain"] < 0 and u.alive and mon.ability != "rock-head":
                 self._hurt(u, dealt * -move["drain"] / 100, None, chip=True)
             if eff > 1 and tmon.item == "weakness-policy" and tgt.alive:
-                tmon.item = "none"
+                tmon.lose_item()
                 tmon.apply_stages({"atk": 2, "spa": 2})
                 self.emit("boost", tgt.uid, 1)
             if move["key"] == "knock-off" and tmon.item not in ("none", "mega-stone"):
-                tmon.item = "none"
+                tmon.lose_item()
                 self.emit("label", tgt.uid, "KNOCKED OFF", "dark")
             if tgt.alive and tmon.item == "sitrus-berry" and tmon.hp_frac() < 0.5:
-                tmon.item = "none"
+                tmon.lose_item()
                 tmon.heal(tmon.maxhp / 4)
                 self.emit("heal", tgt.uid, 1)
             if not tgt.alive:
@@ -662,27 +763,30 @@ class Sim:
         st = AILMENT_TO_STATUS.get(move["ailment"])
         if move["key"] == "toxic":
             st = "tox"
-        chance = move["ail_chance"] or (100 if move["cls"] == "status" else 0)
-        if st and self.rng.random() * 100 < chance and tmon.can_status(st, self.weather):
+        sec = AB.secondary_mult(mon, move) if move["power"] > 0 else 1.0
+        chance = (move["ail_chance"] * sec) or (100 if move["cls"] == "status" else 0)
+        if st and self.rng.random() * 100 < chance and tmon.can_status(st, self.weather, mon):
             res = tmon.set_status(st, self.rng)
             tgt.status_t = 0
             if st in ("slp", "frz"):
                 tmon.status_turns = self.rng.randint(2, 4)
             self.emit("status", tgt.uid, res)
         if move["stats"]:
-            chance = move["stat_chance"] or 100
+            to_self = move["cat"] in ("damage-raise", "net-good-stats") or move["target"] == "user"
+            chance = (move["stat_chance"] or 100) * (1 if to_self else sec)
             if self.rng.random() * 100 < chance:
-                to_self = move["cat"] in ("damage-raise", "net-good-stats") or move["target"] == "user"
                 who = u if to_self else tgt
-                if who.alive and who.mon.apply_stages(move["stats"]):
+                if who.alive and who.mon.apply_stages(move["stats"], from_foe=not to_self):
                     self.emit("boost", who.uid, 1 if sum(move["stats"].values()) > 0 else 0)
-        if move["flinch"] and self.rng.random() * 100 < move["flinch"]:
+        if move["flinch"] and self.rng.random() * 100 < move["flinch"] * sec and AB.ab(tmon, mon) != "inner-focus":
             tgt.stun = max(tgt.stun, 0.35)
 
     def _hurt(self, u, dmg, src, eff=1.0, crit=False, chip=False):
         if not u.alive:
             return 0
-        dealt = u.mon.take(dmg, from_full_ok=not chip)
+        if chip and AB.magic_guard(u.mon):
+            return 0
+        dealt = u.mon.take(dmg, from_full_ok=not chip, attacker=src.mon if src else None)
         if not chip:
             self.emit("hit", u.uid, round(dealt / u.mon.maxhp * 100, 1), eff, int(crit))
         if not u.alive:
@@ -692,6 +796,10 @@ class Sim:
     def _faint(self, u, src):
         if src is not None:
             src.kills += 1
+            kb = AB.on_ko(src.mon) if src.alive else None
+            if kb and src.mon.apply_stages(kb):
+                self._ability_label(src)
+                self.emit("boost", src.uid, 1)
         self.emit("faint", u.uid, round(u.x), round(u.y), u.mon.entry["id"])
 
     # ------------------------------------------------------------------ output
@@ -703,7 +811,8 @@ class Sim:
                 continue
             m = u.mon
             flags = (1 if u.boss else 0) | (2 if m.megaed else 0) | (4 if m.can_mega and self.mega_allowed(u) else 0) \
-                | (8 if u.charging > 0 else 0) | (16 if u.shield > 0 else 0)
+                | (8 if u.charging > 0 else 0) | (16 if u.shield > 0 else 0) | (32 if m.terastallized else 0) \
+                | (64 if self.tera_allowed(u) else 0)
             units.append([u.uid, u.team, m.entry["id"], round(u.x, 1), round(u.y, 1), round(m.hp_frac(), 4),
                           round(u.r, 1), flags, m.status or "", u.face, round(u.anim, 2),
                           u.target.uid if u.target and u.target.alive else 0])
@@ -716,4 +825,5 @@ class Sim:
         """Static info sent once (move names per unit etc.)."""
         return {u.uid: {"team": u.team, "name": u.mon.name, "moves": [m["name"] for m in u.mon.moves],
                         "types": [m["type"] for m in u.mon.moves], "item": u.mon.member.item_name(self.dex),
-                        "boss": u.boss, "species": u.mon.base_entry["id"]} for u in self.units}
+                        "boss": u.boss, "species": u.mon.base_entry["id"], "ability": AB.ability_name(u.mon.ability),
+                        "tera": u.mon.tera_type} for u in self.units}

@@ -166,7 +166,30 @@ class TurnBot:
                 sc *= self.rng.uniform(0.3, 1.7)
             scores.append((sc, m["slot"]))
         scores.sort(reverse=True)
-        return {"type": "move", "slot": scores[0][1], "mega": mega}
+        return {"type": "move", "slot": scores[0][1], "mega": mega,
+                "tera": not mega and self._want_tera(battle, side, req, me, foe, scores[0][1])}
+
+    def _want_tera(self, battle, side, req, me, foe, slot):
+        if not req.get("can_tera") or self.level == "easy":
+            return False
+        if self.level == "normal":
+            return self.rng.random() < 0.15
+        w = battle.weather
+        before_off = est_damage(me, foe, me.moves[slot], w) if slot >= 0 else 0
+        before_def = best_damage(foe, me, w)
+        me.terastallized = True
+        try:
+            after_off = est_damage(me, foe, me.moves[slot], w) if slot >= 0 else 0
+            after_def = best_damage(foe, me, w)
+        finally:
+            me.terastallized = False
+        # tera to secure a KO, or to survive a hit we otherwise wouldn't
+        if after_off >= 1.0 > before_off:
+            return True
+        if before_def >= 1.0 > after_def * 1.15:
+            return True
+        alive = len(battle.sides[side].alive())
+        return self.level == "insane" and alive <= 3 and after_off > before_off * 1.2
 
 
 class RealtimeBot:
@@ -188,7 +211,12 @@ class RealtimeBot:
         foes = [u for u in sim.units if u.team != self.team and u.alive]
         if not mine or not foes:
             return
-        # mega evolution timing
+        # mega evolution / tera timing
+        for u in mine:
+            if sim.tera_allowed(u) and self.level != "easy" and (u.mon.hp_frac() < 0.75 or self.level == "insane"):
+                if self.level != "normal" or self.rng.random() < 0.3:
+                    sim.command(self.team, {"cmd": "tera", "unit": u.uid})
+                    break
         for u in mine:
             if u.mon.can_mega and sim.mega_allowed(u):
                 if self.level in ("hard", "insane") or (self.level == "normal" and u.mon.hp_frac() < 0.6) \

@@ -1,5 +1,6 @@
 """Combat rules shared by the real-time arena and the turn-based engine."""
-from .team import Member, calc_stats
+from . import abilities as AB
+from .team import Member, best_ability, calc_stats
 from .types import effectiveness
 
 STAGE_KEYS = ("atk", "def", "spa", "spd", "spe", "acc", "eva")
@@ -42,6 +43,12 @@ class Mon:
         self.megaed = False
         self.choice_lock = None
         self.fainted = False
+        self.ability = member.ability or best_ability(self.entry)
+        self.ability_suppressed = False
+        self.flags = {}
+        self.tera_type = member.tera or self.entry["types"][0]
+        self.terastallized = False
+        self.type_override = None
 
     # --------------------------------------------------------------- info
     @property
@@ -49,8 +56,14 @@ class Mon:
         return self.entry["name"]
 
     @property
-    def types(self):
+    def orig_types(self):
         return self.entry["types"]
+
+    @property
+    def types(self):
+        if self.terastallized:
+            return [self.tera_type]
+        return self.type_override or self.entry["types"]
 
     @property
     def can_mega(self):
@@ -59,9 +72,12 @@ class Mon:
     def hp_frac(self):
         return max(0.0, self.hp / self.maxhp)
 
-    def stat(self, key, crit=False, attacking=True, weather=None):
+    def best_stat(self):
+        return max(("atk", "def", "spa", "spd", "spe"), key=lambda k: self.stats[k])
+
+    def stat(self, key, crit=False, attacking=True, weather=None, other=None, ignore_stages=False):
         v = self.stats[key]
-        st = self.stages.get(key, 0)
+        st = 0 if ignore_stages else self.stages.get(key, 0)
         if crit:  # crits ignore bad stages for the attacker and good stages for the defender
             st = max(st, 0) if attacking else min(st, 0)
         v *= stage_mult(st)
@@ -73,7 +89,7 @@ class Mon:
         elif key == "spe":
             if it == "choice-scarf":
                 v *= 1.5
-            if self.status == "par":
+            if self.status == "par" and self.ability != "quick-feet":
                 v *= 0.5
         elif key == "spd" and it == "assault-vest":
             v *= 1.5
@@ -81,6 +97,10 @@ class Mon:
             v *= 1.5
         if key == "spd" and weather == "sand" and "rock" in self.types:
             v *= 1.5
+        if key == "def" and weather == "snow" and "ice" in self.types:
+            v *= 1.5
+        if not self.ability_suppressed:
+            v *= AB.stat_mult(self, key, weather, other)
         return v
 
     # --------------------------------------------------------------- changes
@@ -93,10 +113,19 @@ class Mon:
         self.stats = new
         self.hp = max(1, round(self.maxhp * frac))
         self.megaed = True
+        if form["abilities"]:
+            self.ability = form["abilities"][0][0]
         return form
 
-    def apply_stages(self, changes):
-        """Returns list of (stat, actual change)."""
+    def terastallize(self):
+        self.terastallized = True
+        self.type_override = None
+        return self.tera_type
+
+    def apply_stages(self, changes, from_foe=False):
+        """Applies stat changes through abilities (Contrary, Simple, Clear Body, Defiant...).
+        Returns list of (stat, actual change)."""
+        changes, extra, blocked = AB.adjust_stage_changes(self, dict(changes), from_foe)
         out = []
         for k, v in changes.items():
             if k not in self.stages:
@@ -104,14 +133,23 @@ class Mon:
             old = self.stages[k]
             self.stages[k] = max(-6, min(6, old + v))
             out.append((k, self.stages[k] - old))
+        if extra and any(d < 0 for _, d in out):
+            for k, v in extra.items():
+                old = self.stages[k]
+                self.stages[k] = max(-6, min(6, old + v))
+                out.append((k, self.stages[k] - old))
+        if blocked:
+            self.flags["blocked_drop"] = blocked
         return out
 
-    def can_status(self, status, weather=None):
+    def can_status(self, status, weather=None, attacker=None):
         if self.status or self.fainted:
             return False
         if any(t in self.types for t in STATUS_IMMUNE.get(status, ())):
             return False
         if status == "frz" and weather == "sun":
+            return False
+        if AB.status_immune(self, status, attacker):
             return False
         return True
 
@@ -121,22 +159,37 @@ class Mon:
         self.status_turns = rng.randint(1, 3) if status == "slp" else 0
         if self.item == "lum-berry":
             self.status = None
-            self.item = "none"
+            self.lose_item()
             return "lum"
         return status
 
-    def take(self, dmg, from_full_ok=True):
-        """Apply damage honoring Focus Sash. Returns damage dealt."""
-        dmg = max(0, int(dmg))
-        if dmg >= self.hp and self.hp == self.maxhp and self.item == "focus-sash" and from_full_ok and self.maxhp > 1:
+    def lose_item(self):
+        if self.item not in ("none", "mega-stone"):
             self.item = "none"
-            dmg = self.hp - 1
+            self.flags["item_lost"] = True
+
+    def take(self, dmg, from_full_ok=True, attacker=None):
+        """Apply damage honoring Focus Sash and Sturdy. Returns damage dealt."""
+        dmg = max(0, int(dmg))
+        if dmg >= self.hp and self.hp == self.maxhp and from_full_ok and self.maxhp > 1:
+            if AB.sturdy(self, attacker):
+                dmg = self.hp - 1
+                self.flags["sturdy_hit"] = True
+            elif self.item == "focus-sash":
+                self.lose_item()
+                dmg = self.hp - 1
         dmg = min(dmg, self.hp)
         self.hp -= dmg
         if self.hp <= 0:
             self.hp = 0
             self.fainted = True
         return dmg
+
+    def indirect(self, dmg):
+        """Damage from weather/status/recoil-type sources (blocked by Magic Guard)."""
+        if AB.magic_guard(self):
+            return 0
+        return self.take(dmg, from_full_ok=False)
 
     def heal(self, amount):
         amount = max(0, min(int(amount), self.maxhp - self.hp))
@@ -149,10 +202,14 @@ def move_type_and_power(user, move, weather=None):
     if move["key"] == "weather-ball" and weather:
         t = {"rain": "water", "sun": "fire", "sand": "rock", "snow": "ice"}[weather]
         p = 100
-    return t, p
+    if move["key"] == "tera-blast" and user.terastallized:
+        t = user.tera_type
+    t, m = AB.move_type(user, move, t)
+    return t, p * m
 
 
-def damage(user, target, move, rng, weather=None, level=None, spread=False, force_crit=None, extra=1.0):
+def damage(user, target, move, rng, weather=None, level=None, spread=False, force_crit=None, extra=1.0,
+           moved_last=False):
     """Returns (damage, effectiveness, crit). Does not apply it."""
     mtype, power = move_type_and_power(user, move, weather)
     if power <= 0:
@@ -170,17 +227,20 @@ def damage(user, target, move, rng, weather=None, level=None, spread=False, forc
         power *= 2
     if move["key"] in ("eruption", "water-spout"):
         power = max(1, 150 * user.hp_frac())
-    stage = move["crit"]
+    power *= AB.power_mult(user, target, move, mtype, weather, moved_last)
+    stage = move["crit"] + AB.crit_bonus(user)
     crit = force_crit if force_crit is not None else rng.random() < (1 / 24, 1 / 8, 1 / 2, 1, 1)[min(stage, 4)]
     phys = move["cls"] == "phys"
+    tgt_unaware = AB.ab(target, user) == "unaware"
+    usr_unaware = user.ability == "unaware"
     if move["key"] == "body-press":
-        a = user.stat("def", crit, True, weather)
+        a = user.stat("def", crit, True, weather, target, tgt_unaware)
     elif move["key"] == "foul-play":
-        a = target.stat("atk", crit, True, weather)
+        a = target.stat("atk", crit, True, weather, user, tgt_unaware)
     else:
-        a = user.stat("atk" if phys else "spa", crit, True, weather)
-    d = target.stat("def" if phys or move["key"] in ("psyshock", "psystrike", "secret-sword") else "spd",
-                    crit, False, weather)
+        a = user.stat("atk" if phys else "spa", crit, True, weather, target, tgt_unaware)
+    dkey = "def" if phys or move["key"] in ("psyshock", "psystrike", "secret-sword") else "spd"
+    d = target.stat(dkey, crit, False, weather, user, usr_unaware)
     level = level or user.member.level
     base = ((2 * level / 5 + 2) * power * a / max(1, d)) / 50 + 2
     if spread:
@@ -190,16 +250,16 @@ def damage(user, target, move, rng, weather=None, level=None, spread=False, forc
     elif weather == "sun":
         base *= 1.5 if mtype == "fire" else 0.5 if mtype == "water" else 1
     if crit:
-        base *= 1.5
+        base *= AB.crit_mult(user)
     base *= rng.uniform(0.85, 1.0)
-    if mtype in user.types:
-        base *= 1.5
+    base *= AB.stab(user, mtype)
     base *= eff
-    if phys and user.status == "brn" and move["key"] != "facade":
+    if phys and user.status == "brn" and move["key"] != "facade" and user.ability != "guts":
         base *= 0.5
     if user.item == "life-orb":
         base *= 1.3
     if user.item == "expert-belt" and eff > 1:
         base *= 1.2
+    base *= AB.defense_mult(target, user, move, mtype, eff)
     base *= extra
     return max(1, int(base)), eff, crit

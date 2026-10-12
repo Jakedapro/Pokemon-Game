@@ -17,7 +17,8 @@ INTRO_HOLD = 2.5  # seconds of "READY..." before a real-time battle starts
 
 
 def rt_opts(mega_mode_0, mega_mode_1, ai0="normal", ai1="normal"):
-    return dict(mega={0: mega_mode_0, 1: mega_mode_1}, mega_limit={0: 1, 1: 1}, ai={0: ai0, 1: ai1},
+    return dict(mega={0: mega_mode_0, 1: mega_mode_1}, mega_limit={0: 1, 1: 1}, tera_limit={0: 1, 1: 1},
+                ai={0: ai0, 1: ai1},
                 radius=30, time_ramp=100, hp_mult=14)
 
 
