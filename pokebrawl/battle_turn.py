@@ -10,6 +10,24 @@ from .battle_common import BattleExtras
 from .battlecore import STATUS_NAMES
 from .gfx import H, INK, SPRITES, W, WHITE
 from .render import STATUS_COLORS
+from .types import effectiveness
+
+CLS_NAMES = {"phys": "PHYSICAL", "spec": "SPECIAL", "status": "STATUS"}
+EFF_TEXT = {0.0: ("NO EFFECT", (150, 150, 150)), 0.25: ("RESISTED x1/4", (200, 120, 110)),
+            0.5: ("RESISTED", (230, 150, 130)), 2.0: ("SUPER EFFECTIVE", (120, 255, 140)),
+            4.0: ("SUPER EFFECTIVE x4", (120, 255, 200))}
+
+
+def type_pills(surf, types, x, y, size=13, right=False):
+    """A row of type badges starting at x (or ending at x when right=True). Returns the row's width."""
+    f = gfx.font(size, False)
+    widths = [f.size(t.upper())[0] + 12 for t in types]
+    total = sum(widths) + 4 * max(0, len(types) - 1)
+    cx = x - total if right else x
+    for t, w in zip(types, widths):
+        gfx.pill(surf, t.upper(), (cx + w / 2, y), gfx.type_color(t, 0), size)
+        cx += w + 4
+    return total
 
 FOE_POS = (510, 440)
 MY_POS = (220, 780)
@@ -206,7 +224,8 @@ class TurnBattleScene(Scene):
             for i, m in enumerate(req["moves"]):
                 x = 20 + (i % 2) * 345
                 y = 960 + (i // 2) * 88
-                sub = f"{m['pp']}/{m['maxpp']} PP   {m['power'] or '-'} pow   {m['cls'].upper()}"
+                sub = f"{CLS_NAMES.get(m['cls'], m['cls'].upper())}   {m['power'] or '-'} POW   " \
+                      f"{m['pp']}/{m['maxpp']} PP"
                 b = ui.Button((x, y, 335, 80), m["name"], gfx.type_color(m["type"], 2), 24, sub,
                               enabled=not m["disabled"], tag=m["slot"])
                 self.move_btns.append(b)
@@ -323,8 +342,7 @@ class TurnBattleScene(Scene):
         if self.timer is not None:
             col = (255, 110, 100) if self.timer < 10 else (220, 220, 230)
             gfx.text(surf, f"{int(self.timer) + 1}s", (686, 880), 24, col, anchor="midright")
-        for b in self.move_btns:
-            b.draw(surf)
+        self._draw_move_buttons(surf)
         if self.mega_btn:
             self.mega_btn.draw(surf)
         for rect, i, ok, m in self.party_btns:
@@ -357,6 +375,28 @@ class TurnBattleScene(Scene):
             for b in self.end_btns:
                 b.draw(surf)
         self.x.draw(surf, lambda i: (200, 640) if i == self.me else (520, 300))
+
+    def _foe_types(self):
+        v = self.vis.get(self.foe)
+        if not v or v.get("idx") is None or not self.state:
+            return None
+        return [v["tera"]] if v.get("tera") else self.state["sides"][self.foe]["mons"][v["idx"]]["types"]
+
+    def _draw_move_buttons(self, surf):
+        moves = {m["slot"]: m for m in (self.req or {}).get("moves", [])}
+        foe_types = self._foe_types()
+        for b in self.move_btns:
+            b.draw(surf)
+            m = moves.get(b.tag)
+            if not m:
+                continue
+            r = b.rect
+            type_pills(surf, [m["type"]], r.x + 8, r.y + 12, 12)
+            if foe_types and m["cls"] != "status" and b.enabled:
+                eff = effectiveness(m["type"], foe_types)
+                if eff in EFF_TEXT:
+                    label, col = EFF_TEXT[eff]
+                    gfx.text(surf, label, (r.right - 8, r.y + 12), 12, col, anchor="midright", ow=1, chunky=False)
 
     def _draw_field_info(self, surf):
         st = self.state
@@ -403,17 +443,26 @@ class TurnBattleScene(Scene):
             return
         x, y = pos
         ui.panel(surf, (x, y, 360, 96), (248, 246, 236), 12)
-        gfx.text(surf, v["name"], (x + 16, y + 24), 24, INK, None, anchor="midleft")
+        sd = self.state["sides"][side]
+        info = sd["mons"][v["idx"]] if v.get("idx") is not None else {}
+        types = [v["tera"]] if v.get("tera") else info.get("types", [])
+        tw = type_pills(surf, types, x + 344, y + 22, 13, right=True)
+        name, size = v["name"], 24
+        while size > 15 and gfx.font(size, True).size(name)[0] > 320 - tw:
+            size -= 2
+        gfx.text(surf, name, (x + 16, y + 24), size, INK, None, anchor="midleft")
+        if v.get("tera"):
+            gfx.pill(surf, "TERA", (x + 344 - tw - 26, y + 22), (40, 40, 60), 11)
         if v.get("status"):
-            gfx.pill(surf, STATUS_NAMES.get(v["status"], ""), (x + 300, y + 24), STATUS_COLORS.get(v["status"],
+            gfx.pill(surf, STATUS_NAMES.get(v["status"], ""), (x + 190, y + 78), STATUS_COLORS.get(v["status"],
                                                                                               (90, 90, 90)), 13)
         gfx.hp_bar(surf, (x + 16, y + 48, 328, 12), v["frac"])
-        if v.get("tera"):
-            gfx.pill(surf, f"TERA {v['tera'].upper()}", (x + 220, y + 78), gfx.type_color(v["tera"], 2), 12)
+        if side == self.me and info.get("ability"):
+            gfx.text(surf, f"{info['ability']}" + (f"  -  {info['item']}" if info.get("item") else ""),
+                     (x + 180, y + 108), 14, (220, 220, 235), ow=1, chunky=False)
         if self.ability_pop and self.ability_pop[0] == side:
             ui.panel(surf, (x + 30, y - 46, 300, 38), (60, 50, 90), 8)
             gfx.text(surf, self.ability_pop[1], (x + 180, y - 27), 20, (255, 230, 150))
-        sd = self.state["sides"][side]
         if side == self.me and v.get("idx") is not None:
             m = sd["mons"][v["idx"]]
             hp = round(m["maxhp"] * v["frac"])
@@ -428,7 +477,8 @@ class TurnBattleScene(Scene):
         stages = sd["stages"]
         if stages:
             txt = " ".join(f"{k.upper()}{'+' if v_ > 0 else ''}{v_}" for k, v_ in stages.items())
-            gfx.text(surf, txt, (x + 180, y + 108), 15, (255, 240, 160), ow=1, chunky=False)
+            gfx.text(surf, txt, (x + 180, y + (128 if side == self.me else 108)), 15, (255, 240, 160), ow=1,
+                     chunky=False)
 
     def _draw_preview(self, surf):
         shade = pygame.Surface((W, 820), pygame.SRCALPHA)
@@ -442,6 +492,8 @@ class TurnBattleScene(Scene):
             cx = 75 + i * 114
             surf.blit(img, img.get_rect(center=(cx, 240)))
             gfx.text(surf, m["name"][:11], (cx, 300), 14, ow=1, chunky=False)
+            for j, t in enumerate(m["types"]):
+                gfx.pill(surf, t.upper(), (cx, 324 + j * 22), gfx.type_color(t, 0), 11)
         gfx.text(surf, "Tap your lead below", (W / 2, 420), 26, (255, 240, 150))
         mine = self.state["sides"][self.me]["mons"]
         for i, m in enumerate(mine):
@@ -450,3 +502,5 @@ class TurnBattleScene(Scene):
             surf.blit(img, img.get_rect(center=(cx, 540)))
             gfx.text(surf, m["name"][:11], (cx, 606), 14, ow=1, chunky=False)
             gfx.text(surf, m["item"][:14], (cx, 628), 12, ui.MUTED, ow=1, chunky=False)
+            for j, t in enumerate(m["types"]):
+                gfx.pill(surf, t.upper(), (cx, 652 + j * 22), gfx.type_color(t, 0), 11)
