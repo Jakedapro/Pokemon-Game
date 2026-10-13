@@ -482,6 +482,18 @@ LOOKS = {   # cap, shirt, pants, hair; cap None = no cap (hair shown)
     "leader": ((40, 40, 48), (208, 168, 64), (40, 40, 48), (40, 40, 48)),
     "guard": ((64, 80, 136), (64, 80, 136), (48, 56, 96), (72, 48, 32)),
     "villager": (None, (120, 168, 120), (104, 88, 72), (120, 80, 48)),
+    # Team Rift: black and violet with a red R-stripe cap
+    "grunt": ((48, 40, 64), (64, 56, 88), (40, 36, 52), (40, 36, 52)),
+    "admin": (None, (120, 56, 152), (48, 40, 64), (200, 64, 96)),
+    "boss": (None, (32, 28, 40), (32, 28, 40), (232, 232, 240)),
+    "ace": ((240, 240, 248), (56, 96, 184), (40, 48, 80), (64, 48, 40)),
+    # the Elite Four
+    "frost": (None, (168, 216, 248), (88, 120, 184), (232, 240, 255)),
+    "brutus": (None, (248, 248, 248), (40, 40, 48), (32, 32, 32)),
+    "morrow": (None, (88, 56, 128), (48, 32, 72), (200, 200, 224)),
+    "drakon": ((176, 48, 48), (64, 72, 152), (40, 40, 64), (200, 48, 48)),
+    "champ": (None, (248, 216, 96), (240, 240, 248), (248, 232, 160)),
+    "creator": ((40, 200, 160), (40, 40, 48), (40, 40, 48), (32, 32, 40)),
 }
 
 
@@ -1085,7 +1097,7 @@ def hbuilding(kind, wt, ht, door_col, accent=None, seed=0):
     pygame.draw.line(s, OL, (0, roof_h), (w - 1, roof_h))
     # windows (skip where the door is)
     dx = door_col * TS
-    wy = wall_top + 3
+    wy = wall_top + (14 if kind in ("center", "mart") and ht >= 4 else 3)
     if wy + 8 < h - 3:
         for x in range(4, w - 12, 16):
             if abs(x + 5 - (dx + 8)) < 10:
@@ -1108,6 +1120,15 @@ def hbuilding(kind, wt, ht, door_col, accent=None, seed=0):
     # signs and emblems
     cx = w // 2
     sy = max(3, roof_h // 2 - 4)
+    if kind in ("center", "mart") and ht >= 4:   # the shop sign over the doors
+        from . import pixelfont
+        label = "POKeMON CENTER" if kind == "center" else "POKe MART"
+        tw = pixelfont.width(label, 1)
+        plate = pygame.Rect(dx + 8 - tw // 2 - 4, wall_top + 2, tw + 8, 10)
+        pygame.draw.rect(s, OL, plate, border_radius=2)
+        pygame.draw.rect(s, FRAME, plate.inflate(-2, -2), border_radius=2)
+        pixelfont.draw(s, label, (plate.x + 4, plate.y + 1), (205, 74, 74) if kind == "center" else (57, 98, 172),
+                       None, scale=1)
     if kind == "center":   # a ball emblem on the roof
         pygame.draw.circle(s, OL, (cx, sy + 4), 6)
         pygame.draw.circle(s, FRAME, (cx, sy + 4), 5)
@@ -1115,7 +1136,7 @@ def hbuilding(kind, wt, ht, door_col, accent=None, seed=0):
         pygame.draw.line(s, OL, (cx - 5, sy + 4), (cx + 5, sy + 4))
         pygame.draw.circle(s, OL, (cx, sy + 4), 2)
         _px(s, cx, sy + 4, FRAME)
-    elif kind == "mart":
+    elif kind == "mart" and ht < 4:
         pygame.draw.rect(s, OL, (cx - 14, sy - 2, 28, 12), border_radius=2)
         pygame.draw.rect(s, FRAME, (cx - 13, sy - 1, 26, 10), border_radius=2)
         from . import pixelfont

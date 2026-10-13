@@ -23,9 +23,14 @@ class AdventureSession:
         foe_name = (f"Wild {A.name_of(dex, foes[0])}" if kind == "wild" else self.trainer.get("name", "Trainer"))
         self.names = [game.get("name", "You"), foe_name]
         self.seed = seed if seed is not None else random.randrange(1 << 30)
-        self.battle = TurnBattle(dex, [[A.member(m) for m in game["party"]], [A.member(m) for m in foes]],
-                                 self.seed, names=self.names, wild=kind == "wild", bag=True, gimmicks=False)
-        level = {"wild": "easy", "trainer": "normal", "gym": "hard", "champion": "insane"}[kind]
+        foe_members = [A.member(m) for m in foes]
+        for fm, f in zip(foe_members, foes):   # story bosses and the Elite Four can Mega Evolve too
+            if f.get("mega"):
+                fm.item, fm.mega = "mega-stone", f["mega"]
+        self.battle = TurnBattle(dex, [[A.member(m, game, dex) for m in game["party"]], foe_members],
+                                 self.seed, names=self.names, wild=kind == "wild", bag=True, gimmicks="mega")
+        level = self.trainer.get("ai") or {"wild": "easy", "trainer": "normal", "gym": "hard",
+                                           "champion": "insane"}.get(kind, "hard")
         self.bot = TurnBot(level, self.seed)
         self.out = []
         self.error = None
@@ -42,9 +47,9 @@ class AdventureSession:
         self.battle.choose(0, {"type": "switch", "index": lead})
         self.battle.choose(1, {"type": "switch", "index": 0})
         intro = {"wild": f"A wild {A.name_of(dex, foes[0])} appeared!",
-                 "trainer": f"{self.names[1]} wants to battle!",
                  "gym": f"Gym Leader {self.trainer.get('leader', '')} wants to battle!",
-                 "champion": f"Champion {self.trainer.get('leader', '')} wants to battle!"}[kind]
+                 "champion": f"Champion {self.trainer.get('leader', '')} wants to battle!"}.get(
+            kind, f"{self.names[1]} wants to battle!")
         self._advance([{"t": intro, "a": None}])
 
     # ------------------------------------------------------------------ the session API the battle screen uses

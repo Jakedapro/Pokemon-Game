@@ -3,6 +3,7 @@ running with X held, your lead Pokemon following you, doors into Pokemon Centers
 trainers who spot you, wild Pokemon in tall grass and the START menu.
 
 Controls: arrows/WASD move, Z/Enter/Space = A (talk, confirm), X/Esc = B (back, hold to run), Enter = START."""
+import math
 import random
 
 import pygame
@@ -12,6 +13,7 @@ from . import gbaart as G
 from . import gbaui as U
 from . import pixelfont as F
 from . import profile
+from . import story as S
 from .app import Scene
 from .audio import AUDIO
 from .gfx import PIXEL
@@ -97,6 +99,7 @@ class OverworldScene(Scene):
         g["area"], g["x"], g["y"] = index, x, y
         self.cur = self.world.areas[index]
         self.blds = buildings_of(self.cur)
+        self._refresh()
         self.trail = [(x, y + 1)]
         self.banner = 0.0
         AUDIO.music(self.cur["music"])
@@ -110,6 +113,7 @@ class OverworldScene(Scene):
         if y is None:
             y = len(self.cur["rows"]) - 1
         g["room"] = {"kind": kind, "area": area_index, "door": list(door)}
+        self._refresh()
         g["area"] = area_index
         g["x"], g["y"], g["face"] = x, y, "up"
         self.trail = [(x, y)]
@@ -144,14 +148,50 @@ class OverworldScene(Scene):
             return self.rows()[yy][xx] in same
         return (ok(x, y - 1), ok(x + 1, y), ok(x, y + 1), ok(x - 1, y))
 
+    def _refresh(self):
+        """The people and items here: the map's own plus the story's (they change as flags change)."""
+        g = self.game
+        if self.inside:
+            r = g["room"]
+            extra = S.npcs_for(self.world, ("room", r["kind"], r["area"], tuple(r["door"])), g)
+            base = [n for n in self.cur["npcs"] if n["kind"] not in ("champion",) or not extra]
+            self.items, self.hidden = [], []
+        else:
+            extra = S.npcs_for(self.world, g["area"], g)
+            base = self.cur["npcs"]
+            self.items = list(self.cur.get("items", [])) + S.route_extras(self.world, g["area"], g)
+            self.hidden = S.hidden_items(self.world, g["area"])
+        spots = {(n["x"], n["y"]) for n in extra if not isinstance(n.get("x"), tuple)}
+        self.npcs = [n for n in base if (n["x"], n["y"]) not in spots]   # the story's people take their place
+        for n in extra:
+            if isinstance(n.get("x"), tuple):
+                n["x"], n["y"] = n["x"]
+            n["x"], n["y"] = self._free_spot(n["x"], n["y"])
+            self.npcs.append(n)
+
+    def _free_spot(self, x, y):
+        """The nearest open ground to (x, y): story people never stand inside a wall, tree or each other."""
+        walk = A.ROOM_WALK if self.inside else OUT_WALK
+        taken = ({(n["x"], n["y"]) for n in self.npcs} | {(i["x"], i["y"]) for i in self.items} |
+                 {(self.game["x"], self.game["y"])})
+        rows = self.rows()
+        best = None
+        for yy in range(len(rows)):
+            for xx in range(A.COLS):
+                if rows[yy][xx] in walk and (xx, yy) not in taken:
+                    d = abs(xx - x) * 1.01 + abs(yy - y)
+                    if best is None or d < best[0]:
+                        best = (d, xx, yy)
+        return (best[1], best[2]) if best else (x, y)
+
     def npc_at(self, x, y):
-        for n in self.cur["npcs"]:
+        for n in self.npcs:
             if (n["x"], n["y"]) == (x, y):
                 return n
         return None
 
     def item_at(self, x, y):
-        for it in self.cur.get("items", []):
+        for it in self.items:
             if (it["x"], it["y"]) == (x, y) and it["id"] not in self.game["picked"]:
                 return it
         return None
@@ -308,6 +348,14 @@ class OverworldScene(Scene):
         if it:
             self._pick(it)
             return
+        for h in self.hidden:   # the hidden items you only find by checking the right spot
+            if (h["x"], h["y"]) == (x, y) and h["id"] not in self.game["picked"]:
+                self.game["picked"].append(h["id"])
+                self.game["bag"][h["item"]] = self.game["bag"].get(h["item"], 0) + 1
+                AUDIO.play("catch", 0.6)
+                self.say(["There's something hidden here...", f"{self.game['name']} found a "
+                          f"{A.SHOP.get(h['item'], (h['item'],))[0]}!"])
+                return
         ch = self.tile(x, y)
         if ch == "S" and not self.inside:
             self._sign()
@@ -370,11 +418,125 @@ class OverworldScene(Scene):
             trainer = {"name": f"Champion {name}", "leader": name, "id": "champion", "lose": lose,
                        "money": 200 * lvl, "champion": True, "look": "rival"}
             self.say([intro], lambda: self._battle(self.world.champion_team(), "champion", trainer), speaker=name)
+        elif k in ("story", "static"):
+            self.run_script(n.get("script", []), n)
+        elif k == "quest":
+            self.run_script(S.quest_script(g, self.app.dex, n["quest"]), n)
         else:
             if n.get("heal"):
                 self.say(n["lines"] + ["You and your Pokemon took a good rest."], self._heal_all, speaker=n["name"])
                 return
+            talks = g.setdefault("talks", {})   # easter egg: keep talking to people...
+            talks[n["id"]] = talks.get(n["id"], 0) + 1
+            if talks[n["id"]] == 6 and not S.has(g, "chatterbox"):
+                S.set_flag(g, "chatterbox")
+                self.run_script([("say", n.get("name", ""), ["...You REALLY like talking to me, huh?",
+                                                              "Fine, fine. Take this and go train!"]),
+                                 ("give", "rare-candy", 1)], n)
+                return
             self.say(n["lines"], speaker=n.get("name", ""))
+
+    # ------------------------------------------------------------------ story scripts
+    def run_script(self, steps, npc=None):
+        self.script = list(steps)
+        self.script_npc = npc
+        self._step()
+
+    def _step(self):
+        g = self.game
+        dex = self.app.dex
+        if not getattr(self, "script", None):
+            self.script = None
+            self._refresh()
+            A.save(g)
+            return
+        st = self.script.pop(0)
+        op = st[0]
+        if op == "say":
+            speaker, lines = st[1], st[2]
+            self.say(lines, self._step, speaker=speaker)
+        elif op == "battle":
+            team, trainer = S.battle_team(self.world, g, st[1])
+            trainer = dict(trainer, id=st[1])
+            if st[1].startswith(("e4_", "final", "creator")):
+                trainer["arena"] = "league"
+            self._battle(team, "story", trainer, then=self._step)
+        elif op == "wild":
+            _, species, level, shiny = st
+            e = dex.get(species)
+            foe = A.make_mon(dex, e, level, self.rng, shiny=shiny)
+            self._battle([foe], "wild", None, then=self._step)
+        elif op == "flag":
+            S.set_flag(g, st[1])
+            self._step()
+        elif op == "give":
+            _, item, n = st
+            g["bag"][item] = g["bag"].get(item, 0) + n
+            AUDIO.play("catch", 0.6)
+            name = A.SHOP.get(item, S.KEY_ITEMS.get(item, (item,)))[0]
+            self.say([f"{g['name']} received {n} x {name.upper()}!"], self._step)
+        elif op == "take":
+            g["bag"].pop(st[1], None)
+            self._step()
+        elif op == "mega":
+            self._get_stone(st[1], self._step)
+        elif op == "keystone":
+            g["keystone"] = True
+            AUDIO.play("win")
+            self.say([f"{g['name']} received the KEY STONE!", "Pokemon holding their Mega Stone can now Mega Evolve!"],
+                     self._step)
+        elif op == "money":
+            g["money"] += st[1]
+            self.say([f"{g['name']} received {st[1]} coins!"], self._step)
+        elif op == "heal":
+            self._heal_all()
+            self._step()
+        elif op == "quest_done":
+            g.setdefault("quests", {})[st[1]] = "done"
+            AUDIO.play("win")
+            self.say([f"Quest complete: {S.QUESTS[st[1]]['name']}!"], self._step)
+        elif op == "tournament":
+            self.script = self._tournament_steps() + self.script
+            self._step()
+        elif op == "crowned":
+            from .adventure_ui import HallOfFame
+            g["champion"] = True
+            S.set_flag(g, "world_champion")
+            A.save(g)
+            self.app.push(HallOfFame(self.app, g))
+            self._step()
+        else:
+            self._step()
+
+    def _tournament_steps(self):
+        steps = []
+        for k, (name, typ, title, intro, lose, lv) in enumerate(S.E4):
+            steps += [("say", "Host", [f"ROUND {k + 1}! {title.upper()} {name.upper()}, master of {typ.upper()} "
+                                       f"Pokemon, enters the arena!"]),
+                      ("say", name, [intro]), ("battle", f"e4_{k}"), ("say", name, [lose])]
+        steps += [("say", "Host", ["The Elite Four has fallen! The crowd is on its feet!",
+                                   f"Ladies and gentlemen... the GRAND FINAL! The {S.CHAMP[1].upper()},",
+                                   f"{S.CHAMP[0].upper()}!"]),
+                  ("say", S.CHAMP[0], ["So you're the one everyone's talking about.",
+                                       "I've held this title for ten years. Show me everything you have!"]),
+                  ("battle", "final"),
+                  ("say", "Host", [f"IT'S OVER! {self.game['name'].upper()} IS THE NEW WORLD CHAMPION!",
+                                   "The best Pokemon trainer in the world!"]),
+                  ("crowned",)]
+        return steps
+
+    def _get_stone(self, key, then=None):
+        g = self.game
+        stones = g.setdefault("megastones", [])
+        name = S.stone_name(self.app.dex, key)
+        if key not in stones:
+            stones.append(key)
+        AUDIO.play("tera", 0.7)
+        lines = [f"{g['name']} found a MEGA STONE: {name.upper()}!"]
+        if not g.get("keystone"):
+            lines.append("...It's warm to the touch. Maybe someone knows what it's for?")
+        lines.append(f"Mega Stones collected: {len(stones)}.")
+        self.say(lines, then)
 
     def _start_heal(self):
         self.healing = 2.4
@@ -395,15 +557,27 @@ class OverworldScene(Scene):
     def _pick(self, it):
         g = self.game
         g["picked"].append(it["id"])
+        if it.get("mega"):
+            self._get_stone(it["item"])
+            return
         g["bag"][it["item"]] = g["bag"].get(it["item"], 0) + it["count"]
         AUDIO.play("catch", 0.6)
-        name = A.SHOP[it["item"]][0]
+        name = A.SHOP.get(it["item"], S.KEY_ITEMS.get(it["item"], (it["item"],)))[0]
         self.say([f"{g['name']} found {it['count']} x {name}!", f"{g['name']} put the {name} in the BAG."])
 
     # ------------------------------------------------------------------ trainers
     def _trainer_spots(self):
         x, y = self.game["x"], self.game["y"]
-        for n in self.cur["npcs"]:
+        for n in self.npcs:
+            if n["kind"] == "story" and n.get("auto"):
+                ddx, ddy = DIRS[n["face"]]
+                ahead = (y - n["y"]) * ddy + (x - n["x"]) * ddx
+                side = abs(x - n["x"]) if ddy else abs(y - n["y"])
+                if 0 < ahead <= n.get("sight", 4) and side <= 1:
+                    AUDIO.play("select")
+                    self.emote = ["!", n, 0.8, lambda n=n: self._talk(n)]
+                    return True
+                continue
             if n["kind"] != "trainer" or n["id"] in self.game["beaten"]:
                 continue
             dx, dy = DIRS[n["face"]]
@@ -456,13 +630,16 @@ class OverworldScene(Scene):
             foe = A.make_mon(dex, legend, hi + 6, rng)
         else:
             lv = rng.randint(lo, hi)
-            foe = A.make_mon(dex, A.grown_species(dex, dex.all[self.world.wild_species(area, rng)], lv - 4), lv, rng)
+            charm = S.has(self.game, "shiny_charm")
+            foe = A.make_mon(dex, A.grown_species(dex, dex.all[self.world.wild_species(area, rng)], lv - 4), lv, rng,
+                             shiny=rng.randrange(128 if charm else A.SHINY_ODDS) == 0)
         self.cool = 3
         self._battle([foe], "wild", None)
 
-    def _battle(self, foes, kind, trainer):
+    def _battle(self, foes, kind, trainer, then=None):
         if self.trans is not None or self.battle is not None:
             return
+        self.battle_then = then
         if A.lead_alive(self.game, self.app.dex) is None:
             self.say(["Your Pokemon are too tired to battle! Heal them at a Pokemon Center."])
             return
@@ -481,7 +658,9 @@ class OverworldScene(Scene):
         dex = self.app.dex
         g = self.game
         r = s.results()
+        then, self.battle_then = getattr(self, "battle_then", None), None
         if r["lost"]:
+            self.script = None
             lost = g["money"] // 2
             g["money"] -= lost
             area, x, y = g["center"]
@@ -511,12 +690,26 @@ class OverworldScene(Scene):
                 g["badges"].append(t["badge"])
                 lines += [f"{g['name']} received the {t['badge']} from {t.get('leader', '')}!"]
                 AUDIO.play("win")
+                stone = S.gym_stone(dex, t["gym"])
+                if stone and stone not in g.setdefault("megastones", []):
+                    g["megastones"].append(stone)
+                    lines.append(f"{t.get('leader', '')} also gave you a MEGA STONE: "
+                                 f"{S.stone_name(dex, stone).upper()}!")
                 if t.get("gym") == 7:
                     g["bag"]["master-ball"] = g["bag"].get("master-ball", 0) + 1
                     lines.append("Terra also gave you a Master Ball! It never fails.")
+            if self.cur.get("route") == 4 and all(n["id"] in g["beaten"] for n in self.cur["npcs"]
+                                                  if n["kind"] == "trainer"):
+                S.set_flag(g, "route4_clear")
         evolutions = list(s.evolutions)
 
+        go_on = then if (r["won"] or r["caught"]) and then else None
+        if then and not go_on:
+            self.script = None   # ran away from a story encounter: try again later
+
         def finish():
+            if go_on:
+                go_on()
             for mon, to in reversed(evolutions):
                 self.app.push(EvolutionScene(self.app, g, mon, to))
             if t.get("champion") and r["won"]:
@@ -550,7 +743,7 @@ class OverworldScene(Scene):
 
     def _open_menu(self):
         AUDIO.play("select", 0.5)
-        self.menu = U.Menu([("dex", "POKeDEX"), ("party", "POKeMON"), ("bag", "BAG"),
+        self.menu = U.Menu([("dex", "POKeDEX"), ("party", "POKeMON"), ("bag", "BAG"), ("quests", "QUESTS"),
                             ("card", self.game["name"].upper()), ("save", "SAVE"), ("quit", "QUIT"),
                             ("close", "EXIT")])
 
@@ -573,6 +766,8 @@ class OverworldScene(Scene):
             self.app.push(UI.BagScene(self.app, self.game))
         elif k == "card":
             self.app.push(UI.CardScene(self.app, self.game))
+        elif k == "quests":
+            self.app.push(UI.QuestScene(self.app, self.game))
         elif k == "save":
             self.menu = None
             A.save(self.game)
@@ -646,12 +841,22 @@ class OverworldScene(Scene):
                 from .gfx import type_color
                 accent = type_color(A.GYMS[self.cur["town"] - 1][2], 0)
             surf.blit(G.hbuilding(kind_b, bw, bh, door, accent, seed=bx * 3 + by), (bx * T, by * T + oy))
-        for it in self.cur.get("items", []):
+        for it in self.items:
             if it["id"] not in self.game["picked"]:
+                if it.get("mega"):   # a Mega Stone glinting on the ground
+                    cx, cy = it["x"] * T + T // 2, it["y"] * T + oy + T // 2
+                    k = 0.5 + 0.5 * math.sin(self.t * 5 + it["x"])
+                    pygame.draw.circle(surf, (255, 255, 255), (cx, cy), 2 + int(3 * k))
+                    for a in range(4):
+                        ang = a * math.pi / 2 + self.t
+                        ex = cx + int(math.cos(ang) * (4 + 6 * k))
+                        ey = cy + int(math.sin(ang) * (4 + 6 * k))
+                        pygame.draw.line(surf, (255, 236, 150), (cx, cy), (ex, ey), 2)
+                    continue
                 surf.blit(G.hgrass(it["x"], it["y"]), (it["x"] * T, it["y"] * T + oy))
                 surf.blit(G.hitem(), (it["x"] * T, it["y"] * T + oy))
         actors = []
-        for n in self.cur["npcs"]:
+        for n in self.npcs:
             nx, ny = n["x"] * T, n["y"] * T
             walking = self.walking_npc and self.walking_npc[0] is n
             if walking:
@@ -669,6 +874,12 @@ class OverworldScene(Scene):
             if kind_a == "npc":
                 n, nx, ny, walking = data
                 frame = (1 + int(self.t * 6) % 2) if walking else 0
+                if n["kind"] == "static":   # a Pokemon standing in the world
+                    e = self.app.dex.get(n["pokemon"])
+                    img = pygame.transform.scale_by(G.icon(e["id"] if e else 25, n.get("shiny", False)), 1.5)
+                    bob = int(2 * math.sin(self.t * 3))
+                    surf.blit(img, img.get_rect(midbottom=(nx + T / 2, ny + oy + T - 2 + bob)))
+                    continue
                 img = G.person(n.get("look") or n.get("cls") or "villager", n["face"], frame)
                 surf.blit(img, (nx, ny + oy + T - img.get_height() - 2))
             elif kind_a == "follow":

@@ -233,8 +233,9 @@ class TurnBattle:
             lock = f"{item} locks {mon.name} into {mon.moves[mon.choice_lock]['name']} - switch out to pick another move"
         elif v["taunt"] > 0:
             lock = f"{mon.name} is taunted - no status moves"
-        g = self.gimmicks
-        return {"kind": "move", "moves": moves, "can_mega": g and mon.can_mega and not s.mega_used,
+        g = self.gimmicks is True                       # everything (PvP / practice)
+        mg = g or self.gimmicks == "mega"               # Adventure: Mega Evolution only (with a Key Stone)
+        return {"kind": "move", "moves": moves, "can_mega": mg and mon.can_mega and not s.mega_used,
                 "can_gmax": g and mon.can_gmax and not s.gmax_used and not mon.can_mega,
                 "gmax_move": mon.gmax_move()[0] if mon.gmax_form else None,
                 "can_tera": g and not s.tera_used and not mon.megaed and not mon.can_mega and not mon.gmaxed,

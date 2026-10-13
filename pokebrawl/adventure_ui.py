@@ -560,7 +560,12 @@ class BagScene(GBAScene):
         items = [(k, n) for k, n in self.game["bag"].items() if n > 0]
         items.sort(key=lambda kv: list(A.SHOP).index(kv[0]) if kv[0] in A.SHOP else 99)
         self.items = items
-        self.menu = U.Menu([(k, f"{A.SHOP.get(k, (k,))[0].upper()}") for k, n in items] + [("close", "CLOSE BAG")],
+        from . import story as S
+        names = {k: A.SHOP.get(k, S.KEY_ITEMS.get(k, (k,)))[0].upper() for k, n in items}
+        stones = len(self.game.get("megastones", []))
+        self.menu = U.Menu([(k, names[k]) for k, n in items] +
+                           ([("stones", f"MEGA STONES ({stones})")] if stones or self.game.get("keystone") else []) +
+                           [("close", "CLOSE BAG")],
                            index=getattr(self, "menu", None).index if getattr(self, "menu", None) else 0)
         self.menu.index = min(self.menu.index, len(self.menu.options) - 1)
 
@@ -580,14 +585,45 @@ class BagScene(GBAScene):
         if k in ("close", "back"):
             self.app.pop()
         elif k is not None:
-            if k in A.BALL_KEYS:
+            if k == "stones":
+                self.app.push(StonesScene(self.app, self.game))
+            elif k in A.BALL_KEYS:
                 self.msg = "Throw it at a wild POKeMON in battle!"
+            elif k not in A.SHOP:
+                self.msg = "A precious item. Better hold on to it."
             else:
                 self.sub = U.Menu([("use", "USE"), ("cancel", "CANCEL")])
+
+    def update(self, dt):
+        if getattr(self, "evolve", None) and self.app.stack[-1] is self:
+            mon, to = self.evolve
+            self.evolve = None
+            self.app.push(EvolutionScene(self.app, self.game, mon, to))
+
+    def _candy(self, mon):
+        dex = self.app.dex
+        if mon["level"] >= A.MAX_LEVEL:
+            AUDIO.play("miss", 0.5)
+            return "It won't have any effect."
+        events = A.gain_xp(dex, mon, A.xp_for(mon["level"] + 1) - mon["xp"])
+        self.game["bag"]["rare-candy"] -= 1
+        if self.game["bag"]["rare-candy"] <= 0:
+            del self.game["bag"]["rare-candy"]
+        AUDIO.play("levelup" if "levelup" in getattr(AUDIO, "sfx", {}) else "heal")
+        nm = A.name_of(dex, mon).upper()
+        learned = [dex.moves[e[1]]["name"].upper() for e in events if e[0] == "learn"]
+        self.msg = f"{nm} grew to LV. {mon['level']}!" + (f" Learned {learned[0]}!" if learned else "")
+        evo = [e[1] for e in events if e[0] == "evolve"]
+        if evo:
+            self.evolve = (mon, evo[0])
+        self._refresh()
+        return True
 
     def _use(self, item, i):
         dex = self.app.dex
         mon = self.game["party"][i]
+        if item == "rare-candy":
+            return self._candy(mon)
         name, heal, cure, revive = MEDICINE[item]
         hp, mx = A.hp_of(dex, mon)
         if revive != (hp <= 0) or (not revive and hp >= mx and not (cure and mon.get("status"))):
@@ -621,10 +657,94 @@ class BagScene(GBAScene):
             F.draw(surf, f"x{n}", (466, 8 + 12 + i * 26), U.TEXT, U.SHADOW, anchor="topright")
         inner = U.box(surf, (4, 256, 472, 60))
         k = self.menu.options[self.menu.index][0]
-        desc = self.msg or (A.SHOP[k][2] if k in A.SHOP else "Close the BAG.")
+        from . import story as S
+        desc = self.msg or (A.SHOP[k][2] if k in A.SHOP else S.KEY_ITEMS[k][1] if k in S.KEY_ITEMS else
+                            "Your collection of Mega Stones." if k == "stones" else "Close the BAG.")
         F.draw(surf, desc, (inner.x + 8, inner.y + 10), U.TEXT, U.SHADOW)
         if self.sub is not None:
             self.sub.draw(surf, (338, 186, 138, 72))
+
+
+class StonesScene(GBAScene):
+    """The Mega Stone case: every stone you've found, and which of your Pokemon can use it."""
+
+    def __init__(self, app, game):
+        super().__init__(app)
+        self.game = game
+        self.top = 0
+
+    def handle(self, ev, pos):
+        d = U.direction(ev)
+        n = len(self.game.get("megastones", []))
+        if d in ("down", "up"):
+            self.top = max(0, min(max(0, n - 8), self.top + (1 if d == "down" else -1)))
+        elif U.is_a(ev) or U.is_b(ev):
+            self.app.pop()
+
+    def draw(self, surf):
+        from . import story as S
+        dex = self.app.dex
+        g = self.game
+        bg(surf, (112, 72, 160), (168, 128, 208))
+        inner = U.box(surf, (8, 8, VW - 16, 44))
+        total = len(S.all_stones(dex))
+        F.draw(surf, f"MEGA STONES  {len(g.get('megastones', []))}/{total}", (inner.x + 8, inner.y + 8),
+               U.TEXT, U.SHADOW)
+        F.draw(surf, "KEY STONE: " + ("YES" if g.get("keystone") else "NOT YET"), (inner.right - 8, inner.y + 8),
+               (64, 136, 72) if g.get("keystone") else (200, 72, 64), U.SHADOW, anchor="topright")
+        box = U.box(surf, (8, 58, VW - 16, VH - 66))
+        stones = g.get("megastones", [])
+        if not stones:
+            F.draw(surf, "No Mega Stones yet. Look for sparkles", (box.x + 8, box.y + 10), U.TEXT, U.SHADOW)
+            F.draw(surf, "on the routes, and beat Gym Leaders!", (box.x + 8, box.y + 36), U.TEXT, U.SHADOW)
+            return
+        owned = {dex.all[m["species"]]["name"].split(" ")[0].lower() for m in g["party"] + g.get("box", [])}
+        for i, key in enumerate(stones[self.top:self.top + 8]):
+            y = box.y + 6 + i * 30
+            base = key.split("-mega")[0].split("-primal")[0]
+            e = dex.get(base)
+            if e:
+                surf.blit(G.icon(e["id"]), (box.x + 4, y - 4))
+            have = base.replace("-", " ") in owned or base in owned
+            F.draw(surf, S.stone_name(dex, key).upper()[:22], (box.x + 48, y + 4), U.TEXT, U.SHADOW)
+            F.draw(surf, "IN TEAM" if have else "", (box.right - 8, y + 4), (64, 136, 72), U.SHADOW,
+                   anchor="topright")
+
+
+class QuestScene(GBAScene):
+    """The quest log: the main story's next step, then every side quest you've taken on."""
+
+    def __init__(self, app, game):
+        super().__init__(app)
+        self.game = game
+
+    def handle(self, ev, pos):
+        if U.is_a(ev) or U.is_b(ev):
+            self.app.pop()
+
+    def draw(self, surf):
+        from . import story as S
+        g = self.game
+        bg(surf, (64, 128, 96), (120, 184, 144))
+        inner = U.box(surf, (8, 8, VW - 16, 74))
+        F.draw(surf, "MAIN STORY", (inner.x + 8, inner.y + 6), (200, 72, 64), U.SHADOW)
+        F.draw(surf, S.next_goal(g, self.app.dex), (inner.x + 8, inner.y + 32), U.TEXT, U.SHADOW, scale=1)
+        box = U.box(surf, (8, 88, VW - 16, VH - 96))
+        F.draw(surf, "SIDE QUESTS", (box.x + 8, box.y + 4), (64, 104, 176), U.SHADOW)
+        qs = S.quest_list(g)
+        if not qs:
+            F.draw(surf, "None yet. Talk to people in towns and on routes!", (box.x + 8, box.y + 34), U.TEXT,
+                   U.SHADOW, scale=1)
+        for i, (qid, name, giver, st) in enumerate(qs):
+            y = box.y + 30 + i * 24
+            done = st == "done"
+            pygame.draw.rect(surf, (64, 160, 88) if done else (232, 176, 64), (box.x + 10, y + 3, 10, 10),
+                             border_radius=2)
+            F.draw(surf, name.upper(), (box.x + 28, y), U.TEXT, U.SHADOW)
+            F.draw(surf, "DONE" if done else giver, (box.right - 8, y + 4), (96, 104, 120), None, scale=1,
+                   anchor="topright")
+        F.draw(surf, f"SECRETS FOUND: {S.secrets_found(g)}/{len(S.SECRETS)}", (box.x + 8, box.bottom - 18),
+               (112, 80, 160), None, scale=1)
 
 
 # ====================================================================== mart

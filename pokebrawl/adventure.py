@@ -34,6 +34,7 @@ SHOP = {
     "full-restore": ("Full Restore", 3000, "Full HP and cures status"),
     "max-revive": ("Max Revive", 4000, "Revives with full HP"),
     "master-ball": ("Master Ball", 0, "Never fails"),
+    "rare-candy": ("Rare Candy", 4800, "Raises a Pokemon's level by 1"),
 }
 # what the Mart sells after N badges
 MART_STOCK = [(0, ["poke-ball", "potion", "full-heal"]), (1, ["super-potion", "revive"]),
@@ -73,6 +74,11 @@ TRAINER_NAMES = ["Joey", "Mia", "Leo", "Ava", "Sam", "Kai", "Zoe", "Ben", "Ivy",
 
 
 # ====================================================================== Pokemon in your party
+# Ultra Beasts and Paradox Pokemon don't show up on ordinary trainers' teams or in the wild
+SPECIAL_IDS = set(range(793, 800)) | set(range(803, 807)) | set(range(984, 996)) | set(range(1005, 1011)) | \
+    set(range(1020, 1026))
+
+
 def xp_for(level):
     """Total experience needed for a level (the 'medium fast' curve)."""
     return level ** 3 if level > 1 else 0
@@ -103,10 +109,23 @@ def make_mon(dex, entry, level, rng, shiny=None, origin=""):
             "nick": None, "origin": origin, "met": level}
 
 
-def member(mon):
-    """A battle-engine Member for a party Pokemon (no EVs, like a real playthrough)."""
-    m = Member(mon["species"], mon["moves"], "none", mon.get("nature", "Serious"), {"hp": 0}, None,
-               mon["level"], mon.get("ability"))
+def mega_form_for(dex, mon, game):
+    """The Mega form this Pokemon can use: you need the Key Stone and its Mega Stone."""
+    if not game or not game.get("keystone"):
+        return None
+    for fid in dex.all[mon["species"]].get("megas", []):
+        f = dex.all.get(fid)
+        if f and "primal" not in f["key"] and f["key"] in game.get("megastones", []):
+            return fid
+    return None
+
+
+def member(mon, game=None, dex=None):
+    """A battle-engine Member for a party Pokemon (no EVs, like a real playthrough). With the game state, a
+    Pokemon whose Mega Stone you own holds it."""
+    mega = mega_form_for(dex, mon, game) if dex is not None else None
+    m = Member(mon["species"], mon["moves"], "mega-stone" if mega else "none", mon.get("nature", "Serious"),
+               {"hp": 0}, mega, mon["level"], mon.get("ability"))
     m.cur_hp, m.status, m.pp = mon.get("cur_hp"), mon.get("status"), mon.get("pp")
     return m
 
@@ -242,8 +261,8 @@ def _put(grid, x, y, block):
 
 
 BUILDINGS = {
-    "C": ["cccc", "cccc", "cCcc"],          # Pokemon Center (door C)
-    "M": ["mmm", "mmm", "mMm"],              # Poke Mart (door M)
+    "C": ["ccccc", "ccccc", "ccccc", "ccCcc"],  # Pokemon Center (door C) - big, like the handhelds
+    "M": ["mmmm", "mmmm", "mmmm", "mMmm"],      # Poke Mart (door M)
     "G": ["ggggg", "ggggg", "ggggg", "ggGgg"],  # Gym (door G)
     "H": ["hhh", "hhh", "hDh"],              # house (door D)
     "L": ["lllllll", "lllllll", "lllllll", "lllllll", "lllLlll"],  # Pokemon League
@@ -271,22 +290,21 @@ def town_map(i, rng):
     elif i == 9:
         _put(g, 4, 2, BUILDINGS["L"])
         _put(g, 1, 15, BUILDINGS["C"])
-        _put(g, 11, 15, BUILDINGS["M"])
+        _put(g, 10, 15, BUILDINGS["M"])
         g[0] = ["#"] * COLS
         for x in (5, 6, 7, 8, 9):
             g[7][x] = "="
     else:
-        _put(g, 1, 2, BUILDINGS["C"])
-        _put(g, 10, 2, BUILDINGS["M"])
-        _put(g, 9, 7, BUILDINGS["G"])
-        _put(g, 1, 7, BUILDINGS["H"])
+        _put(g, 1, 1, BUILDINGS["C"])
+        _put(g, 10, 1, BUILDINGS["M"])
+        _put(g, 9, 8, BUILDINGS["G"])
+        _put(g, 1, 8, BUILDINGS["H"])
         _put(g, 1, 16, BUILDINGS["H"])
         _put(g, 10, 16, BUILDINGS["H"])
-        _put(g, 5, 9, ["S"])
-        for y in range(5, 7):
-            g[y][2] = "="
-            g[y][11] = "="
-        g[11][11] = "="
+        _put(g, 5, 10, ["S"])
+        for x in range(3, 12):        # a little square in front of the Center and Mart
+            g[6][x] = "="
+        g[5][3] = g[5][11] = "="
         g[12][11] = "="
     # decoration: flowers and the odd tree on empty ground
     for y in range(h):
@@ -394,7 +412,7 @@ class World:
         cap = 330 + 30 * r
         starters = {i for trio in STARTERS.values() for i in trio}
         for e in self.dex.all.values():
-            if e["id"] in starters:
+            if e["id"] in starters or e["species"] in SPECIAL_IDS:
                 continue
             if not e["default"] or e["transform"] or e["legendary"] or e["mythical"] or not e.get("lvl"):
                 continue
@@ -417,7 +435,7 @@ class World:
         """A trainer's team of `size` Pokemon of these types, grown up to the right stage for their level."""
         pool = [e for e in self.dex.all.values() if e["default"] and not e["transform"] and e.get("lvl") and
                 not (e["legendary"] or e["mythical"]) and any(t in types for t in e["types"]) and
-                self.base_form(e["id"]) == e["id"]]
+                self.base_form(e["id"]) == e["id"] and e["species"] not in SPECIAL_IDS]
         if strong:
             pool.sort(key=lambda e: -sum(grown_species(self.dex, e, 100)["stats"].values()))
             pool = pool[:30]

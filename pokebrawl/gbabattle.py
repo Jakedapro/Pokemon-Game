@@ -255,6 +255,16 @@ class GBABattle(Scene):
             self.catch["broke"] = self.catch["t"]
             self.blink[1] = 0.3
             AUDIO.play("ball", 0.6)
+        elif kind == "mega":
+            side, pid = a[1], a[2]
+            if self.vis[side]:
+                self.vis[side]["pid"] = pid
+                self.vis[side]["name"] = self.s.battle.sides[side].mon.name
+            AUDIO.play("tera", 0.9)
+            for col in ((255, 240, 160), (200, 120, 255), (120, 220, 255)):
+                self._burst(side, col)
+            self.grow[side] = 0.0
+            self.anim = {"kind": "switch", "t": 0, "dur": 0.9}
         elif kind == "item":
             AUDIO.play("heal", 0.6)
         elif kind == "win":
@@ -322,6 +332,7 @@ class GBABattle(Scene):
                            index=self.menu.index if self.menu and self.mode == "action" else 0)
 
     def _open_fight(self):
+        self.mega_on = False
         self.mode = "fight"
         moves = self.req["moves"]
         self.menu = U.Menu([(m["slot"], m["name"].upper()[:13], not m["disabled"]) for m in moves], cols=2)
@@ -373,7 +384,14 @@ class GBABattle(Scene):
             if k == "back":
                 self._open_action()
             elif k is not None:
-                self._send({"type": "move", "slot": k})
+                self._send({"type": "move", "slot": k, "mega": bool(getattr(self, "mega_on", False))})
+            elif self.req.get("can_mega") and ev.type == pygame.KEYDOWN and ev.key in (pygame.K_m, pygame.K_c):
+                self.mega_on = not getattr(self, "mega_on", False)
+                AUDIO.play("select")
+            elif (self.req.get("can_mega") and ev.type == pygame.MOUSEBUTTONDOWN and pos
+                  and pygame.Rect(332, 294, 136, 18).collidepoint(pos)):
+                self.mega_on = not getattr(self, "mega_on", False)
+                AUDIO.play("select")
         elif self.mode == "bag":
             k = self.sub.handle(ev, pos)
             if k in ("back", "cancel"):
@@ -445,11 +463,11 @@ class GBABattle(Scene):
         self._bottom(surf)
 
     def _background(self, surf):
-        kind = {"gym": "gym", "champion": "league"}.get(self.s.kind, "grass")
+        kind = self.trainer.get("arena") or {"gym": "gym", "champion": "league"}.get(self.s.kind, "grass")
         surf.blit(G.battle_bg(kind), (0, 0))
 
     def _platform(self, surf, x, y, rx, ry):
-        kind = {"gym": "gym", "champion": "league"}.get(self.s.kind, "grass")
+        kind = self.trainer.get("arena") or {"gym": "gym", "champion": "league"}.get(self.s.kind, "grass")
         img = G.platform(kind, mine=rx > 100)
         surf.blit(img, img.get_rect(center=(x, y + 4)))
 
@@ -548,7 +566,16 @@ class GBABattle(Scene):
                 col = (232, 72, 64) if m["pp"] == 0 else (224, 160, 48) if m["pp"] <= m["maxpp"] // 4 else U.TEXT
                 F.draw(surf, f"{m['pp']}/{m['maxpp']}", (inner.right - 10, inner.y + 6), col, U.SHADOW,
                        anchor="topright")
-                F.draw(surf, f"TYPE/{m['type'].upper()}", (inner.x + 8, inner.y + 32), U.TEXT, U.SHADOW)
+                ty = inner.y + (24 if self.req.get("can_mega") else 32)
+                F.draw(surf, f"TYPE/{m['type'].upper()}", (inner.x + 8, ty), U.TEXT, U.SHADOW)
+            if self.req.get("can_mega"):   # the Key Stone glows: M to Mega Evolve with this move
+                on = getattr(self, "mega_on", False)
+                b = pygame.Rect(332, 294, 136, 18)
+                glow = 0.5 + 0.5 * math.sin(self.t * 6)
+                pygame.draw.rect(surf, (120 + int(100 * glow), 72, 200) if on else (88, 88, 104), b,
+                                 border_radius=6)
+                pygame.draw.rect(surf, (255, 232, 140) if on else (160, 160, 176), b, 2, border_radius=6)
+                F.draw(surf, "MEGA: ON" if on else "M: MEGA", b.center, U.WHITE, None, scale=1, anchor="center")
         if self.mode in ("bag", "party") and self.sub is not None:
             self._overlay(surf)
 

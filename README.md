@@ -148,9 +148,18 @@ pixel art: 16-pixel tiles, pixel trainers and a pixel font (all drawn by the gam
   Experience is given right after each knockout, with level-ups and new moves mid-battle, and evolutions after.
 - **Catching:** throw Poke Balls from the BAG - the ball wobbles and clicks shut, or the Pokemon breaks free.
   Rare legendaries hide on the later routes (they also go into your Legend collection). Shinies are 1 in 512.
+- **Story:** your rival Blake, Team Rift (grunts, Admin Morga and Boss Vex) stealing Mega Stones, and
+  Prof. Hazel's Key Stone after your second badge.
+- **Mega Stones:** gym leaders give one with each badge, story fights and quests give more, and some sparkle on the
+  routes. With the Key Stone, press **M** in the move menu to Mega Evolve. The BAG has a Mega Stone case.
+- **Side quests:** a lost lucky charm, a letter to deliver, a lost Psyduck, Pokedex goals, a route clean sweep and
+  more. **QUESTS** in the START menu shows your next story goal and every quest.
+- **Secrets:** a few hidden things to find (there's a counter in the quest log). Hidden items too: check the ground.
+- **The World Tournament:** with all 8 badges, enter the League and face the Elite Four back to back with no
+  healing, then World Champion Aurelia in the Grand Final. Win to become the best trainer in the world.
 - **Trainers** spot you and walk over. **Gym leaders** give badges, and the road north stays closed until you
-  have a town's badge. Beat all 8, then the Champion, and enter the Hall of Fame.
-- **START menu:** Pokedex, party (summary pages, switching order), bag, trainer card with badges, save.
+  have a town's badge.
+- **START menu:** Pokedex, party, quests (summary pages, switching order), bag, trainer card with badges, save.
   The game also saves on every map change. Blacking out sends you back to a Pokemon Center with half your money.
 
 ## Ranks, legends and the Pokedex
