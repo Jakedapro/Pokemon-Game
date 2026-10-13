@@ -614,22 +614,22 @@ class OverworldScene(Scene):
                             surf.blit(G.furniture(FURN[ch]), (dx, dy))
                     continue
                 if ch == "=":
-                    surf.blit(G.dirt_edged(self._mask(x, y, "=" + "".join(DOORS)), x * 3 + y), (dx, dy))
+                    surf.blit(G.hsand(self._mask(x, y, "=" + "".join(DOORS)), x * 3 + y), (dx, dy))
                 elif ch == '"':
-                    surf.blit(G.tall2(0, self.tile(x, y - 1) != '"'), (dx, dy))
+                    surf.blit(G.htall(0), (dx, dy))
                 elif ch == ",":
-                    surf.blit(G.tile("flowers", gf, seed=x + y * 5), (dx, dy))
+                    surf.blit(G.hflowers(gf, x + y * 5), (dx, dy))
                 elif ch == "~":
-                    surf.blit(G.water_shore(self._mask(x, y, "~"), wf), (dx, dy))
-                elif ch == "S":
-                    surf.blit(G.tile("sign"), (dx, dy))
+                    surf.blit(G.hwater(self._mask(x, y, "~"), wf), (dx, dy))
                 else:
-                    surf.blit(G.grass2(x, y), (dx, dy))
+                    surf.blit(G.hgrass(x, y), (dx, dy))
+                    if ch == "S":
+                        surf.blit(G.hsign(), (dx, dy))
         if not inside:   # forests: crowns overlap upward, drawn top row first so lower trees sit in front
             for y in range(y0, min(len(rows), y1 + 1)):
                 for x, ch in enumerate(rows[y]):
                     if ch in "#t":
-                        img = G.canopy(self.tile(x, y + 1) in "#t", self.tile(x, y - 1) in "#t", x * 7 + y)
+                        img = G.htree(self.tile(x, y + 1) in "#t", self.tile(x, y - 1) in "#t", x * 7 + y)
                         surf.blit(img, (x * T, y * T + oy - 16))
         if inside and kind == "center" and self.healing is not None:   # balls on the healing machine
             mx, my = 5 * T, 2 * T + oy
@@ -648,7 +648,8 @@ class OverworldScene(Scene):
             surf.blit(G.building(kind_b, bw, bh, door, accent, seed=bx * 3 + by), (bx * T, by * T + oy))
         for it in self.cur.get("items", []):
             if it["id"] not in self.game["picked"]:
-                surf.blit(G.tile("item"), (it["x"] * T, it["y"] * T + oy))
+                surf.blit(G.hgrass(it["x"], it["y"]), (it["x"] * T, it["y"] * T + oy))
+                surf.blit(G.hitem(), (it["x"] * T, it["y"] * T + oy))
         actors = []
         for n in self.cur["npcs"]:
             nx, ny = n["x"] * T, n["y"] * T
@@ -683,7 +684,7 @@ class OverworldScene(Scene):
                 img = G.person("player", self.game["face"], frame)
                 surf.blit(img, (x, y + oy + T - img.get_height() - 2))
                 if not inside and self.tile(self.game["x"], self.game["y"]) == '"' and self.move is None:
-                    surf.blit(G.tall_overlay(gf), (x, y + oy + T - 16))
+                    surf.blit(G.htall_over(gf), (x, y + oy + T - 16))
         if self.emote is not None:
             n = self.emote[1]
             bx, by = n["x"] * T + T // 2, n["y"] * T + oy - 28
@@ -694,7 +695,7 @@ class OverworldScene(Scene):
         if self.text is not None:
             self.text.draw(surf, self.t)
         if self.menu is not None:
-            self.menu.draw(surf, (VW - 150, 4, 146, 20 + 26 * len(self.menu.options)))
+            self.menu.draw(surf, (VW - 140, 6, 134, 20 + 26 * len(self.menu.options)))   # FireRed: right side, tiles (22,1)
         if self.trans is not None:
             self._draw_transition(surf, self.trans["t"])
         if self.warp is not None:

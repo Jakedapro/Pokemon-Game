@@ -800,3 +800,217 @@ def platform(kind="grass", mine=False):
     out = _scaled(s)
     _cache[key] = out
     return out
+
+
+# ====================================================================== handheld palette (soft pastel greens)
+# tones like the GBA games: minty grass, deep green foliage with yellow-green highlights, sandy paths
+HG = (115, 205, 164)        # grass
+HG_L = (139, 222, 189)      # grass highlight
+HG_D = (65, 180, 139)       # grass tufts
+LEAF_D = (57, 90, 16)       # foliage outline / darkest
+LEAF = (57, 148, 49)        # foliage
+LEAF_M = (131, 213, 98)     # foliage light
+LEAF_L = (189, 255, 139)    # foliage highlight
+SAND = (213, 197, 131)
+SAND_L = (238, 230, 139)
+SAND_D = (197, 172, 106)
+SAND_EDGE = (172, 222, 164)  # where sand meets grass
+TRUNK2 = (115, 98, 98)
+
+
+def hgrass(x, y):
+    """Plain grass: flat mint with a few paired tufts in a fixed rhythm."""
+    key = ("hg", (x + y * 2) % 4)
+    if key in _cache:
+        return _cache[key]
+    s = pygame.Surface((TS, TS))
+    s.fill(HG)
+    v = key[1]
+    spots = [((2, 4), (10, 11)), ((6, 2), (12, 9)), ((3, 11), (9, 5)), ((13, 3), (5, 13))][v]
+    for tx, ty in spots:
+        _px(s, tx, ty, HG_D)
+        _px(s, tx + 2, ty, HG_D)
+        _px(s, tx + 1, ty + 1, HG_D)
+        _px(s, tx, ty - 1, HG_L)
+    out = _scaled(s)
+    _cache[key] = out
+    return out
+
+
+def htall(frame=0):
+    """Tall grass: leafy clumps (two rows of rounded blades) in deep and yellow greens."""
+    key = ("ht", frame)
+    if key in _cache:
+        return _cache[key]
+    s = pygame.Surface((TS, TS))
+    s.fill(HG)
+    for row, (by, off) in enumerate(((8, 0), (16, 4))):
+        for bx in range(-4, 16, 8):
+            x0 = bx + off + (frame if row == 0 else 0)
+            # a clump: dark outline, mid fill, light tips
+            pygame.draw.polygon(s, LEAF_D, [(x0, by), (x0 + 1, by - 6), (x0 + 3, by - 8), (x0 + 4, by - 5),
+                                            (x0 + 5, by - 8), (x0 + 7, by - 6), (x0 + 8, by)])
+            pygame.draw.polygon(s, LEAF, [(x0 + 1, by - 1), (x0 + 2, by - 6), (x0 + 3, by - 7), (x0 + 4, by - 4),
+                                          (x0 + 5, by - 7), (x0 + 6, by - 5), (x0 + 7, by - 1)])
+            _px(s, x0 + 3, by - 6, LEAF_L)
+            _px(s, x0 + 5, by - 6, LEAF_M)
+            _px(s, x0 + 2, by - 4, LEAF_M)
+    out = _scaled(s)
+    _cache[key] = out
+    return out
+
+
+def htall_over(frame=0):
+    key = ("hto", frame)
+    if key not in _cache:
+        s = pygame.Surface((TS, 8), pygame.SRCALPHA)
+        for bx in range(0, 16, 8):
+            x0 = bx + frame
+            pygame.draw.polygon(s, LEAF_D, [(x0, 8), (x0 + 1, 2), (x0 + 3, 0), (x0 + 4, 3), (x0 + 5, 0),
+                                            (x0 + 7, 2), (x0 + 8, 8)])
+            pygame.draw.polygon(s, LEAF, [(x0 + 1, 7), (x0 + 2, 2), (x0 + 3, 1), (x0 + 4, 4), (x0 + 5, 1),
+                                          (x0 + 6, 3), (x0 + 7, 7)])
+            _px(s, x0 + 3, 2, LEAF_L)
+        _cache[key] = _scaled(s)
+    return _cache[key]
+
+
+def htree(below_tree, above_tree, seed=0):
+    """A round bushy tree (16x24, spills up into the tile above): scalloped crown, light upper-left,
+    dark lower-right, short trunk when nothing is below it."""
+    key = ("htr", below_tree, above_tree, seed % 2)
+    if key in _cache:
+        return _cache[key]
+    s = pygame.Surface((TS, TS + 8), pygame.SRCALPHA)
+    oy = 8
+    if not below_tree:
+        pygame.draw.rect(s, LEAF_D, (5, oy + 10, 6, 6))
+        pygame.draw.rect(s, TRUNK2, (6, oy + 10, 4, 5))
+        _px(s, 7, oy + 11, (148, 131, 131))
+    top = oy - 7
+    h = 17 if not below_tree else 20
+    # crown silhouette with bumps
+    pygame.draw.ellipse(s, LEAF_D, (0, top, 16, h))
+    for bx, by in ((2, top - 1), (7, top - 2), (11, top - 1)):
+        pygame.draw.circle(s, LEAF_D, (bx + 2, by + 3), 3)
+    pygame.draw.ellipse(s, LEAF, (1, top + 1, 14, h - 3))
+    for bx, by in ((2, top), (7, top - 1), (11, top)):
+        pygame.draw.circle(s, LEAF, (bx + 2, by + 3), 2)
+    # light on the upper left, scallops of highlight
+    pygame.draw.ellipse(s, LEAF_M, (2, top + 1, 8, 6))
+    for hx, hy in ((3, top + 2), (8, top + 1), (4, top + 6)):
+        _px(s, hx, hy, LEAF_L)
+        _px(s, hx + 1, hy, LEAF_L)
+    # shading arcs lower down
+    for ax in (3, 9):
+        pygame.draw.arc(s, LEAF_D, (ax, top + 6, 6, 6), 3.6, 5.8, 1)
+    out = _scaled(s)
+    _cache[key] = out
+    return out
+
+
+def hsand(mask, seed=0):
+    """Sandy path; sides that touch grass get a soft two-step edge (sand -> pale green -> grass)."""
+    key = ("hs", mask, seed % 3)
+    if key in _cache:
+        return _cache[key]
+    s = pygame.Surface((TS, TS))
+    s.fill(SAND)
+    r = _r(seed % 3 + 40)
+    for _ in range(4):
+        x, y = r.randrange(2, 14), r.randrange(2, 14)
+        _px(s, x, y, SAND_D)
+        _px(s, x + 1, y, SAND_L)
+    n, e, so, w = mask
+    for on, rects in ((not n, [(0, 0, 16, 1), (0, 1, 16, 1)]), (not so, [(0, 15, 16, 1), (0, 14, 16, 1)]),
+                      (not w, [(0, 0, 1, 16), (1, 0, 1, 16)]), (not e, [(15, 0, 1, 16), (14, 0, 1, 16)])):
+        if on:
+            pygame.draw.rect(s, HG, rects[0])
+            pygame.draw.rect(s, SAND_EDGE, rects[1])
+    # bumpy edge: a few grass pixels poking in
+    if not n:
+        for x in range(1, 16, 5):
+            _px(s, x, 2, SAND_EDGE)
+    if not so:
+        for x in range(3, 16, 5):
+            _px(s, x, 13, SAND_EDGE)
+    if not w:
+        for y in range(2, 16, 5):
+            _px(s, 2, y, SAND_EDGE)
+    if not e:
+        for y in range(4, 16, 5):
+            _px(s, 13, y, SAND_EDGE)
+    out = _scaled(s)
+    _cache[key] = out
+    return out
+
+
+def hflowers(frame=0, seed=0):
+    key = ("hf", frame, seed % 2)
+    if key in _cache:
+        return _cache[key]
+    s = pygame.Surface((TS, TS))
+    s.fill(HG)
+    petals = (248, 112, 112) if seed % 2 == 0 else (248, 248, 248)
+    for fx, fy in ((4, 4), (11, 11)):
+        fx += frame
+        for dx, dy in ((0, -1), (-1, 0), (1, 0), (0, 1)):
+            _px(s, fx + dx, fy + dy, petals)
+        _px(s, fx, fy, (248, 216, 64))
+        _px(s, fx, fy + 2, LEAF)
+        _px(s, fx - 1, fy + 2, LEAF)
+    out = _scaled(s)
+    _cache[key] = out
+    return out
+
+
+def hwater(mask, frame=0):
+    key = ("hw", mask, frame)
+    if key in _cache:
+        return _cache[key]
+    s = pygame.Surface((TS, TS))
+    s.fill((106, 172, 238))
+    for k, y in enumerate((4, 10)):
+        x0 = (frame * 2 + k * 6) % 16
+        for dx in range(5):
+            _px(s, (x0 + dx) % 16, y, (180, 222, 255) if 0 < dx < 4 else (90, 148, 222))
+    n, e, so, w = mask
+    if not n:
+        pygame.draw.rect(s, SAND, (0, 0, 16, 2))
+        pygame.draw.line(s, (230, 246, 255), (0, 2), (15, 2))
+    if not w:
+        pygame.draw.rect(s, SAND, (0, 0, 2, 16))
+    if not e:
+        pygame.draw.rect(s, SAND, (14, 0, 2, 16))
+    if not so:
+        pygame.draw.line(s, (90, 148, 222), (0, 15), (15, 15))
+    out = _scaled(s)
+    _cache[key] = out
+    return out
+
+
+def hsign():
+    key = ("hsign",)
+    if key not in _cache:
+        s = pygame.Surface((TS, TS), pygame.SRCALPHA)
+        pygame.draw.rect(s, (96, 64, 40), (7, 9, 2, 7))
+        pygame.draw.rect(s, (90, 57, 65), (2, 2, 12, 9))
+        pygame.draw.rect(s, (222, 172, 106), (3, 3, 10, 7))
+        for y in (5, 7):
+            pygame.draw.line(s, (172, 123, 74), (5, y), (10, y))
+        _cache[key] = _scaled(s)
+    return _cache[key]
+
+
+def hitem():
+    key = ("hitem",)
+    if key not in _cache:
+        s = pygame.Surface((TS, TS), pygame.SRCALPHA)
+        pygame.draw.circle(s, (57, 57, 74), (8, 9), 5)
+        pygame.draw.circle(s, (248, 248, 248), (8, 9), 4)
+        pygame.draw.rect(s, (230, 82, 74), (4, 5, 9, 4))
+        pygame.draw.line(s, (57, 57, 74), (4, 9), (12, 9))
+        _px(s, 8, 9, (248, 248, 248))
+        _px(s, 6, 6, (255, 200, 190))
+        _cache[key] = _scaled(s)
+    return _cache[key]

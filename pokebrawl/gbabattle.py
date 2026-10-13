@@ -17,8 +17,8 @@ from .audio import AUDIO
 from .gfx import PIXEL, type_color
 
 VW, VH = PIXEL
-FOE_AT = (352, 132)     # midbottom of the foe's sprite
-ME_AT = (120, 230)
+FOE_AT = (352, 136)     # midbottom of the foe's sprite (FireRed: centre 176,40 at 1x)
+ME_AT = (144, 232)      # (FireRed: centre 72,80 at 1x)
 STATUS_TAGS = {"brn": ("BRN", (232, 112, 56)), "par": ("PAR", (216, 184, 40)), "psn": ("PSN", (168, 80, 168)),
                "tox": ("PSN", (168, 80, 168)), "slp": ("SLP", (144, 144, 152)), "frz": ("FRZ", (96, 176, 232))}
 
@@ -498,7 +498,7 @@ class GBABattle(Scene):
 
     def _foe_box(self, surf):
         v = self.vis[1]
-        r = pygame.Rect(14, 18, 214, 52)
+        r = pygame.Rect(10, 30, 214, 52)     # FireRed: opponent box centred near (44,30) at 1x
         pygame.draw.rect(surf, (64, 72, 64), r, border_radius=6)
         pygame.draw.rect(surf, (248, 248, 216), r.inflate(-4, -4), border_radius=5)
         pygame.draw.polygon(surf, (64, 72, 64), [(r.right - 6, r.bottom - 2), (r.right + 10, r.bottom - 2),
@@ -512,7 +512,7 @@ class GBABattle(Scene):
 
     def _my_box(self, surf):
         v = self.vis[0]
-        r = pygame.Rect(252, 154, 222, 76)
+        r = pygame.Rect(232, 140, 222, 76)   # FireRed: player box centred near (158,88) at 1x
         pygame.draw.rect(surf, (64, 72, 64), r, border_radius=6)
         pygame.draw.rect(surf, (248, 248, 216), r.inflate(-4, -4), border_radius=5)
         F.draw(surf, v["name"].upper()[:11], (r.x + 14, r.y + 6), U.TEXT, U.SHADOW)

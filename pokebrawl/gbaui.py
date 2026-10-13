@@ -58,7 +58,7 @@ class TextBox:
             self.add(ln)
 
     def add(self, text):
-        rows = F.wrap(text, W - 64)
+        rows = F.wrap(text, W - 100)
         for i in range(0, len(rows), 2):
             self.pages.append(rows[i:i + 2])
 
@@ -100,7 +100,7 @@ class TextBox:
             return self.next()
         return False
 
-    def draw(self, surf, t, rect=(4, 240, 472, 76), dark=False):
+    def draw(self, surf, t, rect=(24, 236, 432, 80), dark=False):   # FireRed: tiles (2,15) 26x4 + frame
         if self.done:
             return
         if dark:
