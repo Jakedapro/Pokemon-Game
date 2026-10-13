@@ -146,6 +146,17 @@ _text_cache = {}
 
 def text(surf, s, pos, size=24, color=WHITE, outline=INK, ow=2, anchor="center", chunky=True, alpha=255):
     """Draw outlined text. anchor: center | topleft | midleft | midright | midtop."""
+    img = text_image(s, size, color, outline, ow, chunky)
+    if alpha < 255:
+        img = img.copy()
+        img.set_alpha(alpha)
+    r = img.get_rect(**{anchor: (int(pos[0]), int(pos[1]))})
+    surf.blit(img, r)
+    return r
+
+
+def text_image(s, size=24, color=WHITE, outline=INK, ow=2, chunky=True):
+    """The outlined text as a surface (cached: big outlines take hundreds of blits to build)."""
     key = (str(s), size, color, outline, ow, chunky)
     img = _text_cache.get(key)
     if img is None:
@@ -163,12 +174,7 @@ def text(surf, s, pos, size=24, color=WHITE, outline=INK, ow=2, anchor="center",
         if len(_text_cache) > 400:  # big outlined titles are slow to build: keep recent ones
             _text_cache.clear()
         _text_cache[key] = img
-    if alpha < 255:
-        img = img.copy()
-        img.set_alpha(alpha)
-    r = img.get_rect(**{anchor: (int(pos[0]), int(pos[1]))})
-    surf.blit(img, r)
-    return r
+    return img
 
 
 def title_text(surf, s, pos, size=60, alpha=255, scale=1.0, color=WHITE):

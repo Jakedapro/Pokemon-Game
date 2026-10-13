@@ -8,6 +8,7 @@ from .app import Scene
 from .audio import AUDIO
 from .battle_common import BattleExtras
 from .battlecore import STATUS_NAMES
+from .cinematics import Finisher
 from .gfx import H, INK, SPRITES, W, WHITE
 from .render import STATUS_COLORS
 from .types import effectiveness
@@ -54,6 +55,8 @@ class TurnBattleScene(Scene):
         self.mega_on = False
         self.gimmick = "mega"
         self.ability_pop = None
+        self.finisher = None     # knockout cutscene playing right now
+        self.last_move = None
         self.waiting = False
         self.t = 0.0
         self.buttons = []
@@ -109,6 +112,12 @@ class TurnBattleScene(Scene):
             self.flash[side] = max(0.0, self.flash[side] - dt)
         for u in self.s.pump():
             self.pending_updates.append(u)
+        if self.finisher is not None:  # the knockout cutscene holds the battle log until it's done
+            self.finisher.update(dt)
+            if self.finisher.done:
+                self.finisher = None
+            self._layout()
+            return
         # play log entries one by one
         if self.cur is None and not self.queue and self.pending_updates:
             u = self.pending_updates.pop(0)
@@ -158,9 +167,12 @@ class TurnBattleScene(Scene):
                "protect": "select", "screen": "heal", "crit": "hit_super"}.get(kind)
         if snd:
             AUDIO.play(snd, 0.7)
-        if kind == "hit":
+        if kind == "hit" and a[2] <= 0 and self.last_move and self.app.settings.get("finishers", "On") == "On":
+            self._start_finisher(a[1])
+        elif kind == "hit":
             AUDIO.play("hit_super" if a[3] > 1 else "hit_weak" if a[3] < 1 else "hit", 0.9)
-        elif kind == "move":
+        if kind == "move":
+            self.last_move = a
             AUDIO.play("beam" if a[4] == "spec" else "melee" if a[4] == "phys" else "select", 0.5)
         elif kind == "faint":
             v = self.vis.get(a[1], {})
@@ -214,8 +226,19 @@ class TurnBattleScene(Scene):
             self.shake[a[1]] = 0.15
 
     # ------------------------------------------------------------------ layout + input
+    def _start_finisher(self, side):
+        """The hit that knocks out `side`'s Pokemon becomes a cutscene."""
+        mv = self.last_move
+        att, dfn = self.vis.get(1 - side, {}), self.vis.get(side, {})
+        if "id" not in att or "id" not in dfn or mv[1] == side:
+            return
+        mons = self.state["sides"][side]["mons"] if self.state else []
+        others_left = sum(1 for i, m in enumerate(mons) if not m["fainted"] and i != dfn.get("idx"))
+        self.finisher = Finisher(att["id"], dfn["id"], mv[2], mv[3], mv[4], mine=(1 - side) == self.me,
+                                 final=others_left == 0)
+
     def _busy(self):
-        return self.cur is not None or bool(self.queue) or bool(self.pending_updates)
+        return self.cur is not None or bool(self.queue) or bool(self.pending_updates) or self.finisher is not None
 
     def _layout(self):
         self.move_btns, self.party_btns, self.mega_btn = [], [], None
@@ -253,6 +276,11 @@ class TurnBattleScene(Scene):
         return (self.state and self.state["over"] and not self._busy()) or (self.s.error and not self._busy())
 
     def handle(self, ev, pos):
+        if self.finisher is not None:
+            if (ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1) or (
+                    ev.type == pygame.KEYDOWN and ev.key in (pygame.K_SPACE, pygame.K_RETURN, pygame.K_ESCAPE)):
+                self.finisher.skip()
+            return
         if self.x.handle(ev, pos):
             return
         if self._finished():
@@ -377,6 +405,10 @@ class TurnBattleScene(Scene):
             for b in self.end_btns:
                 b.draw(surf)
         self.x.draw(surf, lambda i: (200, 640) if i == self.me else (520, 300))
+        if self.finisher is not None:
+            self.finisher.draw(surf)
+            gfx.text(surf, "click to skip", (W - 16, H - 16), 14, (200, 200, 210), anchor="midright", ow=1,
+                     chunky=False)
 
     def _foe_types(self):
         v = self.vis.get(self.foe)

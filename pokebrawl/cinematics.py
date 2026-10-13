@@ -188,11 +188,19 @@ class Cutscene:
         surf.blit(layer, (0, 0))
 
     def _glow_title(self, surf, s, pos, size, scale, alpha):
-        sz = int(size * scale)
-        glow = int(alpha * (0.45 + 0.25 * math.sin(self.t * 10)))
-        gfx.text(surf, s, pos, sz, _lighter(self.color, 0.3), _lighter(self.color, 0.1), min(9, max(5, sz // 6)),
-                 alpha=glow)
-        gfx.title_text(surf, s, pos, size, scale=scale, alpha=alpha)
+        """Title with a pulsing colored glow. Rendered once at full size and scaled for the pop-in (building
+        a big outlined title at every in-between size would stall the frame)."""
+        glow_img = gfx.text_image(s, size, _lighter(self.color, 0.3), _lighter(self.color, 0.1),
+                                  min(9, max(5, size // 6)))
+        main = gfx.text_image(s, size, WHITE, INK, max(2, size // 14))
+        for img, a in ((glow_img, int(alpha * (0.45 + 0.25 * math.sin(self.t * 10)))), (main, alpha)):
+            if abs(scale - 1.0) > 0.02:
+                img = gfx.rescale(img, (img.get_width() * scale, img.get_height() * scale))
+            elif a < 255:
+                img = img.copy()
+            if a < 255:
+                img.set_alpha(max(0, a))
+            surf.blit(img, img.get_rect(center=(int(pos[0]), int(pos[1]))))
 
     # ------------------------------------------------------------------ drawing
     def draw(self, surf):
@@ -448,4 +456,232 @@ class Descent(Cutscene):
         if self.flash > 0:
             f = pygame.Surface((W, H), pygame.SRCALPHA)
             f.fill((255, 250, 230, int(255 * min(1.0, self.flash / 0.35))))
+            surf.blit(f, (0, 0))
+
+
+# how each type's finishing attack looks: (style, particle shape)
+FINISH_STYLE = {
+    "fire": ("stream", "flame"), "water": ("wave", "drop"), "electric": ("bolt", "spark"),
+    "grass": ("stream", "leaf"), "ice": ("stream", "shard"), "fighting": ("slash", "spark"),
+    "poison": ("stream", "bubble"), "ground": ("quake", "rock"), "flying": ("slash", "wind"),
+    "psychic": ("rings", "spark"), "bug": ("stream", "leaf"), "rock": ("quake", "rock"),
+    "ghost": ("rings", "bubble"), "dragon": ("beam", "spark"), "dark": ("slash", "shard"),
+    "steel": ("slash", "shard"), "fairy": ("rings", "star"), "normal": ("slash", "spark"),
+}
+
+
+class Finisher(Cutscene):
+    """The knockout blow in a 1v1, as a short anime-style cutscene:
+    freeze + zoom on the attacker with the move name -> type-themed attack flies across -> black/white impact
+    frame -> the defender shatters in slow motion with K.O.! (FINISH! for the last Pokemon)."""
+
+    CHARGE, RELEASE, IMPACT, AFTER = 0.25, 1.05, 1.55, 1.8
+
+    def __init__(self, attacker_id, defender_id, move_name, mtype, cls, mine, final=False):
+        color = gfx.type_color(mtype, 0)
+        super().__init__("finisher", 3.6 if final else 3.0, title=move_name.upper(), color=color, sound=None)
+        self.attacker, self.defender = attacker_id, defender_id
+        self.mtype, self.cls, self.mine, self.final = mtype, cls, mine, final
+        self.style, self.shape = FINISH_STYLE.get(mtype, ("slash", "spark"))
+        if cls == "phys" and self.style in ("stream", "rings", "beam"):
+            self.style = "slash"
+        self.shards = []
+        self.skipped = False
+        # attacker on the left when it's yours, on the right when it's theirs
+        self.ax, self.dx = (W * 0.28, W * 0.72) if mine else (W * 0.72, W * 0.28)
+        self.ay, self.dy = H * 0.58, H * 0.42
+
+    def skip(self):
+        self.t = self.duration
+
+    def update(self, dt, renderer=None):
+        prev = self.t
+        # slow motion right after the impact
+        rate = 0.45 if self.IMPACT <= self.t < self.IMPACT + 0.7 else 1.0
+        self.t += dt * rate
+        t = self.t
+        if prev == 0:
+            AUDIO.play("select")
+        if prev < self.CHARGE <= t:
+            AUDIO.play("mega", 0.6)
+        if prev < self.RELEASE <= t:
+            AUDIO.play("beam" if self.cls == "spec" else "melee", 1.0)
+        if prev < self.IMPACT <= t:
+            AUDIO.play("hit_super", 1.0)
+            AUDIO.play("boom", 0.9)
+            AUDIO.cry(self.defender, 0.9)
+            self.flash = 0.25
+            for _ in range(46):  # the defender shatters
+                a = self.fx.uniform(0, math.tau)
+                sp = self.fx.uniform(120, 620)
+                self.shards.append([self.dx, self.dy, math.cos(a) * sp, math.sin(a) * sp - 120,
+                                    self.fx.uniform(6, 16), self.fx.uniform(0, math.tau), self.fx.uniform(-9, 9)])
+            for i in range(4):
+                self.rings.append([self.dx, self.dy, 20 + i * 50, 0.8 + i * 0.12, self.color])
+        if self.final and prev < self.IMPACT + 0.9 <= t:
+            AUDIO.play("win", 0.7)
+        self._update_aura(dt * rate)
+        for s in self.shards:
+            s[0] += s[2] * dt * rate
+            s[1] += s[3] * dt * rate
+            s[3] += 900 * dt * rate
+            s[5] += s[6] * dt * rate
+        self.flash = max(0.0, self.flash - dt)
+
+    # ------------------------------------------------------------------ drawing
+    def _shape(self, surf, shape, x, y, size, col, ang=0.0):
+        if shape == "flame":
+            pygame.draw.ellipse(surf, col, (x - size / 2, y - size, size, size * 2))
+            pygame.draw.ellipse(surf, (255, 240, 180), (x - size / 4, y - size / 2, size / 2, size))
+        elif shape == "leaf":
+            pts = [(x + math.cos(ang) * size, y + math.sin(ang) * size),
+                   (x + math.cos(ang + 1.6) * size * 0.4, y + math.sin(ang + 1.6) * size * 0.4),
+                   (x - math.cos(ang) * size, y - math.sin(ang) * size),
+                   (x + math.cos(ang - 1.6) * size * 0.4, y + math.sin(ang - 1.6) * size * 0.4)]
+            pygame.draw.polygon(surf, col, pts)
+        elif shape in ("shard", "rock"):
+            pts = [(x + math.cos(ang + k * 2.1) * size * (1 if k % 2 == 0 else 0.6),
+                    y + math.sin(ang + k * 2.1) * size * (1 if k % 2 == 0 else 0.6)) for k in range(3)]
+            pygame.draw.polygon(surf, col if shape == "shard" else (150, 120, 80), pts)
+            pygame.draw.polygon(surf, (255, 255, 255) if shape == "shard" else INK, pts, 1)
+        elif shape == "star":
+            pts = [(x + math.cos(ang + k * math.pi / 5) * (size if k % 2 == 0 else size * 0.45),
+                    y + math.sin(ang + k * math.pi / 5) * (size if k % 2 == 0 else size * 0.45)) for k in range(10)]
+            pygame.draw.polygon(surf, (255, 230, 250), pts)
+        elif shape in ("bubble", "drop"):
+            pygame.draw.circle(surf, col, (int(x), int(y)), int(size))
+            pygame.draw.circle(surf, (255, 255, 255), (int(x - size / 3), int(y - size / 3)), max(1, int(size / 4)))
+        else:  # spark / wind
+            pygame.draw.circle(surf, (255, 255, 255), (int(x), int(y)), max(2, int(size / 2)))
+            pygame.draw.circle(surf, col, (int(x), int(y)), int(size), 2)
+
+    def _draw_attack(self, surf, p):
+        """p: 0..1 progress of the attack traveling from attacker to defender."""
+        col, light = self.color, _lighter(self.color, 0.5)
+        sx, sy, ex, ey = self.ax, self.ay - 80, self.dx, self.dy - 60
+        hx, hy = sx + (ex - sx) * p, sy + (ey - sy) * p
+        layer = pygame.Surface((W, H), pygame.SRCALPHA)
+        if self.style == "beam":
+            for wdt, a in ((70, 90), (40, 170), (14, 255)):
+                pygame.draw.line(layer, (*(light if wdt < 30 else col), a), (sx, sy), (hx, hy), wdt)
+            pygame.draw.circle(layer, (*light, 220), (int(hx), int(hy)), 46)
+        elif self.style == "bolt":
+            pts, n = [(sx, sy)], 9
+            for i in range(1, n):
+                q = i / n * p
+                pts.append((sx + (ex - sx) * q + self.fx.uniform(-30, 30), sy + (ey - sy) * q + self.fx.uniform(-30, 30)))
+            pts.append((hx, hy))
+            pygame.draw.lines(layer, (*col, 200), False, pts, 14)
+            pygame.draw.lines(layer, (255, 255, 255, 255), False, pts, 5)
+        elif self.style == "rings":
+            for i in range(5):
+                q = max(0.0, p - i * 0.12)
+                rx, ry = sx + (ex - sx) * q, sy + (ey - sy) * q
+                pygame.draw.circle(layer, (*col, 200), (int(rx), int(ry)), int(30 + q * 50), 6)
+        elif self.style == "slash":
+            for i in range(3):  # three slash streaks crossing the defender
+                q = min(1.0, max(0.0, p * 1.6 - i * 0.25))
+                if q <= 0:
+                    continue
+                ang = -0.7 + i * 0.7
+                L = 260 * q
+                cx, cy = ex, ey
+                p0 = (cx - math.cos(ang) * L, cy - math.sin(ang) * L)
+                p1 = (cx + math.cos(ang) * L, cy + math.sin(ang) * L)
+                pygame.draw.line(layer, (*col, 200), p0, p1, 18)
+                pygame.draw.line(layer, (255, 255, 255, 255), p0, p1, 5)
+            # the attacker dashes across
+            pygame.draw.line(layer, (*light, 120), (sx, sy), (hx, hy), 30)
+        elif self.style == "quake":
+            for i in range(8):
+                q = max(0.0, p - i * 0.06)
+                rx = sx + (ex - sx) * q + self.fx.uniform(-20, 20)
+                ry = sy + (ey - sy) * q + 60
+                self._shape(layer, "rock", rx, ry - q * 40, 22, col, q * 6 + i)
+        elif self.style == "wave":
+            for i in range(14):
+                q = max(0.0, p - i * 0.03)
+                rx, ry = sx + (ex - sx) * q, sy + (ey - sy) * q + math.sin(q * 12 + i) * 30
+                pygame.draw.circle(layer, (*col, 170), (int(rx), int(ry)), int(26 + 18 * math.sin(i)))
+                pygame.draw.circle(layer, (255, 255, 255, 200), (int(rx), int(ry - 10)), 8)
+        else:  # stream of shaped particles (fire, grass leaves, ice shards, poison bubbles...)
+            for i in range(26):
+                q = max(0.0, p - i * 0.025)
+                if q <= 0:
+                    continue
+                spread = math.sin(i * 1.7) * 26
+                rx, ry = sx + (ex - sx) * q + spread, sy + (ey - sy) * q + math.cos(i * 2.3) * 22
+                self._shape(layer, self.shape, rx, ry, 14 + (i % 4) * 4, col, q * 8 + i)
+        surf.blit(layer, (0, 0))
+
+    def draw(self, surf):
+        d, t = self.duration, self.t
+        k = _ease(t / 0.2) * _ease((d - t) / 0.35)
+        self.anchors = []
+        impact_frame = self.IMPACT <= t < self.IMPACT + 0.12
+        if impact_frame:
+            # anime impact frame: everything black, the defender a white cut-out, the attack in white
+            surf.fill((0, 0, 0))
+            img = SPRITES.get(self.defender, 280, flip=not self.mine)
+            sil = gfx.silhouette(img, (255, 255, 255))
+            surf.blit(sil, sil.get_rect(midbottom=(self.dx, self.dy + 140)))
+            for i in range(14):
+                a = i / 14 * math.tau
+                pygame.draw.line(surf, (255, 255, 255), (self.dx + math.cos(a) * 160, self.dy + math.sin(a) * 160),
+                                 (self.dx + math.cos(a) * 900, self.dy + math.sin(a) * 900), 3)
+            return
+        # its own stage: the battle fades out behind a dark backdrop in the move's color
+        wash = pygame.Surface((W, H), pygame.SRCALPHA)
+        wash.fill((*(int(c * 0.16) for c in self.color), int(255 * k)))
+        surf.blit(wash, (0, 0))
+        glow = pygame.Surface((W, H), pygame.SRCALPHA)
+        for i in range(6):
+            pygame.draw.circle(glow, (*self.color, int(14 * k)), (int(W / 2), int(H / 2)), 520 - i * 70)
+        surf.blit(glow, (0, 0))
+        vig = _vignette()
+        vig.set_alpha(int(255 * k))
+        surf.blit(vig, (0, 0))
+        if k > 0.2:
+            for i in range(30):
+                a = self.rng.random() * math.tau
+                r0 = 300 + self.rng.random() * 100
+                r1 = r0 + 400 + self.rng.random() * 400
+                pygame.draw.line(surf, _lighter(self.color, 0.6), (W / 2 + math.cos(a) * r0, H / 2 + math.sin(a) * r0),
+                                 (W / 2 + math.cos(a) * r1, H / 2 + math.sin(a) * r1), 2)
+        # attacker slams in, glowing in the move's color
+        slide = (1 - _ease((t - 0.05) / 0.3)) * (-W if self.mine else W)
+        self._draw_glowing(surf, self.attacker, 300, (self.ax + slide, self.ay + 140), flip=self.mine)
+        # defender: shakes after the hit, then is gone (shattered)
+        if t < self.IMPACT:
+            img = SPRITES.get(self.defender, 240, flip=not self.mine)
+            surf.blit(img, img.get_rect(midbottom=(self.dx, self.dy + 120)))
+        elif t < self.IMPACT + 0.25:
+            img = SPRITES.get(self.defender, 240, flip=not self.mine, white=0.8)
+            jx = self.fx.uniform(-14, 14)
+            surf.blit(img, img.get_rect(midbottom=(self.dx + jx, self.dy + 120)))
+        # the attack itself
+        if self.RELEASE <= t < self.IMPACT:
+            self._draw_attack(surf, (t - self.RELEASE) / (self.IMPACT - self.RELEASE))
+        for x, y, vx, vy, size, ang, spin in self.shards:
+            self._shape(surf, "shard", x, y, size, _lighter(self.color, 0.3), ang)
+        self._draw_aura_fx(surf, k)
+        # letterbox
+        bar = int(120 * k)
+        pygame.draw.rect(surf, (0, 0, 0), (0, 0, W, bar))
+        pygame.draw.rect(surf, (0, 0, 0), (0, H - bar, W, bar))
+        # move name slams in
+        if self.CHARGE <= t < self.IMPACT + 0.2:
+            pop = _ease((t - self.CHARGE) / 0.2)
+            size = min(70, int(70 * 12 / max(12, len(self.title))))
+            self._glow_title(surf, self.title, (W / 2, 210), size, 1.8 - 0.8 * pop, int(255 * k))
+            gfx.pill(surf, self.mtype.upper(), (W / 2, 270), self.color, 18)
+        # K.O.!
+        if t >= self.IMPACT + 0.2:
+            q = t - self.IMPACT - 0.2
+            pop = _ease(q / 0.25)
+            word = "FINISH!" if self.final else "K.O.!"
+            self._glow_title(surf, word, (W / 2, H * 0.5), 150 if self.final else 130, 2.0 - pop, int(255 * k))
+        if self.flash > 0:
+            f = pygame.Surface((W, H), pygame.SRCALPHA)
+            f.fill((255, 255, 255, int(255 * min(1.0, self.flash / 0.25))))
             surf.blit(f, (0, 0))

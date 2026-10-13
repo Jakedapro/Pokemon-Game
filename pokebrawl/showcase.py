@@ -10,7 +10,7 @@ import pygame
 
 from . import gfx
 from .audio import AUDIO
-from .cinematics import Cutscene, Descent
+from .cinematics import Cutscene, Descent, Finisher
 from .gfx import H, INK, SPRITES, W
 from .pokedex import prefetch
 from .render import ArenaRenderer
@@ -174,6 +174,7 @@ class ShowcaseScene:
         self.mega_scenes = 0
         self.level = cfg.get("level", 50)
         self.storm_msg = None
+        self.last_ko = None      # (killer uid, victim form) - the battle's last KO gets a finisher
 
     # ------------------------------------------------------------------ events + cutscenes
     def _plan_events(self, cfg):
@@ -293,6 +294,15 @@ class ShowcaseScene:
                 self.cutscenes.append(Cutscene("card", 2.0, pos, 1.8, name.upper(), "MEGA EVOLUTION!",
                                                (170, 90, 230), form_id, cry=form_id, action_at=0.3))
 
+    def _finisher(self):
+        killer = self.sim.by_id.get(self.last_ko[0])
+        if not killer or not killer.alive:
+            return None
+        moves = [m for m in killer.mon.moves if m["cls"] != "status"] or killer.mon.moves
+        mv = next((m for m in moves if m["type"] in killer.mon.types), moves[0])
+        mine = killer.team == 0 or self.royale
+        return Finisher(killer.mon.entry["id"], self.last_ko[1], mv["name"], mv["type"], mv["cls"], mine, final=True)
+
     def _check_triggers(self):
         alive = [u for u in self.sim.units if u.alive]
         frac = len(alive) / max(1, self.start_units)
@@ -374,6 +384,8 @@ class ShowcaseScene:
                 snap = self.sim.snapshot()
                 self._scan_events(snap["e"])
                 for ev in snap["e"]:
+                    if ev[0] == "faint" and len(ev) > 5 and ev[5]:
+                        self.last_ko = (ev[5], ev[4])
                     if ev[0] == "zone":
                         self.storm_msg = (ev[1], self.t)
                         AUDIO.play("count")
@@ -384,6 +396,11 @@ class ShowcaseScene:
             self.r.update(dt)
             self.counts = [sum(1 for u in self.sim.units if u.alive and u.team == i)
                            for i in range(len(self.team_names))]
+            if self.sim.over and self.last_ko and self._once("finisher"):
+                fin = self._finisher()
+                if fin:
+                    self.cutscenes.append(fin)
+                    return
             if self.sim.over:
                 self.phase = "won"
                 self.end_t = t
