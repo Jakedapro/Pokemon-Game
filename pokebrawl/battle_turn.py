@@ -8,7 +8,7 @@ from .app import Scene
 from .audio import AUDIO
 from .battle_common import BattleExtras
 from .battlecore import STATUS_NAMES
-from .cinematics import Finisher
+from .cinematics import AttackFX, Finisher
 from .gfx import H, INK, SPRITES, W, WHITE
 from .render import STATUS_COLORS
 from .types import effectiveness
@@ -57,6 +57,9 @@ class TurnBattleScene(Scene):
         self.ability_pop = None
         self.finisher = None     # knockout cutscene playing right now
         self.last_move = None
+        self.attack = None       # (AttackFX, start time) for the move being shown
+        self.sendout = {}        # side -> seconds since its Poke Ball was thrown
+        self.hp_shown = {}       # side -> HP fraction the bar shows (drains smoothly)
         self.waiting = False
         self.t = 0.0
         self.buttons = []
@@ -110,6 +113,14 @@ class TurnBattleScene(Scene):
         for side in (0, 1):
             self.shake[side] = max(0.0, self.shake[side] - dt)
             self.flash[side] = max(0.0, self.flash[side] - dt)
+            if side in self.sendout:
+                self.sendout[side] += dt
+            v = self.vis.get(side)
+            if v and "frac" in v:  # HP bars drain instead of jumping
+                cur = self.hp_shown.get(side, v["frac"])
+                step = dt * 0.9
+                self.hp_shown[side] = v["frac"] if abs(cur - v["frac"]) <= step else \
+                    cur + step * (1 if v["frac"] > cur else -1)
         for u in self.s.pump():
             self.pending_updates.append(u)
         if self.finisher is not None:  # the knockout cutscene holds the battle log until it's done
@@ -133,6 +144,10 @@ class TurnBattleScene(Scene):
             if self.cur["t"]:
                 self.msg = self.cur["t"]
                 self.history.append(self.cur["t"])
+        if self.attack is not None:
+            self.attack[1] += dt * getattr(self, "anim_speed", 1.0)
+            if self.attack[1] > 0.7:
+                self.attack = None
         if self.cur is not None:
             self.cur_t += dt
             a = self.cur.get("a") or [None]
@@ -173,6 +188,11 @@ class TurnBattleScene(Scene):
             AUDIO.play("hit_super" if a[3] > 1 else "hit_weak" if a[3] < 1 else "hit", 0.9)
         if kind == "move":
             self.last_move = a
+            if a[4] != "status" and self.vis.get(1 - a[1], {}).get("id"):
+                me = a[1] == self.me
+                start = (MY_POS[0] + 30, MY_POS[1] - 100) if me else (FOE_POS[0] - 20, FOE_POS[1] - 70)
+                end = (FOE_POS[0], FOE_POS[1] - 70) if me else (MY_POS[0] + 20, MY_POS[1] - 100)
+                self.attack = [AttackFX(a[3], a[4], start, end), 0.0]
             AUDIO.play("beam" if a[4] == "spec" else "melee" if a[4] == "phys" else "select", 0.5)
         elif kind == "faint":
             v = self.vis.get(a[1], {})
@@ -205,6 +225,8 @@ class TurnBattleScene(Scene):
             self.vis[a[1]]["frac"] = 0
         elif kind == "switch":
             side, idx, pid = a[1], a[2], a[3]
+            self.sendout[side] = 0.0
+            self.hp_shown.pop(side, None)
             m = self.state["sides"][side]["mons"][idx] if self.state else {}
             self.vis[side] = {"id": pid, "frac": m.get("frac", 1.0), "status": m.get("status"),
                               "name": m.get("name", "?"), "idx": idx, "fainted": False}
@@ -360,6 +382,8 @@ class TurnBattleScene(Scene):
             self._draw_field_info(surf)
             for side in (self.foe, self.me):
                 self._draw_mon(surf, side)
+            if self.attack is not None:
+                self.attack[0].draw(surf, self.attack[1] / 0.55)
             self._draw_hp_box(surf, self.foe, (30, 120))
             self._draw_hp_box(surf, self.me, (330, 580))
         if self.req and self.req["kind"] == "lead" and not self._busy():
@@ -465,11 +489,36 @@ class TurnBattleScene(Scene):
         img = SPRITES.get(v["id"], hgt, back=mine, white=white)
         dx = math.sin(self.shake[side] * 60) * 10 * (self.shake[side] > 0)
         dy = self.faint[side] * 300
+        so = self.sendout.get(side)
+        if so is not None and so < 0.7:  # Poke Ball send-out: arc in, pop, grow out of the light
+            self._draw_sendout(surf, side, v, (x, y), hgt, so)
+            return
         clip = surf.get_clip()
         if self.faint[side] > 0:
             surf.set_clip(pygame.Rect(0, 0, W, y + 10))
         surf.blit(img, img.get_rect(midbottom=(x + dx, y + 30 + dy)))
         surf.set_clip(clip)
+
+    def _draw_sendout(self, surf, side, v, pos, hgt, t):
+        x, y = pos
+        mine = side == self.me
+        cy = y + 30 - hgt * 0.45
+        if t < 0.3:
+            p = t / 0.3
+            sx, sy = (-40, H * 0.7) if mine else (W + 40, 120)
+            bx = sx + (x - sx) * p
+            by = sy + (cy - sy) * p - math.sin(p * math.pi) * 160
+            ball = pygame.transform.rotate(gfx.ball_sprite(34), -p * 900 * (1 if mine else -1))
+            surf.blit(ball, ball.get_rect(center=(bx, by)))
+            return
+        q = (t - 0.3) / 0.4
+        glow = pygame.Surface((W, H), pygame.SRCALPHA)
+        r = int(30 + 140 * q)
+        pygame.draw.circle(glow, (255, 255, 255, int(200 * (1 - q))), (int(x), int(cy)), r)
+        surf.blit(glow, (0, 0))
+        scale = 0.15 + 0.85 * (1 - (1 - q) ** 3)
+        img = SPRITES.get(v["id"], max(8, int(hgt * scale) // 8 * 8), back=mine, white=round(max(0.0, 1 - q * 1.6), 1))
+        surf.blit(img, img.get_rect(midbottom=(x, y + 30)))
 
     def _draw_hp_box(self, surf, side, pos):
         v = self.vis.get(side)
@@ -490,7 +539,7 @@ class TurnBattleScene(Scene):
         if v.get("status"):
             gfx.pill(surf, STATUS_NAMES.get(v["status"], ""), (x + 190, y + 78), STATUS_COLORS.get(v["status"],
                                                                                               (90, 90, 90)), 13)
-        gfx.hp_bar(surf, (x + 16, y + 48, 328, 12), v["frac"])
+        gfx.hp_bar(surf, (x + 16, y + 48, 328, 12), self.hp_shown.get(side, v["frac"]))
         if side == self.me and info.get("ability"):
             gfx.text(surf, f"{info['ability']}" + (f"  -  {info['item']}" if info.get("item") else ""),
                      (x + 180, y + 108), 14, (220, 220, 235), ow=1, chunky=False)

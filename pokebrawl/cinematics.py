@@ -33,6 +33,159 @@ def _vignette(size=None):
     return _VIGNETTE[(w, h)]
 
 
+_PLATES = {}
+
+
+def plate(text, size, color, angle=-4.0):
+    """Persona-style title plate: the name on a slanted dark plate with a color edge and a cyan/magenta glitch
+    split, tilted a few degrees. Cached."""
+    key = (text, size, color, angle)
+    if key in _PLATES:
+        return _PLATES[key]
+    img = gfx.text_image(text, size, WHITE, INK, max(2, size // 14))
+    tw, th = img.get_size()
+    sl = th * 0.45                      # slant
+    pw, ph = tw + size, th + size // 3
+    m = 14
+    base = pygame.Surface((int(pw + sl + m * 2 + 12), int(ph + m * 2 + 12)), pygame.SRCALPHA)
+    pts = [(m + sl, m), (m + sl + pw, m), (m + pw, m + ph), (m, m + ph)]
+    pygame.draw.polygon(base, (0, 0, 0, 200), [(x + 9, y + 9) for x, y in pts])
+    pygame.draw.polygon(base, (16, 12, 26), pts)
+    stripe = [(m + sl, m), (m + sl + pw, m), (m + sl + pw - sl * 0.3, m + ph * 0.3), (m + sl * 0.7, m + ph * 0.3)]
+    pygame.draw.polygon(base, tuple(int(c * 0.55) for c in color), stripe)
+    pygame.draw.polygon(base, color, pts, 4)
+    base.blit(img, img.get_rect(center=(m + sl / 2 + pw / 2, m + ph / 2 + 2)))
+    out = pygame.Surface((base.get_width() + 16, base.get_height()), pygame.SRCALPHA)
+    for tint, dx in (((0, 230, 255), 0), ((255, 40, 160), 16)):  # glitch split
+        ghost = gfx.silhouette(base, tint)
+        ghost.set_alpha(110)
+        out.blit(ghost, (dx, 0))
+    out.blit(base, (8, 0))
+    out = pygame.transform.rotozoom(out, angle, 1.0)
+    if len(_PLATES) > 120:
+        _PLATES.clear()
+    _PLATES[key] = out
+    return out
+
+
+def draw_plate(surf, text, center, size, color, scale=1.0, alpha=255, angle=-4.0):
+    img = plate(text, size, color, angle)
+    if abs(scale - 1.0) > 0.02:
+        img = pygame.transform.rotozoom(img, 0, scale)
+    elif alpha < 255:
+        img = img.copy()
+    if alpha < 255:
+        img.set_alpha(max(0, alpha))
+    surf.blit(img, img.get_rect(center=(int(center[0]), int(center[1]))))
+
+
+def eye_strip(surf, pid, rect, t, color, flip=False):
+    """Anime close-up: the top of the Pokemon (where the eyes are) blown up across a letterboxed strip, slowly
+    pushing in, with speed lines behind and a glint sweeping across."""
+    rect = pygame.Rect(rect)
+    pygame.draw.rect(surf, tuple(int(c * 0.18) for c in color), rect)
+    rng = random.Random(pid)
+    for i in range(18):  # horizontal speed lines
+        y = rect.y + rng.random() * rect.h
+        x0 = (rng.random() * rect.w * 1.5 + t * 1400 * (0.5 + rng.random())) % (rect.w + 300) - 300
+        pygame.draw.line(surf, _lighter(color, 0.3), (rect.x + x0, y), (rect.x + x0 + 160, y), 2)
+    base = SPRITES.base(pid)
+    if base is not None:
+        bb = base.get_bounding_rect()
+        if bb.w > 2 and bb.h > 2:
+            # the head: sprites face left, so it's in the upper-front part of the picture
+            crop = base.subsurface(pygame.Rect(bb.x, bb.y, max(2, int(bb.w * 0.62)), max(2, int(bb.h * 0.5)))).copy()
+            if flip:
+                crop = pygame.transform.flip(crop, True, False)
+            zoom = 1.0 + 0.08 * min(1.0, t / 0.8)
+            w = rect.w * 0.95 * zoom
+            h = crop.get_height() * w / crop.get_width()
+            big = gfx.rescale(crop, (w, h))
+            clip = surf.get_clip()
+            surf.set_clip(rect)
+            surf.blit(big, big.get_rect(center=(rect.centerx, rect.centery + h * 0.08)))
+            # glint
+            gx = rect.x - 200 + (t / 0.7) * (rect.w + 400)
+            glint = pygame.Surface((rect.w, rect.h), pygame.SRCALPHA)
+            pygame.draw.polygon(glint, (255, 255, 255, 70), [(gx - rect.x, 0), (gx - rect.x + 60, 0),
+                                                             (gx - rect.x - 40, rect.h), (gx - rect.x - 100, rect.h)])
+            surf.blit(glint, rect.topleft)
+            surf.set_clip(clip)
+    pygame.draw.line(surf, color, rect.topleft, rect.topright, 4)
+    pygame.draw.line(surf, color, rect.bottomleft, rect.bottomright, 4)
+
+
+class Shatter:
+    """The current frame cracks and blows apart into spinning triangular glass shards."""
+
+    def __init__(self, frame, seed=5):
+        w, h = frame.get_size()
+        rng = random.Random(seed)
+        cols = 8
+        rows = max(8, int(cols * h / w))
+        cw, ch = w / cols, h / rows
+        self.pieces = []
+        for r in range(rows):
+            for c in range(cols):
+                rect = pygame.Rect(int(c * cw), int(r * ch), int(cw) + 2, int(ch) + 2).clip(frame.get_rect())
+                cell = frame.subsurface(rect).copy().convert_alpha() if pygame.display.get_surface() else \
+                    frame.subsurface(rect).copy()
+                rw, rh = rect.size
+                for tri in (((0, 0), (rw, 0), (0, rh)), ((rw, 0), (rw, rh), (0, rh))):
+                    img = pygame.Surface((rw, rh), pygame.SRCALPHA)
+                    img.blit(cell, (0, 0))
+                    mask = pygame.Surface((rw, rh), pygame.SRCALPHA)
+                    pygame.draw.polygon(mask, (255, 255, 255, 255), tri)
+                    img.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+                    pygame.draw.polygon(img, (255, 255, 255, 160), tri, 1)
+                    tx = sum(p[0] for p in tri) / 3 + rect.x
+                    ty = sum(p[1] for p in tri) / 3 + rect.y
+                    cx, cy = tx - w / 2, ty - h / 2
+                    d = math.hypot(cx, cy) or 1
+                    sp = rng.uniform(1300, 2600) * (0.6 + 0.6 * d / math.hypot(w / 2, h / 2))
+                    self.pieces.append([img, rect.center, cx / d * sp, cy / d * sp - rng.uniform(200, 600),
+                                        rng.uniform(-720, 720), d / math.hypot(w, h) * 0.06])
+        self.cracks = []
+        for i in range(10):  # crack lines from the center
+            a = i / 10 * math.tau + rng.uniform(-0.2, 0.2)
+            x, y, pts = w / 2, h / 2, [(w / 2, h / 2)]
+            for _ in range(7):
+                x += math.cos(a) * rng.uniform(60, 150) + rng.uniform(-30, 30)
+                y += math.sin(a) * rng.uniform(60, 150) + rng.uniform(-30, 30)
+                pts.append((x, y))
+            self.cracks.append(pts)
+        self.frame = frame
+
+    CRACK = 0.09
+
+    def draw(self, surf, t):
+        """t: seconds since the shatter started. Returns False once every shard is gone."""
+        if self.frame is None:
+            return False
+        if t < self.CRACK:
+            surf.blit(self.frame, (0, 0))
+            for pts in self.cracks:
+                n = max(2, int(len(pts) * min(1.0, t / self.CRACK * 1.4)))
+                pygame.draw.lines(surf, (255, 255, 255), False, pts[:n], 3)
+            return True
+        tt = t - self.CRACK
+        alive = False
+        sh = surf.get_height()
+        for img, (x, y), vx, vy, spin, delay in self.pieces:
+            q = tt - delay
+            if q < 0:
+                surf.blit(img, img.get_rect(center=(x, y)))
+                alive = True
+                continue
+            px, py = x + vx * q, y + vy * q + 2400 * q * q
+            if py > sh + 150 or px < -150 or px > surf.get_width() + 150 or py < -300:
+                continue
+            alive = True
+            rot = pygame.transform.rotate(img, spin * q)
+            surf.blit(rot, rot.get_rect(center=(px, py)))
+        return alive
+
+
 def _lighter(c, k=0.55):
     return tuple(int(v + (255 - v) * k) for v in c)
 
@@ -72,14 +225,36 @@ class Cutscene:
         self.bolts = []    # [points, life]
         self.anchors = []  # where the portraits are (screen coords) this frame
         self._glow = {}
+        self.minor = False      # quick cards (mega evolutions) skip the eye close-up
+        self.eye = 0.0          # length of the anime eye close-up that opens big cutscenes
+        self.shatter = kind in ("card", "vs", "finisher", "descent")
+        self._shatter = None
+        self._started = False
 
     @property
     def done(self):
         return self.t >= self.duration
 
+    EYE = 0.75
+
+    def _start(self):
+        """First frame: big cards and VS screens open on an eye close-up (the rest of the timeline shifts)."""
+        self._started = True
+        if self.kind in ("card", "vs") and self.portrait and not self.minor:
+            at = self.duration * self.action_at
+            self.eye = self.EYE
+            self.duration += self.eye
+            self.action_at = (at + self.eye) / self.duration
+            AUDIO.play("select", 0.8)
+
     def update(self, dt, renderer):
+        if not self._started:
+            self._start()
         if self.t == 0 and self.sound:
             AUDIO.play(self.sound)
+        if self.eye and self.t < self.eye <= self.t + dt:
+            AUDIO.play("boom", 0.6)  # smash cut from the eyes to the reveal
+            self.flash = 0.2
         self.t += dt
         if self.focus:
             renderer.cam_target = (self.focus[0], self.focus[1], self.zoom)
@@ -204,9 +379,41 @@ class Cutscene:
             surf.blit(img, img.get_rect(center=(int(pos[0]), int(pos[1]))))
 
     # ------------------------------------------------------------------ drawing
+    def _begin_draw(self, surf):
+        if self.shatter and self._shatter is None:
+            self._shatter = Shatter(surf.copy())
+
+    def _end_draw(self, surf):
+        """Glass shards of the previous frame fly off on top of the new scene."""
+        if self._shatter is not None and self.t < 1.2:
+            if not self._shatter.draw(surf, self.t):
+                self._shatter.frame = None
+
+    def _draw_eye_shot(self, surf, t):
+        surf.fill((0, 0, 0))
+        if self.kind == "vs" and self.portrait2:
+            hgt = self.H * 0.26
+            eye_strip(surf, self.portrait, (0, self.H * 0.2, self.W, hgt), t, gfx.TEAM_COLORS[0], flip=True)
+            eye_strip(surf, self.portrait2, (0, self.H * 0.54, self.W, hgt), t, gfx.TEAM_COLORS[1])
+            draw_plate(surf, "VS", (self.W / 2, self.H * 0.5), 60, self.color, 1.0 + 0.4 * (1 - _ease(t / 0.2)))
+        else:
+            hgt = self.H * 0.3
+            eye_strip(surf, self.portrait, (0, self.H / 2 - hgt / 2, self.W, hgt), t, self.color)
+        if self.flash > 0:
+            f = pygame.Surface((self.W, self.H), pygame.SRCALPHA)
+            f.fill((255, 255, 255, int(255 * min(1.0, self.flash / 0.35))))
+            surf.blit(f, (0, 0))
+
     def draw(self, surf):
-        d, t = self.duration, self.t
+        self._begin_draw(surf)
+        if self.eye and self.t < self.eye:
+            self._draw_eye_shot(surf, self.t)
+            self._end_draw(surf)
+            return
+        d, t = self.duration - self.eye, self.t - self.eye
         k = _ease(t / 0.35) * _ease((d - t) / 0.35)
+        if self.eye:
+            k = _ease((d - t) / 0.35)  # coming out of the eye shot: no fade-in, a hard cut
         self.anchors = []
         # darken + color wash + vignette, then speed lines
         wash = pygame.Surface((self.W, self.H), pygame.SRCALPHA)
@@ -235,8 +442,9 @@ class Cutscene:
             self._draw_titles(surf, t, k, self.H * 0.45)
         if self.flash > 0:
             f = pygame.Surface((self.W, self.H), pygame.SRCALPHA)
-            f.fill((255, 255, 255, int(255 * self.flash / 0.35)))
+            f.fill((255, 255, 255, int(255 * min(1.0, self.flash / 0.35))))
             surf.blit(f, (0, 0))
+        self._end_draw(surf)
 
     def _draw_titles(self, surf, t, k, y):
         if t > 0.25:
@@ -266,10 +474,10 @@ class Cutscene:
             self._draw_glowing(surf, self.portrait, 300, (self.W * 0.3 + slide, y + h + 20))
         self._draw_aura_fx(surf, k)
         if t > 0.3:
-            pop = _ease((t - 0.3) / 0.3)
-            size = min(46, int(46 * 16 / max(16, len(self.title))))
-            self._glow_title(surf, self.title, (self.W * 0.62 - slide * 0.2, y + 110), size, 0.5 + 0.5 * pop,
-                             int(255 * k))
+            pop = _ease((t - 0.3) / 0.2)
+            size = min(40, int(40 * 16 / max(16, len(self.title))))
+            draw_plate(surf, self.title, (self.W * 0.62 - slide * 0.2, y + 100), size, _lighter(self.color, 0.2),
+                       1.6 - 0.6 * pop, int(255 * k))
         if self.subtitle and t > 0.7:
             n = int(len(self.subtitle) * min(1.0, (t - 0.7) / 0.5))
             gfx.text(surf, self.subtitle[:n], (self.W * 0.62, y + 180), 22, WHITE, INK, 3, alpha=int(255 * k))
@@ -288,7 +496,7 @@ class Cutscene:
         if t > 0.45:
             pop = _ease((t - 0.45) / 0.25)
             self._glow_title(surf, "VS", (self.W / 2, 640), 130, 2.2 - 1.2 * pop, int(255 * k))
-        self._glow_title(surf, self.title, (self.W / 2, 250), 54, 1.0, int(255 * k))
+        draw_plate(surf, self.title, (self.W / 2, 250), 46, self.color, 1.0, int(255 * k))
 
 
 # the 18 plate colors around Arceus' Judgment wheel
@@ -380,6 +588,7 @@ class Descent(Cutscene):
         return rest + (top - 140 - rest) * min(1.0, ((t - self.leave) / 1.2) ** 2)
 
     def draw(self, surf):
+        self._begin_draw(surf)
         d, t = self.duration, self.t
         k = _ease(t / 0.5) * _ease((d - t) / 0.5)
         self.anchors = []
@@ -446,8 +655,8 @@ class Descent(Cutscene):
         pygame.draw.rect(surf, (0, 0, 0), (0, 0, self.W, bar))
         pygame.draw.rect(surf, (0, 0, 0), (0, self.H - bar, self.W, bar))
         if 0.8 < t < self.leave + 0.8:
-            pop = _ease((t - 0.8) / 0.3)
-            self._glow_title(surf, self.title, (self.W / 2, 62), 50, 0.6 + 0.4 * pop, int(255 * k))
+            pop = _ease((t - 0.8) / 0.2)
+            draw_plate(surf, self.title, (self.W / 2, 62), 40, self.color, 1.6 - 0.6 * pop, int(255 * k))
         if self.subtitle and t > self.CRY:
             n = int(len(self.subtitle) * min(1.0, (t - self.CRY) / 0.8))
             size = 28
@@ -458,6 +667,7 @@ class Descent(Cutscene):
             f = pygame.Surface((self.W, self.H), pygame.SRCALPHA)
             f.fill((255, 250, 230, int(255 * min(1.0, self.flash / 0.35))))
             surf.blit(f, (0, 0))
+        self._end_draw(surf)
 
 
 # how each type's finishing attack looks: (style, particle shape)
@@ -471,12 +681,34 @@ FINISH_STYLE = {
 }
 
 
+class AttackFX:
+    """A finisher's type-themed attack, reused small for every hit in 1v1 battles."""
+
+    def __init__(self, mtype, cls, start, end):
+        self.color = gfx.type_color(mtype, 0)
+        self.style, self.shape = FINISH_STYLE.get(mtype, ("slash", "spark"))
+        if cls == "phys" and self.style in ("stream", "rings", "beam"):
+            self.style = "slash"
+        self.fx = random.Random(hash(mtype) & 0xFFFF)
+        self.W, self.H = W, H
+        # Finisher._draw_attack aims from (ax, ay - 80) to (dx, dy - 60)
+        self.ax, self.ay = start[0], start[1] + 80
+        self.dx, self.dy = end[0], end[1] + 60
+
+    def draw(self, surf, p):
+        Finisher._draw_attack(self, surf, max(0.0, min(1.0, p)))
+
+    def _shape(self, *a, **k):
+        return Finisher._shape(self, *a, **k)
+
+
 class Finisher(Cutscene):
     """The knockout blow in a 1v1, as a short anime-style cutscene:
     freeze + zoom on the attacker with the move name -> type-themed attack flies across -> black/white impact
     frame -> the defender shatters in slow motion with K.O.! (FINISH! for the last Pokemon)."""
 
     CHARGE, RELEASE, IMPACT, AFTER = 0.25, 1.05, 1.55, 1.8
+    EYES = (0.42, 0.98)
 
     def __init__(self, attacker_id, defender_id, move_name, mtype, cls, mine, final=False, size=None):
         color = gfx.type_color(mtype, 0)
@@ -617,6 +849,7 @@ class Finisher(Cutscene):
         surf.blit(layer, (0, 0))
 
     def draw(self, surf):
+        self._begin_draw(surf)
         d, t = self.duration, self.t
         k = _ease(t / 0.2) * _ease((d - t) / 0.35)
         self.anchors = []
@@ -671,12 +904,17 @@ class Finisher(Cutscene):
         bar = int(120 * k)
         pygame.draw.rect(surf, (0, 0, 0), (0, 0, self.W, bar))
         pygame.draw.rect(surf, (0, 0, 0), (0, self.H - bar, self.W, bar))
+        # the attacker locks eyes before letting go
+        if self.EYES[0] <= t < self.EYES[1]:
+            q = t - self.EYES[0]
+            hgt = self.H * 0.2 * min(1.0, q / 0.08)
+            eye_strip(surf, self.attacker, (0, self.H * 0.42 - hgt / 2, self.W, hgt), q, self.color, flip=self.mine)
         # move name slams in
         if self.CHARGE <= t < self.IMPACT + 0.2:
-            pop = _ease((t - self.CHARGE) / 0.2)
-            size = min(70, int(70 * 12 / max(12, len(self.title))))
-            self._glow_title(surf, self.title, (self.W / 2, 210), size, 1.8 - 0.8 * pop, int(255 * k))
-            gfx.pill(surf, self.mtype.upper(), (self.W / 2, 270), self.color, 18)
+            pop = _ease((t - self.CHARGE) / 0.15)
+            size = min(56, int(56 * 12 / max(12, len(self.title))))
+            draw_plate(surf, self.title, (self.W / 2, 210), size, self.color, 1.7 - 0.7 * pop, int(255 * k))
+            gfx.pill(surf, self.mtype.upper(), (self.W / 2, 286), self.color, 18)
         # K.O.!
         if t >= self.IMPACT + 0.2:
             q = t - self.IMPACT - 0.2
@@ -687,3 +925,4 @@ class Finisher(Cutscene):
             f = pygame.Surface((self.W, self.H), pygame.SRCALPHA)
             f.fill((255, 255, 255, int(255 * min(1.0, self.flash / 0.25))))
             surf.blit(f, (0, 0))
+        self._end_draw(surf)

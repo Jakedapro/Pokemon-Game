@@ -10,7 +10,7 @@ import pygame
 
 from . import gfx
 from .audio import AUDIO
-from .cinematics import Cutscene, Descent, Finisher
+from .cinematics import Cutscene, Descent, Finisher, draw_plate
 from .gfx import H, INK, SPRITES, W
 from .pokedex import prefetch
 from .render import ArenaRenderer
@@ -597,7 +597,8 @@ class ShowcaseScene:
             if t > 3.0:
                 k = min(1.0, (t - 3.0) / 0.35)
                 sc = 1.0 + 0.25 * math.sin(k * math.pi) if k < 1 else 1.0
-                gfx.title_text(surf, self.cfg["title"], (self.W / 2, self.H * 0.40), 56, scale=sc)
+                size = min(50, int(50 * 18 / max(18, len(self.cfg["title"]))))
+                draw_plate(surf, self.cfg["title"], (self.W / 2, self.H * 0.40), size, (230, 60, 70), sc)
             if t > 4.0 and self.cfg.get("subtitle"):
                 gfx.title_text(surf, self.cfg["subtitle"], (self.W / 2, self.H * 0.40 + 66), 40)
             for i, n in enumerate(("3", "2", "1")):
@@ -608,15 +609,17 @@ class ShowcaseScene:
                                      alpha=int(255 * (1 - max(0, k - 0.6) / 0.4)))
         if self.phase == "battle" and self.t - self.intro_len < 0.9:
             k = (self.t - self.intro_len) / 0.9
-            gfx.title_text(surf, "FIGHT!", (self.W / 2, self.H * 0.47), 100, scale=1 + k * 0.3,
-                             alpha=int(255 * (1 - k)))
+            draw_plate(surf, "FIGHT!", (self.W / 2, self.H * 0.47), 84, (255, 200, 60), 1.4 - 0.4 * min(1.0, k * 4),
+                       int(255 * (1 - max(0.0, k - 0.5) * 2)), angle=-6)
         if self.phase in ("battle", "won") and self.cutscene is None:
             self._draw_counts(surf)
         if self.cutscene is not None:
             self.cutscene.draw(surf)
         if self.phase in ("won", "outro") or (self.phase == "finale" and self.finale["t"] < 1.2):
             name = self.team_names[self.sim.winner] if self.sim.winner is not None else "Nobody"
-            gfx.title_text(surf, f"{name} WINS!", (self.W / 2, self.H * 0.30), 64)
+            line = f"{name} WINS!"
+            draw_plate(surf, line, (self.W / 2, self.H * 0.30), min(56, int(56 * 14 / max(14, len(line)))),
+                       (255, 200, 60))
             if self.mvp:
                 gfx.text(surf, f"MVP: {self.mvp.mon.name}  ({self.mvp.kills} KOs)", (self.W / 2, self.H * 0.30 + 60), 26)
         if self.phase == "finale":
@@ -770,7 +773,7 @@ class ShowcaseScene:
         if t > self.CAUGHT + 0.5:
             p = min(1.0, (t - self.CAUGHT - 0.5) / 0.35)
             ease = 1 - (1 - p) ** 3
-            gfx.title_text(surf, "GOTCHA!", (self.W / 2, self.H * 0.20), 80, scale=1.6 - 0.6 * ease)
+            draw_plate(surf, "GOTCHA!", (self.W / 2, self.H * 0.20), 70, (230, 60, 70), 1.6 - 0.6 * ease, angle=-5)
             cy = self.H - 230 + (1 - ease) * 300
             cw = min(self.W - 120, 640)
             ui_rect = pygame.Rect((self.W - cw) // 2, cy - 90, cw, 180)

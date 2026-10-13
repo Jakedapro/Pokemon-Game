@@ -13,6 +13,26 @@ STATUS_COLORS = {"brn": (235, 110, 50), "par": (230, 190, 40), "psn": (160, 70, 
                  "slp": (140, 140, 160), "frz": (110, 200, 230)}
 
 
+_GLOWS = {}
+
+
+def glow(surf, x, y, r, color, strength=1.0):
+    """Additive light: a soft radial glow added onto whatever is underneath (cached per size and color)."""
+    r = max(4, int(r) // 4 * 4)
+    key = (r, color, round(strength, 1))
+    g = _GLOWS.get(key)
+    if g is None:
+        g = pygame.Surface((r * 2, r * 2))
+        g.fill((0, 0, 0))
+        for i in range(r, 0, -2):
+            k = (1 - i / r) ** 1.6 * 0.55 * strength
+            pygame.draw.circle(g, tuple(min(255, int(c * k)) for c in color), (r, r), i)
+        if len(_GLOWS) > 400:
+            _GLOWS.clear()
+        _GLOWS[key] = g
+    surf.blit(g, (int(x) - r, int(y) - r), special_flags=pygame.BLEND_RGB_ADD)
+
+
 class FX:
     __slots__ = ("kind", "t", "life", "data")
 
@@ -120,6 +140,11 @@ class ArenaRenderer:
         cap = 70 if self.mode == "showcase" else 30
         if self.labels_alive > cap:
             return
+        up = text.upper()
+        for f in self.fx:  # the same word already floating nearby: don't stack another copy on it
+            if f.kind == "label" and f.data["text"] == up and f.t < 0.6 and \
+                    abs(f.data["x"] - u.x) < 90 and abs(f.data["y"] - u.y) < 70:
+                return
         self.fx.append(FX("label", 0.9, uid=uid, text=text.upper(), color=color or type_color(ttype),
                           x=u.x, y=u.y - u.r * 1.3))
 
@@ -372,6 +397,7 @@ class ArenaRenderer:
         # projectiles
         for x, y, mtype in self.projectiles:
             col, light, _ = gfx.COLORS.get(mtype, gfx.COLORS["normal"])
+            glow(w, x, y, 24, col)
             pygame.draw.circle(w, col, (x, y), 7)
             pygame.draw.circle(w, light, (x, y), 4)
         for f in self.fx:
@@ -461,6 +487,11 @@ class ArenaRenderer:
             pygame.draw.line(w, col, (d["x1"], d["y1"]), (d["x2"], d["y2"]), width + 4)
             pygame.draw.line(w, light, (d["x1"], d["y1"]), (d["x2"], d["y2"]), max(1, width // 2))
             pygame.draw.circle(w, light, (d["x2"], d["y2"]), int(8 + 10 * p))
+            for i in range(5):  # the beam lights up the ground along its path
+                q = i / 4
+                glow(w, d["x1"] + (d["x2"] - d["x1"]) * q, d["y1"] + (d["y2"] - d["y1"]) * q, 20 + width * 2, col,
+                     1 - p * 0.7)
+            glow(w, d["x2"], d["y2"], 44, light, 1 - p * 0.5)
         elif f.kind == "slash":
             a = d["a"]
             L = 16
@@ -470,6 +501,7 @@ class ArenaRenderer:
                 pygame.draw.line(w, (255, 255, 255), (x1, y1), (x2, y2), 2)
         elif f.kind == "ring":
             rr = int(d["r"] * (0.5 + p * 0.7))
+            glow(w, d["x"], d["y"], rr * 1.1, d["color"], 1 - p)
             pygame.draw.circle(w, d["color"], (d["x"], d["y"]), rr, max(1, int(8 * (1 - p))))
             pygame.draw.circle(w, d["light"], (d["x"], d["y"]), int(rr * 0.85), max(1, int(3 * (1 - p))))
         elif f.kind == "column":
@@ -483,6 +515,7 @@ class ArenaRenderer:
             pygame.draw.ellipse(w, d["light"], (d["x"] - cw, d["y"] - 10, cw * 2, 20), 3)
         elif f.kind == "bolt":
             pts = [(d["x"] + self.rng.uniform(-14, 14), d["y"] - 260 + i * 52) for i in range(5)] + [(d["x"], d["y"])]
+            glow(w, d["x"], d["y"], 70, d["color"], 1.2 * (1 - p))
             pygame.draw.lines(w, d["color"], False, pts, 5)
             pygame.draw.lines(w, (255, 255, 255), False, pts, 2)
         elif f.kind == "meteor":
@@ -511,6 +544,7 @@ class ArenaRenderer:
                 pygame.draw.ellipse(w, (255, 220, 120), (d["x"] - rr, d["y"] - rr / 3, rr * 2, rr * 2 / 3), 3)
         elif f.kind == "boom":
             rr = int(d["r"] * (0.3 + p))
+            glow(w, d["x"], d["y"], rr * 1.4, (255, 170, 80), 1.3 * (1 - p))
             pygame.draw.circle(w, (255, 230, 140), (d["x"], d["y"]), rr, max(1, int(14 * (1 - p))))
             pygame.draw.circle(w, (255, 140, 60), (d["x"], d["y"]), int(rr * 0.7), max(1, int(8 * (1 - p))))
 
