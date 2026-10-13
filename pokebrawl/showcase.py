@@ -14,6 +14,7 @@ from .cinematics import (MEWTWO_RAMPAGE, MEWTWO_WIN, Cutscene, Descent, Finisher
                          draw_plate, subtitle)
 from .gfx import H, INK, SPRITES, W
 from .pokedex import prefetch
+from .duel import DuelView
 from .render import FX, ArenaRenderer
 from .sim import ARENA, Sim
 from .team import auto_member
@@ -201,6 +202,8 @@ class ShowcaseScene:
         self.mewtwo = (dex.get("mewtwo") or {}).get("species")
         self.rampages = {}       # uid -> how many rampages that Mewtwo has had
         self.win_line = None     # (speaker, text, start time, length) spoken by the winner
+        self.duel = None         # the final fight's movie view (last two Pokemon)
+        self.duel_pending = None
         if any(u.mon.entry["species"] == self.mewtwo for u in self.sim.units):
             from .audio import prepare_voices
             prepare_voices([("mewtwo", line) for line in MEWTWO_RAMPAGE + [MEWTWO_WIN]])
@@ -422,6 +425,8 @@ class ShowcaseScene:
             return 2
         if self.t - self.intro_len < 2.0:
             return 2
+        if self.duel is not None:
+            return self.duel.interest()
         if self.t < self.hot_until:
             return 1
         alive = sum(1 for u in self.sim.units if u.alive)
@@ -456,8 +461,22 @@ class ShowcaseScene:
                         if self._trigger(alt):
                             break
                 break
-        if len(alive) == 2 and alive[0].team != alive[1].team and self.start_units > 2 and self._once("final"):
-            a, b = alive
+        teams = {}
+        for u in alive:
+            teams.setdefault(u.team, []).append(u)
+        pair = None
+        if len(alive) == 2 and alive[0].team != alive[1].team:
+            pair = alive
+        elif not self.royale and len(teams) == 2 and any(len(v) == 1 for v in teams.values()):
+            # one team is down to its last Pokemon: the other side's champion steps up, the rest stand back
+            last = next(v[0] for v in teams.values() if len(v) == 1)
+            others = next(v for v in teams.values() if v[0].team != last.team)
+            champ = max(others, key=lambda u: (u.boss, u.kills, u.mon.hp_frac()))
+            pair = [champ, last]
+        if pair and self.start_units >= 2 and self._once("final"):
+            a, b = pair
+            self.sim.bench_units([u for u in alive if u not in pair])
+            self.duel_pending = (a.uid, b.uid)  # after the VS screen, the last two fight it out on the duel stage
             self.cutscenes.append(self._cs(Cutscene, "vs", 3.0, ((a.x + b.x) / 2, (a.y + b.y) / 2), 1.5, "FINAL SHOWDOWN",
                                            color=(255, 190, 60), portrait=a.mon.entry["id"],
                                            portrait2=b.mon.entry["id"], action_at=0.45, sound="count"))
@@ -522,10 +541,20 @@ class ShowcaseScene:
                     self.cutscene = None
                     self.r.cam_target = None
                 return
+            if self.duel is None and self.duel_pending and all(self.sim.by_id[u].alive for u in self.duel_pending):
+                a, b = (self.sim.by_id[u] for u in self.duel_pending)
+                self.duel = DuelView(self, a, b)
+                for u in (a, b):  # make the duel a real fight, not a war of attrition
+                    u.dmg_scale *= 1.8
             steps = max(1, int(round(self.speed)))
+            scale = self.duel.time_scale() if self.duel else 1.0
             for _ in range(steps):
-                self.sim.step(dt * self.speed / steps)
+                self.sim.step(dt * self.speed * scale / steps)
+                if self.duel and not self.sim.over:
+                    self.duel.sim_tick(dt * self.speed * scale / steps)
                 snap = self.sim.snapshot()
+                if self.duel:
+                    self.duel.feed(snap["e"])
                 self._scan_events(snap["e"])
                 for ev in snap["e"]:
                     if ev[0] == "faint" and len(ev) > 5 and ev[5]:
@@ -542,6 +571,8 @@ class ShowcaseScene:
             self._check_triggers()
             if not self.cutscenes:
                 self._check_rampage()
+            if self.duel:
+                self.duel.update(dt)
             self.r.update(dt)
             self.counts = [sum(1 for u in self.sim.units if u.alive and u.team == i)
                            for i in range(len(self.team_names))]
@@ -666,7 +697,10 @@ class ShowcaseScene:
 
     # ------------------------------------------------------------------ drawing
     def draw(self, surf):
-        self.r.draw(surf)
+        if self.duel is not None and self.phase in ("battle", "won"):
+            self.duel.draw(surf)
+        else:
+            self.r.draw(surf)
         t = self.t
         if self.phase == "intro":
             self._draw_balls(surf, t)
@@ -687,7 +721,7 @@ class ShowcaseScene:
             k = (self.t - self.intro_len) / 0.9
             draw_plate(surf, "FIGHT!", (self.W / 2, self.H * 0.47), 84, (255, 200, 60), 1.4 - 0.4 * min(1.0, k * 4),
                        int(255 * (1 - max(0.0, k - 0.5) * 2)), angle=-6)
-        if self.phase in ("battle", "won") and self.cutscene is None:
+        if self.phase in ("battle", "won") and self.cutscene is None and self.duel is None:
             self._draw_counts(surf)
         if self.cutscene is not None:
             self.cutscene.draw(surf)

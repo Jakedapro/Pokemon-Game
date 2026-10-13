@@ -144,6 +144,7 @@ class Sim:
         self.domain = None     # "sea" (Primal Kyogre), "land" (Primal Groudon), "sky" (Mega Rayquaza)
         self.env_blasts = []   # [x, y, rad, frac, type, delay] - meteors etc. that hurt everyone
         self.zone = None       # [cx, cy, radius] once the battle royale storm starts
+        self.bench = set()     # uids standing back to watch (the final duel): they don't act and can't be hit
         self._zone_from = None
         self.tick = 0
         self.cmd_log = []      # [tick, team, cmd] - everything needed to replay the battle
@@ -192,7 +193,7 @@ class Sim:
         return sorted({u.team for u in self.units if u.alive})
 
     def enemies(self, u):
-        return [e for e in self.units if e.alive and e.team != u.team]
+        return [e for e in self.units if e.alive and e.team != u.team and e.uid not in self.bench]
 
     # ------------------------------------------------------------------ commands
     def command(self, team, cmd):
@@ -288,6 +289,13 @@ class Sim:
                     whole = int(u.storm)
                     u.storm -= whole
                     self._hurt(u, whole, None, chip=True, guard=False)  # Magic Guard doesn't stop the storm
+
+    def bench_units(self, units):
+        """Send these Pokemon to the sidelines: they stop fighting and can't be hit (until the battle ends)."""
+        for u in units:
+            self.bench.add(u.uid)
+            u.shield = 1e9
+            u.target = None
 
     def shockwave(self, src, radius, frac, mtype="psychic"):
         """A blast centered on `src` that hits every other team's Pokemon in range (KOs count for `src`)."""
@@ -411,7 +419,7 @@ class Sim:
                 self.emit("weather", None)
         ramp_at = self.opts.get("time_ramp", 75)
         self.ramp = 1.0 + max(0.0, self.t - ramp_at) / 15.0
-        alive = [u for u in self.units if u.alive]
+        alive = [u for u in self.units if u.alive and u.uid not in self.bench]
         grid = self._grid(alive)
         for u in alive:
             self._update_unit(u, dt, grid)
@@ -474,7 +482,7 @@ class Sim:
         level = self._ai(u)
         best, best_s = None, 1e18
         for e in self.units:
-            if not e.alive or e.team == u.team:
+            if not e.alive or e.team == u.team or e.uid in self.bench:
                 continue
             d = math.hypot(e.x - u.x, e.y - u.y)
             s = d
