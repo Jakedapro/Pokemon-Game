@@ -295,10 +295,15 @@ class Descent(Cutscene):
 
     DOWN, CRY, FIRST, GAP = 2.4, 2.6, 3.2, 1.0
 
-    def __init__(self, arceus_id, drops, group_title, center, on_drop):
-        self.leave = self.FIRST + len(drops) * self.GAP + 0.6
-        super().__init__("descent", self.leave + 1.8, focus=center, zoom=1.12, title="ARCEUS DESCENDS",
-                         subtitle=f"AND BRINGS {group_title}!", color=(255, 205, 90), sound=None)
+    SLAM = 3.6  # rare variant: Arceus crashes into the arena itself
+
+    def __init__(self, arceus_id, drops, group_title, center, on_drop, lands=False):
+        self.lands = lands
+        self.leave = 99.0 if lands else self.FIRST + len(drops) * self.GAP + 0.6
+        super().__init__("descent", self.SLAM + 2.2 if lands else self.leave + 1.8, focus=center, zoom=1.12,
+                         title="ARCEUS DESCENDS",
+                         subtitle="...AND JOINS THE FIGHT ITSELF!" if lands else f"AND BRINGS {group_title}!",
+                         color=(255, 205, 90), sound=None)
         self.arceus = arceus_id
         self.drops = drops
         self.on_drop = on_drop
@@ -321,7 +326,19 @@ class Descent(Cutscene):
                 for i in range(4):
                     self.rings.append([ax, ay - 60, 20 + i * 50, 0.9 + i * 0.12, col])
                 self._burst(ax, ay - 60, 80, col)
+        if self.lands and prev < self.SLAM <= self.t:
+            self.on_drop(0)
+            self.flash = 0.35
+            renderer.shake = max(renderer.shake, 1.0)
+            AUDIO.play("boom", 1.0)
+            sx, sy = self._screen(0)
+            for i in range(4):
+                self.rings.append([sx, sy, 20 + i * 60, 0.9 + i * 0.1, (255, 230, 150)])
+            self._burst(sx, sy, 90, (255, 220, 120))
+            return
         for i, (pid, _name, _pos) in enumerate(self.drops):
+            if self.lands:
+                break
             at = self.FIRST + i * self.GAP
             if prev < at <= self.t and i not in self.dropped:
                 self.dropped.add(i)
@@ -344,6 +361,11 @@ class Descent(Cutscene):
         top, rest = -260, H * 0.37
         if t < self.DOWN:
             return top + (rest - top) * _ease(t / self.DOWN)
+        if self.lands:
+            if t < self.CRY + 0.4:
+                return rest
+            gy = self._screen(0)[1] - 30
+            return rest + (gy - rest) * min(1.0, ((t - self.CRY - 0.4) / (self.SLAM - self.CRY - 0.4)) ** 2)
         if t < self.leave:
             return rest
         return rest + (top - 140 - rest) * min(1.0, ((t - self.leave) / 1.2) ** 2)
@@ -370,7 +392,7 @@ class Descent(Cutscene):
             pygame.draw.polygon(rays, (255, 230, 150, int(38 * k)), pts)
         surf.blit(rays, (0, 0))
         # pillars of light where the legendaries land
-        for i in range(len(self.drops)):
+        for i in range(0 if self.lands else len(self.drops)):
             at = self.FIRST + i * self.GAP
             p = (t - (at - 0.35)) / 1.1
             if 0 <= p <= 1:
@@ -387,7 +409,11 @@ class Descent(Cutscene):
                 fade = int(255 * min(1.0, (at + 1.6 - t) / 0.4) * k)
                 self._glow_title(surf, self.drops[i][1].upper(), (sx, sy - 120), 34, 0.6 + 0.4 * pop, fade)
         # the Judgment wheel behind Arceus
-        if ay > -200:
+        landed = self.lands and t >= self.SLAM
+        if landed:  # Arceus stands in the arena now, burning gold
+            sx, sy = self._screen(0)
+            self._draw_glowing(surf, self.arceus, 170, (sx, sy + 30))
+        elif ay > -200:
             cx, cy = W / 2, ay - 120
             rad = 170
             ring = pygame.Surface((W, H), pygame.SRCALPHA)
@@ -402,7 +428,7 @@ class Descent(Cutscene):
             self._draw_glowing(surf, self.arceus, 290, (W / 2, ay + 30))
         # the new arrivals stand in the light, glowing, until the scene ends
         for i, (pid, _name, _pos) in enumerate(self.drops):
-            if t >= self.FIRST + i * self.GAP:
+            if not self.lands and t >= self.FIRST + i * self.GAP:
                 sx, sy = self._screen(i)
                 self._draw_glowing(surf, pid, 120, (sx, sy + 30), color=(255, 235, 170))
         self._draw_aura_fx(surf, k)

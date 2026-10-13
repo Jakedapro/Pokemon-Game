@@ -212,7 +212,16 @@ class ShowcaseScene:
     def _trigger(self, name):
         cx, cy = (ARENA[0] + ARENA[2]) / 2, (ARENA[1] + ARENA[3]) / 2
         if name == "arceus":
-            # Arceus doesn't fight: it drops off a legendary trio that fights for itself
+            arceus_id = self.dex.get("arceus")["id"]
+            if self.start_units >= 60 and self.rng.random() < 0.12:
+                # rare: Arceus crashes down and fights itself
+                def land(_i):
+                    self._spawn("arceus", "Arceus", (cx, cy), hp_scale=1.6, radius_scale=1.3, signature="judgment")
+                    self.r.god_beam(cx, cy)
+                self.cutscenes.append(Descent(arceus_id, [(arceus_id, "Arceus", (cx, cy))], "", (cx, cy), land,
+                                              lands=True))
+                return
+            # usually Arceus doesn't fight: it drops off a legendary group that fights for itself
             title, keys = self.rng.choice(ARCEUS_GROUPS)
             entries = [self.dex.get(k) for k in keys]
             entries = [e for e in entries if e]
@@ -229,7 +238,7 @@ class ShowcaseScene:
                 u = self._spawn(entries[i]["key"], "Arceus' Chosen", drops[i][2], hp_scale=1.0,
                                 radius_scale=1.1, team=team, floor=0.08)
                 self.r.god_beam(u.x, u.y)
-            self.cutscenes.append(Descent(self.dex.get("arceus")["id"], drops, title, (cx, cy), drop))
+            self.cutscenes.append(Descent(arceus_id, drops, title, (cx, cy), drop))
         elif name == "primal":
             for key, nm, pos, dom, weather in (("kyogre-primal", "Primal Kyogre", (cx - 160, cy - 260), "sea", "rain"),
                                                ("groudon-primal", "Primal Groudon", (cx + 160, cy + 260), "land", "sun")):
