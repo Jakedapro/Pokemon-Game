@@ -18,7 +18,7 @@ from .gfx import PIXEL, type_color
 
 VW, VH = PIXEL
 FOE_AT = (352, 132)     # midbottom of the foe's sprite
-ME_AT = (124, 244)
+ME_AT = (120, 230)
 STATUS_TAGS = {"brn": ("BRN", (232, 112, 56)), "par": ("PAR", (216, 184, 40)), "psn": ("PSN", (168, 80, 168)),
                "tox": ("PSN", (168, 80, 168)), "slp": ("SLP", (144, 144, 152)), "frz": ("FRZ", (96, 176, 232))}
 
@@ -445,22 +445,13 @@ class GBABattle(Scene):
         self._bottom(surf)
 
     def _background(self, surf):
-        surf.fill((248, 248, 232))
-        top = (232, 240, 216) if self.s.kind in ("wild", "trainer") else (216, 216, 232)
-        for y in range(0, 240, 4):
-            k = y / 240
-            c = tuple(int(a * (1 - k) + b * k) for a, b in zip((248, 248, 240), top))
-            pygame.draw.rect(surf, c, (0, y, VW, 4))
-        pygame.draw.rect(surf, (200, 224, 176) if self.s.kind in ("wild", "trainer") else (184, 184, 208),
-                         (0, 150, VW, 90))
-        for y in range(150, 240, 6):
-            pygame.draw.line(surf, (184, 212, 160) if self.s.kind in ("wild", "trainer") else (168, 168, 192),
-                             (0, y), (VW, y))
+        kind = {"gym": "gym", "champion": "league"}.get(self.s.kind, "grass")
+        surf.blit(G.battle_bg(kind), (0, 0))
 
     def _platform(self, surf, x, y, rx, ry):
-        pygame.draw.ellipse(surf, (112, 168, 96), (x - rx, y - ry // 2, rx * 2, ry))
-        pygame.draw.ellipse(surf, (152, 200, 120), (x - rx + 6, y - ry // 2 + 3, rx * 2 - 12, ry - 8))
-        pygame.draw.ellipse(surf, (88, 144, 80), (x - rx, y - ry // 2, rx * 2, ry), 2)
+        kind = {"gym": "gym", "champion": "league"}.get(self.s.kind, "grass")
+        img = G.platform(kind, mine=rx > 100)
+        surf.blit(img, img.get_rect(center=(x, y + 4)))
 
     def _mon(self, surf, side, at, dark=False):
         v = self.vis[side] if not self.hidden[side] else None

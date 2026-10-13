@@ -1,6 +1,7 @@
 """Pixel art for Adventure mode, drawn in code: 16x16 tiles, buildings, room interiors and trainer sprites.
 Everything is painted at 1x and scaled 2x with nearest-neighbour onto the 480x320 canvas (a GBA screen at 2x).
 None of it is copied from any game - it's original art in a handheld style."""
+import math
 import os
 import random
 
@@ -565,5 +566,237 @@ def battle_sprite(pid, back=False, shiny=False, max_h=150):
     if base.get_height() * k > max_h:
         k = max_h / base.get_height()
     out = pygame.transform.scale(base, (max(1, int(base.get_width() * k)), max(1, int(base.get_height() * k))))
+    _cache[key] = out
+    return out
+
+
+# ====================================================================== nicer terrain (edges that blend)
+GR_DARK = (80, 160, 72)
+EDGE = (176, 152, 104)
+
+
+def grass2(x, y):
+    """Grass with a regular little tuft pattern (like the handhelds), not random noise."""
+    key = ("g2", (x * 7 + y * 3) % 4)
+    if key not in _cache:
+        s = pygame.Surface((TS, TS))
+        s.fill(GR)
+        v = key[1]
+        for tx, ty in ((3 + v, 4), (11 - v, 10), (6, 13 - v % 2)):
+            _px(s, tx, ty, GR2)
+            _px(s, tx + 1, ty - 1, GR2)
+            _px(s, tx + 2, ty, GR2)
+        _px(s, (v * 5) % 16, (v * 3 + 7) % 16, GR3)
+        _cache[key] = _scaled(s)
+    return _cache[key]
+
+
+def dirt_edged(mask, seed=0):
+    """A path tile; mask = which neighbours are path too (N, E, S, W). Grass curls over the other sides."""
+    key = ("de", mask, seed % 4)
+    if key in _cache:
+        return _cache[key]
+    s = _dirt(seed % 4)
+    n, e, so, w = mask
+    lip = 3
+    if not n:
+        pygame.draw.rect(s, GR, (0, 0, 16, lip))
+        for x in range(0, 16, 4):
+            _px(s, x + 1, lip, GR)
+            _px(s, x + 2, lip, GR)
+        pygame.draw.line(s, EDGE, (0, lip + 1), (15, lip + 1))
+    if not so:
+        pygame.draw.rect(s, GR, (0, 16 - lip, 16, lip))
+        pygame.draw.line(s, GR_DARK, (0, 16 - lip), (15, 16 - lip))
+    if not w:
+        pygame.draw.rect(s, GR, (0, 0, lip, 16))
+        for y in range(0, 16, 4):
+            _px(s, lip, y + 1, GR)
+        pygame.draw.line(s, EDGE, (lip + 1, 0 if n else lip + 2), (lip + 1, 15 if so else 16 - lip - 1))
+    if not e:
+        pygame.draw.rect(s, GR, (16 - lip, 0, lip, 16))
+        for y in range(2, 16, 4):
+            _px(s, 15 - lip, y, GR)
+        pygame.draw.line(s, EDGE, (15 - lip - 1, 0 if n else lip + 2), (15 - lip - 1, 15 if so else 16 - lip - 1))
+    for (cx, cy, on) in ((0, 0, not n and not w), (15, 0, not n and not e), (0, 15, not so and not w),
+                         (15, 15, not so and not e)):
+        if on:
+            pygame.draw.circle(s, GR, (cx, cy), lip + 2)
+    out = _scaled(s)
+    _cache[key] = out
+    return out
+
+
+def canopy(below_tree, above_tree, seed=0):
+    """Forest: each tree's crown overlaps its neighbours so a block of trees reads as one dense canopy.
+    The trunk only shows on the bottom row of a forest. Drawn 32x48 (spills 16px up into the tile above)."""
+    key = ("cn", below_tree, above_tree, seed % 3)
+    if key in _cache:
+        return _cache[key]
+    s = pygame.Surface((TS, TS + 8), pygame.SRCALPHA)
+    dark, mid, light, hi = (24, 88, 48), (40, 128, 64), (72, 168, 88), (136, 208, 120)
+    oy = 8
+    if not below_tree:
+        pygame.draw.rect(s, (96, 64, 40), (6, oy + 10, 4, 6))
+        _px(s, 5, oy + 15, (72, 48, 32))
+        _px(s, 10, oy + 15, (72, 48, 32))
+        pygame.draw.ellipse(s, (40, 96, 48, 120), (2, oy + 13, 12, 4))
+    top = oy - 6 if not above_tree else oy - 8
+    pygame.draw.ellipse(s, OUT, (-1, top, 18, 20 if not below_tree else 22))
+    pygame.draw.ellipse(s, dark, (0, top + 1, 16, 18 if not below_tree else 20))
+    pygame.draw.ellipse(s, mid, (1, top + 1, 13, 14))
+    pygame.draw.ellipse(s, light, (3, top + 2, 7, 6))
+    r = _r(seed)
+    for _ in range(5):
+        _px(s, r.randrange(2, 14), r.randrange(top + 4, top + 15), dark)
+    _px(s, 5, top + 3, hi)
+    _px(s, 6, top + 3, hi)
+    out = _scaled(s)
+    _cache[key] = out
+    return out
+
+
+def water_shore(mask, frame=0):
+    key = ("ws", mask, frame)
+    if key in _cache:
+        return _cache[key]
+    s = _water(frame)
+    n, e, so, w = mask
+    foam = (216, 240, 248)
+    if not n:
+        pygame.draw.rect(s, (200, 184, 136), (0, 0, 16, 2))
+        pygame.draw.line(s, foam, (0, 2), (15, 2))
+    if not so:
+        pygame.draw.line(s, WAT2, (0, 15), (15, 15))
+    if not w:
+        pygame.draw.rect(s, (200, 184, 136), (0, 0, 2, 16))
+        pygame.draw.line(s, foam, (2, 0), (2, 15))
+    if not e:
+        pygame.draw.rect(s, (200, 184, 136), (14, 0, 2, 16))
+        pygame.draw.line(s, foam, (13, 0), (13, 15))
+    out = _scaled(s)
+    _cache[key] = out
+    return out
+
+
+def tall2(frame=0, edge_top=True):
+    """Tall grass: rows of pointed blades with light tips, and a dark band where it meets normal grass."""
+    key = ("t2", frame, edge_top)
+    if key in _cache:
+        return _cache[key]
+    s = pygame.Surface((TS, TS))
+    s.fill(TALL2)
+    for row, by in enumerate((6, 11, 16)):
+        for bx in range(-2, 16, 4):
+            x0 = bx + (2 if row % 2 else 0)
+            sway = frame if row == 0 else 0
+            pygame.draw.polygon(s, TALL1, [(x0, by), (x0 + 2 + sway, by - 7), (x0 + 4, by)])
+            _px(s, x0 + 2 + sway, by - 6, TALL3)
+            _px(s, x0 + 1, by - 2, (48, 128, 64))
+    if edge_top:
+        pygame.draw.line(s, (40, 96, 48), (0, 0), (15, 0))
+    out = _scaled(s)
+    _cache[key] = out
+    return out
+
+
+def fence():
+    key = ("fence",)
+    if key not in _cache:
+        s = _grass(2)
+        for x in (2, 13):
+            pygame.draw.rect(s, OUT, (x - 1, 3, 3, 12))
+            pygame.draw.rect(s, (232, 224, 208), (x, 4, 1, 10))
+        for y in (5, 10):
+            pygame.draw.rect(s, OUT, (0, y - 1, 16, 3))
+            pygame.draw.line(s, (240, 232, 216), (0, y), (15, y))
+        _cache[key] = _scaled(s)
+    return _cache[key]
+
+
+# ====================================================================== battle backgrounds (painted at GBA size)
+def battle_bg(kind="grass"):
+    """A 480x320 battle backdrop painted at 240x160 and scaled 2x: sky, clouds, far trees, field, platforms."""
+    key = ("bbg", kind)
+    if key in _cache:
+        return _cache[key]
+    s = pygame.Surface((240, 160))
+    if kind in ("gym", "league"):
+        wall = (152, 160, 184) if kind == "gym" else (112, 72, 120)
+        s.fill(wall)
+        for y in range(0, 80, 8):
+            pygame.draw.line(s, tuple(c - 16 for c in wall), (0, y), (239, y))
+        for x in range(0, 240, 24):
+            pygame.draw.rect(s, tuple(c + 16 for c in wall), (x + 4, 10, 14, 44))
+            pygame.draw.rect(s, tuple(c - 30 for c in wall), (x + 4, 54, 14, 4))
+        floor = (200, 192, 168) if kind == "gym" else (184, 72, 72)
+        for y in range(80, 160):
+            k = (y - 80) / 80
+            pygame.draw.line(s, tuple(int(c * (0.85 + 0.15 * k)) for c in floor), (0, y), (239, y))
+        for y in range(84, 160, 10):
+            pygame.draw.line(s, tuple(c - 20 for c in floor), (0, y), (239, y))
+        plat_top, plat_side = ((216, 208, 184), (160, 152, 128)) if kind == "gym" else ((224, 200, 112),
+                                                                                         (168, 136, 56))
+    else:
+        sky_top, sky_bot = (120, 184, 240), (216, 240, 248)
+        for y in range(0, 70):
+            k = y / 70
+            c = tuple(int(a * (1 - k) + b * k) for a, b in zip(sky_top, sky_bot))
+            pygame.draw.line(s, c, (0, y), (239, y))
+        r = _r(5)
+        for cx, cy, w in ((40, 16, 34), (150, 10, 44), (210, 26, 28)):   # pixel clouds
+            for k in range(4):
+                pygame.draw.ellipse(s, (248, 248, 248), (cx + k * w // 5 - w // 2, cy - (4 if k % 3 else 0),
+                                                         w // 2, 10))
+            pygame.draw.line(s, (216, 232, 248), (cx - w // 2, cy + 8), (cx + w // 2, cy + 8))
+        # far hills and a tree line
+        pts = [(x, 58 + int(6 * math.sin(x / 23.0))) for x in range(0, 241, 4)]
+        pygame.draw.polygon(s, (128, 184, 136), pts + [(240, 80), (0, 80)])
+        for x in range(-6, 246, 9):
+            h = 10 + r.randrange(6)
+            pygame.draw.ellipse(s, (64, 136, 80), (x, 66 - h, 12, h + 6))
+            pygame.draw.ellipse(s, (88, 160, 96), (x + 2, 67 - h, 6, 4))
+        # the field
+        for y in range(72, 160):
+            k = (y - 72) / 88
+            c = (int(152 - 40 * k), int(208 - 32 * k), int(112 - 40 * k))
+            pygame.draw.line(s, c, (0, y), (239, y))
+        for y in range(76, 160, 7):   # mown stripes
+            pygame.draw.line(s, (int(140 - (y - 72) * 0.4), int(196 - (y - 72) * 0.3), int(100 - (y - 72) * 0.4)),
+                             (0, y), (239, y))
+        for _ in range(60):          # tufts
+            x, y = r.randrange(240), r.randrange(80, 160)
+            _px(s, x, y, (96, 160, 72))
+            _px(s, x + 1, y - 1, (96, 160, 72))
+        plat_top, plat_side = (144, 200, 104), (104, 152, 72)
+    s_plats = (plat_top, plat_side)
+    _cache[("plat_cols", kind)] = s_plats
+    out = _scaled(s)
+    _cache[key] = out
+    return out
+
+
+def platform(kind="grass", mine=False):
+    """The oval a Pokemon stands on in battle (yours is bigger, nearer the camera)."""
+    key = ("plat", kind, mine)
+    if key in _cache:
+        return _cache[key]
+    battle_bg(kind)
+    top, side = _cache[("plat_cols", kind)]
+    rx, ry = (60, 12) if mine else (48, 10)
+    s = pygame.Surface((rx * 2 + 4, ry * 2 + 8), pygame.SRCALPHA)
+    cx, cy = rx + 2, ry + 1
+    pygame.draw.ellipse(s, OUT, (cx - rx - 1, cy - ry + 1, rx * 2 + 2, ry * 2 + 4))
+    pygame.draw.ellipse(s, side, (cx - rx, cy - ry + 2, rx * 2, ry * 2 + 2))
+    pygame.draw.ellipse(s, top, (cx - rx, cy - ry, rx * 2, ry * 2))
+    pygame.draw.ellipse(s, tuple(min(255, c + 24) for c in top), (cx - rx + 8, cy - ry + 3, rx, ry - 2))
+    r2 = _r(rx)
+    for _ in range(16 if kind == "grass" else 0):
+        a = r2.random() * math.tau
+        px = int(cx + math.cos(a) * rx * 0.7 * r2.random())
+        py = int(cy + math.sin(a) * ry * 0.6 * r2.random())
+        _px(s, px, py, side)
+        _px(s, px, py - 1, side)
+    out = _scaled(s)
     _cache[key] = out
     return out

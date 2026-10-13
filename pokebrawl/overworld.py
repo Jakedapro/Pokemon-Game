@@ -134,6 +134,16 @@ class OverworldScene(Scene):
             return rows[y][x]
         return "#"
 
+    def _mask(self, x, y, same):
+        """Which neighbours (N, E, S, W) are the same kind of tile - for edges that blend."""
+        def ok(xx, yy):
+            if not (0 <= yy < len(self.rows())):
+                return True     # map edges continue off-screen
+            if not (0 <= xx < A.COLS):
+                return True
+            return self.rows()[yy][xx] in same
+        return (ok(x, y - 1), ok(x + 1, y), ok(x, y + 1), ok(x - 1, y))
+
     def npc_at(self, x, y):
         for n in self.cur["npcs"]:
             if (n["x"], n["y"]) == (x, y):
@@ -604,19 +614,23 @@ class OverworldScene(Scene):
                             surf.blit(G.furniture(FURN[ch]), (dx, dy))
                     continue
                 if ch == "=":
-                    surf.blit(G.tile("dirt", seed=x * 3 + y), (dx, dy))
+                    surf.blit(G.dirt_edged(self._mask(x, y, "=" + "".join(DOORS)), x * 3 + y), (dx, dy))
                 elif ch == '"':
-                    surf.blit(G.tile("tall", 0), (dx, dy))
+                    surf.blit(G.tall2(0, self.tile(x, y - 1) != '"'), (dx, dy))
                 elif ch == ",":
                     surf.blit(G.tile("flowers", gf, seed=x + y * 5), (dx, dy))
                 elif ch == "~":
-                    surf.blit(G.tile("water", wf), (dx, dy))
-                elif ch in "#t":
-                    surf.blit(G.tile("tree", seed=x * 7 + y), (dx, dy))
+                    surf.blit(G.water_shore(self._mask(x, y, "~"), wf), (dx, dy))
                 elif ch == "S":
                     surf.blit(G.tile("sign"), (dx, dy))
                 else:
-                    surf.blit(G.tile("grass", seed=x * 5 + y * 3), (dx, dy))
+                    surf.blit(G.grass2(x, y), (dx, dy))
+        if not inside:   # forests: crowns overlap upward, drawn top row first so lower trees sit in front
+            for y in range(y0, min(len(rows), y1 + 1)):
+                for x, ch in enumerate(rows[y]):
+                    if ch in "#t":
+                        img = G.canopy(self.tile(x, y + 1) in "#t", self.tile(x, y - 1) in "#t", x * 7 + y)
+                        surf.blit(img, (x * T, y * T + oy - 16))
         if inside and kind == "center" and self.healing is not None:   # balls on the healing machine
             mx, my = 5 * T, 2 * T + oy
             n = len(self.game["party"])
