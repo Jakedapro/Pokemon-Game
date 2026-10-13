@@ -10,10 +10,11 @@ import pygame
 
 from . import gfx
 from .audio import AUDIO
-from .cinematics import Cutscene, Descent, Finisher, Gigantamax, MegaEvolution, draw_plate
+from .cinematics import (MEWTWO_RAMPAGE, MEWTWO_WIN, Cutscene, Descent, Finisher, Gigantamax, MegaEvolution, Rampage,
+                         draw_plate, subtitle)
 from .gfx import H, INK, SPRITES, W
 from .pokedex import prefetch
-from .render import ArenaRenderer
+from .render import FX, ArenaRenderer
 from .sim import ARENA, Sim
 from .team import auto_member
 
@@ -197,6 +198,12 @@ class ShowcaseScene:
         self.gmax_scenes = 0
         self.ko_scenes = 0
         self.last_ko_scene = -99.0
+        self.mewtwo = (dex.get("mewtwo") or {}).get("species")
+        self.rampages = {}       # uid -> how many rampages that Mewtwo has had
+        self.win_line = None     # (speaker, text, start time, length) spoken by the winner
+        if any(u.mon.entry["species"] == self.mewtwo for u in self.sim.units):
+            from .audio import prepare_voices
+            prepare_voices([("mewtwo", line) for line in MEWTWO_RAMPAGE + [MEWTWO_WIN]])
         self.level = cfg.get("level", 50)
         self.storm_msg = None
         self.last_ko = None      # (killer uid, victim form) - the battle's last KO gets a finisher
@@ -360,6 +367,36 @@ class ShowcaseScene:
             scene.minor = True  # auto-edit may speed these up a little
             self.cutscenes.append(scene)
 
+    def _check_rampage(self):
+        """Mewtwo snaps on its first KO or when it drops below half HP; again once it has 5 KOs."""
+        if self.mewtwo is None:
+            return
+        for u in self.sim.units:
+            if u.alive and u.mon.entry["species"] == self.mewtwo:
+                n = self.rampages.get(u.uid, 0)
+                if (n == 0 and (u.kills >= 1 or u.mon.hp_frac() < 0.5)) or (n == 1 and u.kills >= 5):
+                    self._rampage(u.uid)
+
+    def _rampage(self, killer_uid):
+        u = self.sim.by_id.get(killer_uid)
+        if not u or not u.alive or u.mon.entry["species"] != self.mewtwo:
+            return
+        n = self.rampages.get(u.uid, 0)
+        if n >= 2:
+            return
+        if sum(1 for x in self.sim.units if x.alive and x.team != u.team) < 2:
+            return
+        self.rampages[u.uid] = n + 1
+        line = MEWTWO_RAMPAGE[(n + self.seed) % len(MEWTWO_RAMPAGE)]
+        radius = 330 if not self.wide else 420
+
+        def blast():
+            if u.alive:
+                self.sim.shockwave(u, radius, 0.75)
+                self.r.fx.append(FX("ring", 1.0, x=u.x, y=u.y, r=radius, color=(170, 80, 255), light=(230, 190, 255)))
+                self.r.shake = max(self.r.shake, 1.0)
+        self.cutscenes.append(self._cs(Rampage, u.mon.entry["id"], line, blast, focus=(u.x, u.y)))
+
     def _ko_scene(self, ev):
         """Big knockouts (a boss going down) get a finisher cutscene - a few per battle, spaced out."""
         victim = self.sim.by_id.get(ev[1])
@@ -503,6 +540,8 @@ class ShowcaseScene:
                 if self.cutscenes:
                     break
             self._check_triggers()
+            if not self.cutscenes:
+                self._check_rampage()
             self.r.update(dt)
             self.counts = [sum(1 for u in self.sim.units if u.alive and u.team == i)
                            for i in range(len(self.team_names))]
@@ -516,6 +555,9 @@ class ShowcaseScene:
                 self.end_t = t
                 alive = [u for u in self.sim.units if u.alive]
                 self.mvp = max(alive, key=lambda u: (u.kills, u.mon.hp_frac())) if alive else None
+                if self.mvp and self.mvp.mon.entry["species"] == self.mewtwo:
+                    length = AUDIO.voice("mewtwo", MEWTWO_WIN) or 2.4
+                    self.win_line = ("mewtwo", MEWTWO_WIN, self.t, length)
             return
         self.r.update(dt)
         since = t - self.end_t
@@ -656,6 +698,10 @@ class ShowcaseScene:
                        (255, 200, 60))
             if self.mvp:
                 gfx.text(surf, f"MVP: {self.mvp.mon.name}  ({self.mvp.kills} KOs)", (self.W / 2, self.H * 0.30 + 60), 26)
+        if self.win_line and self.phase in ("won", "finale"):
+            who, text, start, length = self.win_line
+            if self.t - start < length + 1.5:
+                subtitle(surf, who, text, self.t - start, length)
         if self.phase == "finale":
             self._draw_finale(surf)
         if self.paused:

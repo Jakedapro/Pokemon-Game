@@ -1153,3 +1153,104 @@ class Gigantamax(Cutscene):
             f.fill((255, 230, 235, int(255 * min(1.0, self.flash / 0.4))))
             surf.blit(f, (0, 0))
         self._end_draw(surf)
+
+
+def subtitle(surf, speaker, text, t, length, color=(200, 120, 255)):
+    """Movie subtitle: speaker name tag and the line typing out in time with the voice."""
+    w, h = surf.get_size()
+    n = int(len(text) * min(1.0, t / max(0.6, length * 0.8)))
+    box = pygame.Rect(40, h - 250, w - 80, 120)
+    shade = pygame.Surface(box.size, pygame.SRCALPHA)
+    shade.fill((8, 6, 14, 200))
+    surf.blit(shade, box.topleft)
+    pygame.draw.rect(surf, color, box, 2, border_radius=6)
+    gfx.pill(surf, speaker.upper(), (box.x + 70, box.y), color, 16)
+    words, line, lines = text[:n].split(" "), "", []
+    f = gfx.font(26, False)
+    for word in words:
+        trial = (line + " " + word).strip()
+        if f.size(trial)[0] > box.w - 40:
+            lines.append(line)
+            line = word
+        else:
+            line = trial
+    lines.append(line)
+    for i, ln in enumerate(lines[-2:]):
+        gfx.text(surf, ln, (box.x + 20, box.y + 42 + i * 34), 26, WHITE, INK, 2, anchor="midleft", chunky=False)
+
+
+# original lines - Mewtwo talks while it wipes the field
+MEWTWO_RAMPAGE = ["You are all beneath me.", "Is this truly all your world can offer?",
+                  "I was created to surpass every Pokemon. Witness it.", "Kneel. Or be erased."]
+MEWTWO_WIN = "Remember the name. Mewtwo."
+
+
+class Rampage(Cutscene):
+    """Mewtwo has had enough: eye close-up, it rises in a storm of psychic power with rocks lifting off the
+    ground, says its line, then a psychic shockwave rips through everyone nearby (action)."""
+
+    BLAST_PAD = 0.9
+
+    def __init__(self, pid, line, action, focus=None, size=None, speaker="mewtwo"):
+        from .audio import voice_length, voice_path
+        import os
+        vp = voice_path(speaker, line)
+        self.line_len = voice_length(vp) if os.path.exists(vp) else len(line) * 0.075
+        dur = 0.8 + max(2.2, self.line_len) + self.BLAST_PAD + 0.9
+        super().__init__("rampage", dur, focus=focus, zoom=1.7, title="MEWTWO IS UNSTOPPABLE", color=(170, 80, 255),
+                         portrait=pid, action=action, action_at=(dur - 0.9) / dur, cry=pid, sound=None, size=size)
+        self.line, self.speaker = line, speaker
+        self.spoke = False
+        self.rocks = [(random.uniform(0, math.tau), random.uniform(140, 300), random.uniform(10, 24),
+                       random.uniform(0.4, 1.2)) for _ in range(22)]
+
+    EYE_T = 0.8
+
+    def update(self, dt, renderer):
+        if self.t >= self.EYE_T and not self.spoke:
+            self.spoke = True
+            AUDIO.voice(self.speaker, self.line)
+            AUDIO.play("tera", 0.6)
+        super().update(dt, renderer)
+
+    def draw(self, surf):
+        self._begin_draw(surf)
+        t, d = self.t, self.duration
+        if t < self.EYE_T:
+            surf.fill((0, 0, 0))
+            hgt = self.H * 0.3
+            eye_strip(surf, self.portrait, (0, self.H / 2 - hgt / 2, self.W, hgt), t, self.color)
+            self._end_draw(surf)
+            return
+        q = t - self.EYE_T
+        k = _ease((d - t) / 0.4)
+        self.anchors = []
+        bg = pygame.Surface((self.W, self.H), pygame.SRCALPHA)
+        bg.fill((20, 6, 34, int(235 * k)))
+        surf.blit(bg, (0, 0))
+        vig = _vignette((self.W, self.H))
+        vig.set_alpha(int(255 * k))
+        surf.blit(vig, (0, 0))
+        cx, cy = self.W / 2, self.H * 0.5
+        for i in range(4):  # distortion rings pulsing out of it
+            rr = ((q * 260 + i * 120) % 520)
+            pygame.draw.circle(surf, _lighter(self.color, 0.3), (int(cx), int(cy - 60)), int(rr), 2)
+        for a, r, size, sp in self.rocks:  # rocks torn off the ground, orbiting and rising
+            ang = a + q * sp * 1.6
+            x = cx + math.cos(ang) * r
+            y = cy + 120 - q * 60 * sp + math.sin(ang) * r * 0.35
+            pts = [(x + math.cos(ang + j * 2.1) * size, y + math.sin(ang + j * 2.1) * size * 0.8) for j in range(3)]
+            pygame.draw.polygon(surf, (110, 90, 120), pts)
+            pygame.draw.polygon(surf, _lighter(self.color, 0.4), pts, 2)
+        float_y = math.sin(q * 2.5) * 10 - min(1.0, q / 0.6) * 40
+        self._draw_glowing(surf, self.portrait, 330, (cx, cy + 170 + float_y))
+        self._draw_aura_fx(surf, k)
+        pop = _ease(q / 0.2)
+        draw_plate(surf, self.title, (cx, self.H * 0.14), 34, self.color, 1.5 - 0.5 * pop, int(255 * k))
+        if q < self.line_len + 0.8:
+            subtitle(surf, self.speaker, self.line, q, self.line_len)
+        if self.flash > 0:
+            f = pygame.Surface((self.W, self.H), pygame.SRCALPHA)
+            f.fill((235, 200, 255, int(255 * min(1.0, self.flash / 0.35))))
+            surf.blit(f, (0, 0))
+        self._end_draw(surf)

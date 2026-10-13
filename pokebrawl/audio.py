@@ -12,6 +12,58 @@ from . import pokedex
 
 RATE = 44100
 SFX_DIR = os.path.join(pokedex.HOME, "audio")
+VOICE_DIR = os.path.join(pokedex.HOME, "voices")
+
+# spoken lines use the Mac's built-in speech (the `say` command): (voice, pitch base, words per minute).
+# Pitch and speed are set inline so even the default voice sounds deep and slow.
+SPEAKERS = {"mewtwo": ("Daniel", 22, 150), "arceus": ("Daniel", 16, 132), "announcer": (None, 52, 185)}
+
+
+def voice_path(speaker, text):
+    import hashlib
+    h = hashlib.sha1(f"{speaker}|{text}".encode()).hexdigest()[:16]
+    return os.path.join(VOICE_DIR, f"{speaker}_{h}.wav")
+
+
+def make_voice(speaker, text):
+    """Render a spoken line to a WAV (cached). Returns the path, or None when this computer can't speak (no
+    `say` command) - the game then just shows the line as a subtitle."""
+    import shutil
+    path = voice_path(speaker, text)
+    if os.path.exists(path):
+        return path
+    say = shutil.which("say")
+    if not say:
+        return None
+    os.makedirs(VOICE_DIR, exist_ok=True)
+    voice, pbas, rate = SPEAKERS.get(speaker, (None, 40, 170))
+    line = f"[[pbas {pbas}]][[rate {rate}]] {text}"
+    for v in ([voice] if voice else []) + [None]:  # that voice might not be installed: fall back to the default
+        cmd = [say] + (["-v", v] if v else []) + ["-o", path, f"--data-format=LEI16@{RATE}", line]
+        try:
+            if subprocess.run(cmd, capture_output=True, timeout=30).returncode == 0 and os.path.exists(path):
+                return path
+        except (OSError, subprocess.SubprocessError):
+            pass
+    return None
+
+
+def voice_length(path):
+    try:
+        with wave.open(path) as w:
+            return w.getnframes() / w.getframerate()
+    except Exception:  # noqa: BLE001
+        return 0.0
+
+
+def prepare_voices(lines):
+    """Render lines in the background so they're ready when a cutscene needs them."""
+    import threading
+
+    def go():
+        for speaker, text in lines:
+            make_voice(speaker, text)
+    threading.Thread(target=go, daemon=True).start()
 CRY_DIR = os.path.join(pokedex.HOME, "cries")
 CRY_URL = "https://raw.githubusercontent.com/PokeAPI/cries/main/cries/pokemon/latest/{}.ogg"
 AUDIO_VERSION = 3
@@ -290,6 +342,27 @@ class Audio:
                 if ch:
                     ch.set_volume(min(1.0, vol * self.sfx_vol))
 
+    def voice(self, speaker, text, vol=1.0):
+        """Speak a line (if this computer can). Returns its length in seconds (0 when silent)."""
+        path = voice_path(speaker, text)
+        if not os.path.exists(path):
+            path = make_voice(speaker, text)
+        if not path:
+            return 0.0
+        now = time.time() if self.clock is None else self.clock()
+        if self.capture is not None:
+            self.capture.append((now, f"voice:{path}", vol))
+            return voice_length(path)
+        if self.enabled:
+            import pygame
+            try:
+                ch = pygame.mixer.Sound(path).play()
+                if ch:
+                    ch.set_volume(min(1.0, vol))
+            except Exception:  # noqa: BLE001
+                return 0.0
+        return voice_length(path)
+
     def cry(self, pid, vol=1.0):
         now = time.time() if self.clock is None else self.clock()
         if now - self.last.get("cry", -9) < THROTTLE["cry"]:
@@ -385,6 +458,8 @@ def mix(events, duration, out_wav):
         if key not in cache:
             if key.startswith("cry:"):
                 cache[key] = _decode_cry(int(key[4:]))
+            elif key.startswith("voice:"):
+                cache[key] = _read_wav(key[6:]) if os.path.exists(key[6:]) else None
             else:
                 p = os.path.join(SFX_DIR, f"{key}.wav")
                 cache[key] = _read_wav(p) if os.path.exists(p) else None

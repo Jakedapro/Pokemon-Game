@@ -289,6 +289,14 @@ class Sim:
                     u.storm -= whole
                     self._hurt(u, whole, None, chip=True, guard=False)  # Magic Guard doesn't stop the storm
 
+    def shockwave(self, src, radius, frac, mtype="psychic"):
+        """A blast centered on `src` that hits every other team's Pokemon in range (KOs count for `src`)."""
+        self.emit("aoe", round(src.x), round(src.y), round(radius), mtype, 0.0, "env")
+        self.emit("blast", round(src.x), round(src.y), round(radius), mtype)
+        for u in self.units:
+            if u.alive and u.team != src.team and math.hypot(u.x - src.x, u.y - src.y) < radius + u.r * 0.5:
+                self._hurt(u, u.mon.maxhp * frac * (0.35 if u.boss else 1.0), src, chip=True, guard=False)
+
     def set_domain(self, d):
         if d == self.domain:
             return
@@ -883,7 +891,9 @@ class Sim:
             if eff == 0:
                 self.emit("label", tgt.uid, "NO EFFECT", "normal")
                 return
-            dmg *= u.dmg_scale if not tgt.boss else tgt.dmg_scale
+            dmg *= tgt.dmg_scale  # scaled by the *target's* bonus HP (bosses used to be scaled down by their own)
+            if u.boss and not tgt.boss:  # legendaries tear through regular Pokemon
+                dmg *= self.opts.get("boss_dmg", 3.0)
             dmg *= self.ramp
             if tmon.item == "air-balloon":
                 tmon.lose_item()
