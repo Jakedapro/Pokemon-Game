@@ -35,6 +35,8 @@ class AdventureSession:
         self.cur_foe = None
         self.cur_me = None
         self.finished = False
+        self.awarded = set()      # foes whose experience was already handed out during the battle
+        self.evolutions = []      # (party mon, new species) to show after the battle
         # leads: your first healthy Pokemon, the foe's first
         lead = next(i for i, m in enumerate(game["party"]) if not A.fainted(dex, m))
         self.battle.choose(0, {"type": "switch", "index": lead})
@@ -115,6 +117,46 @@ class AdventureSession:
                 out.append((key, MEDICINE[key][0], n, "revive" if MEDICINE[key][3] else "heal"))
         return out
 
+    # ------------------------------------------------------------------ experience during the battle
+    def award(self, foe_index):
+        """Hand out experience for a foe that just fainted (or was caught). Updates the party and the Pokemon
+        in battle (a level-up raises its stats right away). Returns [(party index, gain, events)]."""
+        if foe_index in self.awarded or foe_index is None:
+            return []
+        self.awarded.add(foe_index)
+        dex = self.dex
+        foe = self.foes[foe_index]
+        fought = self.participants.get(foe_index, set())
+        out = []
+        trainer = self.kind != "wild"
+        for i, p in enumerate(self.game["party"]):
+            bm = self.battle.sides[0].mons[i]
+            if bm.fainted:
+                continue
+            gain = A.xp_yield(dex, foe["species"], foe["level"], p["level"], trainer)
+            if i not in fought:
+                gain //= 2
+            gain = max(1, gain)
+            before = p["level"]
+            p["cur_hp"] = bm.hp
+            events = A.gain_xp(dex, p, gain)
+            if p["level"] != before:   # grow the battling Pokemon's stats, keeping the damage it has taken
+                from .team import calc_stats
+                bm.member.level = p["level"]
+                old_max = bm.maxhp
+                bm.stats = calc_stats(bm.entry, bm.member)
+                bm.maxhp = bm.stats["hp"]
+                bm.hp = min(bm.maxhp, bm.hp + bm.maxhp - old_max)
+                if any(ev[0] == "learn" for ev in events):   # new moves: full PP, old ones keep theirs
+                    left = {mv["id"]: pp for mv, pp in zip(bm.moves, bm.pp)}
+                    bm.moves = [dex.moves[m] for m in p["moves"]]
+                    bm.pp = [left.get(mv["id"], mv["pp"]) for mv in bm.moves]
+            for ev in events:
+                if ev[0] == "evolve" and all(m is not p for m, _ in self.evolutions):
+                    self.evolutions.append((p, ev[1]))
+            out.append((i, gain, [e for e in events if e[0] != "evolve"]))
+        return out
+
     # ------------------------------------------------------------------ after the battle
     def results(self):
         """Write HP/PP/status back to the party and work out experience. Returns a dict for the overworld."""
@@ -134,6 +176,8 @@ class AdventureSession:
             foes_done.append(b.caught)
         xp = {}   # party index -> experience
         for f in foes_done:
+            if f in self.awarded:
+                continue
             foe = self.foes[f]
             fought = self.participants.get(f, set())
             for i, p in enumerate(game["party"]):

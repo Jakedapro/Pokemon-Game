@@ -36,6 +36,9 @@ def new_surface(size, alpha=False):
 
 
 # ---------------------------------------------------------------------------- display
+PIXEL = (480, 320)   # Adventure mode's canvas: twice a Game Boy Advance screen
+
+
 class Display:
     """Renders to a fixed-size canvas (720x1280 portrait) and scales it into a resizable window. A scene can ask
     for a different canvas (big battle royales use a wide 1600x900 one) and the window goes full screen for it."""
@@ -64,11 +67,22 @@ class Display:
         self.fullscreen = False
 
     def set_canvas(self, size):
-        """Switch canvas size: the normal portrait one in a window, anything else full screen."""
+        """Switch canvas size: the normal portrait one in a window, the small GBA-style pixel canvas (Adventure)
+        in a landscape window scaled up sharply, anything else full screen."""
         if self.canvas.get_size() == tuple(size):
             return
         self.canvas = new_surface(size)
         if self.headless:
+            return
+        if tuple(size) == PIXEL:
+            try:
+                dw, dh = pygame.display.get_desktop_sizes()[0]
+            except Exception:
+                dw, dh = 1280, 800
+            k = max(1, min((dw - 40) // PIXEL[0], (dh - 90) // PIXEL[1]))
+            self.window = pygame.display.set_mode((PIXEL[0] * k, PIXEL[1] * k), pygame.RESIZABLE)
+            self.fullscreen = False
+            self.pixel = True
             return
         if tuple(size) != (W, H):
             try:
@@ -76,8 +90,9 @@ class Display:
                 self.fullscreen = True
             except pygame.error:
                 pass
-        elif self.fullscreen:
+        elif self.fullscreen or getattr(self, "pixel", False):
             self._windowed()
+        self.pixel = False
 
     def present(self):
         if self.headless:
@@ -88,7 +103,13 @@ class Display:
         size = (max(1, int(cw * s)), max(1, int(ch * s)))
         self._rect = pygame.Rect((ww - size[0]) // 2, (wh - size[1]) // 2, *size)
         self.window.fill((0, 0, 0))
-        self.window.blit(pygame.transform.smoothscale(self.canvas, size), self._rect)
+        if (cw, ch) == PIXEL:   # pixel art: whole-number nearest-neighbour scaling keeps it crisp
+            k = max(1, int(s))
+            size = (cw * k, ch * k)
+            self._rect = pygame.Rect((ww - size[0]) // 2, (wh - size[1]) // 2, *size)
+            self.window.blit(pygame.transform.scale(self.canvas, size), self._rect)
+        else:
+            self.window.blit(pygame.transform.smoothscale(self.canvas, size), self._rect)
         pygame.display.flip()
 
     def to_canvas(self, pos):

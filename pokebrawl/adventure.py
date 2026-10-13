@@ -579,3 +579,125 @@ def lead_alive(game, dex):
 
 def dist(a, b):
     return math.hypot(a[0] - b[0], a[1] - b[1])
+
+
+# ====================================================================== building interiors
+ROOMS = {
+    "center": ["WWWWWWWWWWWWWWW",
+               "WWWWWWWWWWWWWWW",
+               "f____m_______pf",
+               "___ccccccccc___",
+               "_______________",
+               "_______________",
+               "_t___________t_",
+               "_______________",
+               "_______________",
+               "_______x_______"],
+    "mart": ["WWWWWWWWWWWWWWW",
+             "WWWWWWWWWWWWWWW",
+             "f_k___________f",
+             "__k____ss_ss___",
+             "__k____ss_ss___",
+             "__k____________",
+             "_______ss_ss___",
+             "_______ss_ss___",
+             "_______________",
+             "_______x_______"],
+    "house": ["WWWWWWWWWWWWWWW",
+              "WWWWWWWWWWWWWWW",
+              "b___v_____rr_f_",
+              "_______________",
+              "_______________",
+              "_____tt________",
+              "_______________",
+              "f_____________f",
+              "_______________",
+              "_______x_______"],
+    "lab": ["WWWWWWWWWWWWWWW",
+            "WWWWWWWWWWWWWWW",
+            "rrr_mm___mm_rrr",
+            "_______________",
+            "_______________",
+            "___t_______t___",
+            "_______________",
+            "f_____________f",
+            "_______________",
+            "_______x_______"],
+    "gym": ["WWWWWWWWWWWWWWW",
+            "WWWWWWWWWWWWWWW",
+            "f_____________f",
+            "_______________",
+            "___o_______o___",
+            "_______________",
+            "_______________",
+            "___o_______o___",
+            "_______________",
+            "_______________",
+            "_______________",
+            "f_____________f",
+            "_____o___o_____",
+            "_______x_______"],
+    "league": ["WWWWWWWWWWWWWWW",
+               "WWWWWWWWWWWWWWW",
+               "o_____________o",
+               "_______________",
+               "o_____________o",
+               "_______________",
+               "o_____________o",
+               "_______________",
+               "o_____________o",
+               "_______________",
+               "o_____________o",
+               "_______x_______"],
+}
+ROOM_WALK = set("_x")
+
+
+def room(world, kind, area_index):
+    """The inside of a building: its tiles and the people in it."""
+    area = world.areas[area_index]
+    rows = ROOMS[kind]
+    t = area.get("town", 0)
+    npcs = []
+    if kind == "center":
+        npcs.append({"id": "nurse", "kind": "nurse", "x": 7, "y": 2, "face": "down", "name": "Nurse", "look": "nurse"})
+        npcs.append({"id": f"c{t}a", "kind": "talk", "x": 3, "y": 6, "face": "right", "name": "", "look": "villager",
+                     "lines": ["The Pokemon Center heals your team for free. Come back any time!"]})
+    elif kind == "mart":
+        npcs.append({"id": "clerk", "kind": "clerk", "x": 1, "y": 3, "face": "right", "name": "Clerk", "look": "clerk"})
+        npcs.append({"id": f"m{t}a", "kind": "talk", "x": 9, "y": 5, "face": "up", "name": "", "look": "Lass",
+                     "lines": ["Poke Balls work better when the Pokemon is weak. Try making it fall asleep!"]})
+    elif kind == "house":
+        rng = random.Random(t * 7 + 1)
+        npcs.append({"id": f"h{t}", "kind": "talk", "x": 8, "y": 5, "face": "down", "name": "",
+                     "look": rng.choice(["villager", "mom", "Hiker", "Picnicker"]),
+                     "lines": [rng.choice([
+                         "My kid wants to be a Pokemon trainer just like you!",
+                         "Have you seen a shiny Pokemon? They sparkle when they come out!",
+                         "Trainers who look at you will want to battle. Watch out on the routes!",
+                         "If your Pokemon all faint, you'll wake up at the last Pokemon Center you used.",
+                         "Some Pokemon only evolve at a high level. Be patient!",
+                         "Type matchups matter. Electric moves don't touch Ground types at all!"])]})
+    elif kind == "lab":
+        npcs.append({"id": "prof", "kind": "prof", "x": 7, "y": 4, "face": "down", "name": "Prof. Hazel",
+                     "look": "prof"})
+    elif kind == "gym":
+        k = t - 1
+        town, leader, typ, ace, intro, lose, badge = GYMS[k]
+        rng = random.Random(500 + k)
+        npcs.append({"id": f"gym{k}", "kind": "leader", "x": 7, "y": 3, "face": "down", "name": leader,
+                     "look": "leader", "gym": k})
+        for j, (x, y, face) in enumerate(((4, 6, "right"), (10, 9, "left"))):
+            team = world.team_for([typ], ace - 6 + j * 2, 1 + (k > 2) + (k > 5), rng)
+            npcs.append({"id": f"gym{k}-t{j}", "kind": "trainer", "x": x, "y": y, "face": face,
+                         "name": f"{rng.choice(['Ace Trainer', 'Black Belt', 'Psychic', 'Hiker', 'Lass'])} "
+                                 f"{rng.choice(TRAINER_NAMES)}", "cls": "Ace Trainer", "team": team, "sight": 4,
+                         "intro": f"You want to see {leader}? You'll have to beat me first!",
+                         "lose": f"{leader} is way stronger than me...", "money": 40 * ace})
+    elif kind == "league":
+        npcs.append({"id": "champion", "kind": "champion", "x": 7, "y": 2, "face": "down", "name": CHAMPION[0],
+                     "look": "rival"})
+    return {"name": {"center": "Pokemon Center", "mart": "Poke Mart", "house": area["name"], "lab": "Hazel's Lab",
+                     "gym": f"{area['name']} Gym", "league": "Pokemon League"}[kind],
+            "kind": "room", "room": kind, "rows": rows, "npcs": npcs, "items": [], "music": "gym" if kind in
+            ("gym", "league") else "town"}
