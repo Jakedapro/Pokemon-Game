@@ -8,7 +8,7 @@ from .app import Scene
 from .audio import AUDIO
 from .battle_common import BattleExtras
 from .battlecore import STATUS_NAMES
-from .cinematics import AttackFX, Finisher, Gigantamax, MegaEvolution
+from .cinematics import ARCEUS_JUDGMENT, AttackFX, Finisher, Gigantamax, Judgment, MegaEvolution
 from .gfx import H, INK, SPRITES, W, WHITE
 from .render import STATUS_COLORS
 from .types import effectiveness
@@ -186,6 +186,13 @@ class TurnBattleScene(Scene):
             self._start_finisher(a[1])
         elif kind == "hit":
             AUDIO.play("hit_super" if a[3] > 1 else "hit_weak" if a[3] < 1 else "hit", 0.9)
+        if kind == "move" and a[2] == "Judgment" and not getattr(self, "judged", False):
+            pid = self.vis.get(a[1], {}).get("id")
+            e = self.app.dex.all.get(pid or -1, {})
+            if e and e.get("key", "").startswith("arceus"):  # Arceus's first Judgment gets its cutscene
+                self.judged = True
+                self.finisher = Judgment(pid, ARCEUS_JUDGMENT[self.s.seed % len(ARCEUS_JUDGMENT)]
+                                         if hasattr(self.s, "seed") else ARCEUS_JUDGMENT[0], None)
         if kind == "move":
             self.last_move = a
             if a[4] != "status" and self.vis.get(1 - a[1], {}).get("id"):

@@ -10,8 +10,8 @@ import pygame
 
 from . import gfx
 from .audio import AUDIO
-from .cinematics import (MEWTWO_RAMPAGE, MEWTWO_WIN, Cutscene, Descent, Finisher, Gigantamax, MegaEvolution, Rampage,
-                         draw_plate, subtitle)
+from .cinematics import (ARCEUS_JUDGMENT, ARCEUS_LAND, ARCEUS_WIN, MEWTWO_RAMPAGE, MEWTWO_WIN, Cutscene, Descent,
+                         Finisher, Gigantamax, Judgment, MegaEvolution, Rampage, draw_plate, subtitle)
 from .gfx import H, INK, SPRITES, W
 from .pokedex import prefetch
 from .duel import DuelView
@@ -200,13 +200,19 @@ class ShowcaseScene:
         self.ko_scenes = 0
         self.last_ko_scene = -99.0
         self.mewtwo = (dex.get("mewtwo") or {}).get("species")
-        self.rampages = {}       # uid -> how many rampages that Mewtwo has had
+        self.rampages = {}       # uid -> how many rampages that Pokemon has had
+        self.spoken = set()      # species that already had their voiced cutscene this battle (once each)
+        self.last_voice = -99.0  # when the last spoken line played (keeps them spread out)
         self.win_line = None     # (speaker, text, start time, length) spoken by the winner
         self.duel = None         # the final fight's movie view (last two Pokemon)
         self.duel_pending = None
+        self.arceus = (dex.get("arceus") or {}).get("species")
+        from .audio import prepare_voices
         if any(u.mon.entry["species"] == self.mewtwo for u in self.sim.units):
-            from .audio import prepare_voices
             prepare_voices([("mewtwo", line) for line in MEWTWO_RAMPAGE + [MEWTWO_WIN]])
+        if any(u.mon.entry["species"] == self.arceus for u in self.sim.units) or \
+                any(e["name"] == "arceus" for e in self.events_plan):
+            prepare_voices([("arceus", line) for line in ARCEUS_JUDGMENT + [ARCEUS_LAND, ARCEUS_WIN]])
         self.level = cfg.get("level", 50)
         self.storm_msg = None
         self.last_ko = None      # (killer uid, victim form) - the battle's last KO gets a finisher
@@ -371,21 +377,41 @@ class ShowcaseScene:
             self.cutscenes.append(scene)
 
     def _check_rampage(self):
-        """Mewtwo snaps on its first KO or when it drops below half HP; again once it has 5 KOs."""
-        if self.mewtwo is None:
+        """Mewtwo snaps (and Arceus passes judgment) on its first KO or when it drops below half HP - once per
+        battle each, and never within 30s of another spoken line."""
+        if self.t - self.last_voice < 30:
             return
         for u in self.sim.units:
-            if u.alive and u.mon.entry["species"] == self.mewtwo:
-                n = self.rampages.get(u.uid, 0)
-                if (n == 0 and (u.kills >= 1 or u.mon.hp_frac() < 0.5)) or (n == 1 and u.kills >= 5):
+            sp = u.mon.entry["species"]
+            if u.alive and sp in (self.mewtwo, self.arceus) and sp not in self.spoken:
+                if u.kills >= 1 or u.mon.hp_frac() < 0.5:
                     self._rampage(u.uid)
+                    return
 
     def _rampage(self, killer_uid):
         u = self.sim.by_id.get(killer_uid)
-        if not u or not u.alive or u.mon.entry["species"] != self.mewtwo:
+        if not u or not u.alive or u.mon.entry["species"] not in (self.mewtwo, self.arceus):
             return
         n = self.rampages.get(u.uid, 0)
-        if n >= 2:
+        if u.mon.entry["species"] in self.spoken:
+            return
+        self.spoken.add(u.mon.entry["species"])
+        self.last_voice = self.t
+        if u.mon.entry["species"] == self.arceus:
+            if sum(1 for x in self.sim.units if x.alive and x.team != u.team and x.uid not in self.sim.bench) < 1:
+                return
+            self.rampages[u.uid] = n + 1
+            line = ARCEUS_JUDGMENT[(n + self.seed) % len(ARCEUS_JUDGMENT)]
+
+            def judgment():
+                if not u.alive:
+                    return
+                foes = [x for x in self.sim.units if x.alive and x.team != u.team and x.uid not in self.sim.bench]
+                for x in sorted(foes, key=lambda x: math.hypot(x.x - u.x, x.y - u.y))[:10]:
+                    self.r.god_beam(x.x, x.y)
+                self.sim.shockwave(u, max(self.W, self.H), 0.6, "normal")  # the whole battlefield
+                self.r.shake = max(self.r.shake, 1.2)
+            self.cutscenes.append(self._cs(Judgment, u.mon.entry["id"], line, judgment, focus=(u.x, u.y)))
             return
         if sum(1 for x in self.sim.units if x.alive and x.team != u.team) < 2:
             return
@@ -586,9 +612,13 @@ class ShowcaseScene:
                 self.end_t = t
                 alive = [u for u in self.sim.units if u.alive]
                 self.mvp = max(alive, key=lambda u: (u.kills, u.mon.hp_frac())) if alive else None
-                if self.mvp and self.mvp.mon.entry["species"] == self.mewtwo:
+                quiet = self.t - self.last_voice > 20  # no victory line right on top of another line
+                if quiet and self.mvp and self.mvp.mon.entry["species"] == self.mewtwo:
                     length = AUDIO.voice("mewtwo", MEWTWO_WIN) or 2.4
                     self.win_line = ("mewtwo", MEWTWO_WIN, self.t, length)
+                elif quiet and self.mvp and self.mvp.mon.entry["species"] == self.arceus:
+                    length = AUDIO.voice("arceus", ARCEUS_WIN) or 2.4
+                    self.win_line = ("arceus", ARCEUS_WIN, self.t, length)
             return
         self.r.update(dt)
         since = t - self.end_t

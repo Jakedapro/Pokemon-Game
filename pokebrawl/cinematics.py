@@ -250,7 +250,7 @@ class Cutscene:
             self.action_at = (at + self.eye) / self.duration
             AUDIO.play("select", 0.8)
 
-    def update(self, dt, renderer):
+    def update(self, dt, renderer=None):
         if not self._started:
             self._start()
         if self.t == 0 and self.sound:
@@ -259,7 +259,7 @@ class Cutscene:
             AUDIO.play("boom", 0.6)  # smash cut from the eyes to the reveal
             self.flash = 0.2
         self.t += dt
-        if self.focus:
+        if self.focus and renderer is not None:
             renderer.cam_target = (self.focus[0], self.focus[1], self.zoom)
         self._update_aura(dt)
         if not self.fired and self.t >= self.duration * self.action_at:
@@ -269,7 +269,8 @@ class Cutscene:
                 for i in range(3):
                     self.rings.append([ax, ay, 20 + i * 40, 0.8 + i * 0.15, col])
                 self._burst(ax, ay, 60, col)
-            renderer.shake = max(renderer.shake, 0.6)
+            if renderer is not None:
+                renderer.shake = max(renderer.shake, 0.6)
             AUDIO.play("boom", 0.8)
             if self.cry:
                 AUDIO.cry(self.cry, 1.0)
@@ -547,6 +548,7 @@ class Descent(Cutscene):
                     self.rings.append([ax, ay - 60, 20 + i * 50, 0.9 + i * 0.12, col])
                 self._burst(ax, ay - 60, 80, col)
         if self.lands and prev < self.SLAM <= self.t:
+            self.land_len = AUDIO.voice("arceus", ARCEUS_LAND) or 1.8
             self.on_drop(0)
             self.flash = 0.35
             renderer.shake = max(renderer.shake, 1.0)
@@ -634,6 +636,7 @@ class Descent(Cutscene):
         if landed:  # Arceus stands in the arena now, burning gold
             sx, sy = self._screen(0)
             self._draw_glowing(surf, self.arceus, 170, (sx, sy + 30))
+            subtitle(surf, "Arceus", ARCEUS_LAND, t - self.SLAM, getattr(self, "land_len", 1.8), color=(255, 205, 90))
         elif ay > -200:
             cx, cy = self.W / 2, ay - 120
             rad = 170
@@ -1255,5 +1258,135 @@ class Rampage(Cutscene):
         if self.flash > 0:
             f = pygame.Surface((self.W, self.H), pygame.SRCALPHA)
             f.fill((235, 200, 255, int(255 * min(1.0, self.flash / 0.35))))
+            surf.blit(f, (0, 0))
+        self._end_draw(surf)
+
+
+# original lines for Arceus
+ARCEUS_JUDGMENT = ["I am the Alpha. You are nothing.", "Judgment is upon you.",
+                   "Before your world began, I was already here.", "Kneel before your creator."]
+ARCEUS_LAND = "Then I will end this myself."
+ARCEUS_WIN = "All things return to me."
+
+
+class Judgment(Cutscene):
+    """Arceus passes judgment: golden eye close-up -> it rises while its 18-plate wheel spins faster and faster and
+    it speaks -> the plates launch into the sky, everything goes white-gold -> pillars of light in every type's
+    color slam down across the whole battlefield (action: the damage)."""
+
+    EYE_T = 0.8
+
+    def __init__(self, pid, line, action, focus=None, size=None):
+        from .audio import voice_length, voice_path
+        import os
+        vp = voice_path("arceus", line)
+        self.line_len = voice_length(vp) if os.path.exists(vp) else len(line) * 0.08
+        self.charge_end = self.EYE_T + max(2.2, self.line_len + 0.3)
+        self.launch_end = self.charge_end + 0.5
+        dur = self.launch_end + 1.9
+        super().__init__("judgment", dur, focus=focus, zoom=1.2, title="JUDGMENT", color=(255, 205, 90),
+                         portrait=pid, action=action, action_at=(self.launch_end + 0.15) / dur, cry=pid, sound=None,
+                         size=size)
+        self.line = line
+        self.spoke = False
+        rng = random.Random(pid)
+        self.pillars = [(rng.uniform(0.05, 0.95), rng.uniform(0.0, 0.9), PLATE_TYPES[i % len(PLATE_TYPES)])
+                        for i in range(26)]
+
+    def update(self, dt, renderer=None):
+        if self.t >= self.EYE_T and not self.spoke:
+            self.spoke = True
+            AUDIO.voice("arceus", self.line)
+            AUDIO.play("tera", 0.7)
+        prev = self.t
+        super().update(dt, renderer)
+        if prev < self.charge_end <= self.t:
+            AUDIO.play("beam", 1.0)
+            self.flash = 0.4
+        for x, delay, _typ in self.pillars:
+            at = self.launch_end + delay
+            if prev < at <= self.t and int(delay * 10) % 3 == 0:
+                AUDIO.play("blast", 0.5)
+        if self.launch_end < self.t < self.duration - 0.4 and renderer is not None:
+            renderer.shake = max(renderer.shake, 0.5)
+
+    def _wheel(self, surf, cx, cy, rad, spin, alpha, launch=0.0):
+        layer = pygame.Surface((self.W, self.H), pygame.SRCALPHA)
+        pygame.draw.circle(layer, (255, 220, 120, alpha), (int(cx), int(cy)), int(rad), 7)
+        pygame.draw.circle(layer, (255, 245, 210, alpha // 2), (int(cx), int(cy)), int(rad - 22), 2)
+        for j, typ in enumerate(PLATE_TYPES):
+            a = j / len(PLATE_TYPES) * math.tau + spin
+            px = cx + math.cos(a) * rad
+            py = cy + math.sin(a) * rad - launch * (self.H * 0.9) * (0.6 + 0.4 * ((j * 7) % 5) / 4)
+            if launch > 0:  # streak behind each launched plate
+                pygame.draw.line(layer, (*gfx.type_color(typ, 1), alpha), (px, py), (px, py + 120 * launch), 6)
+            pygame.draw.circle(layer, (*gfx.type_color(typ, 0), alpha), (int(px), int(py)), 15)
+            pygame.draw.circle(layer, (255, 255, 255, alpha), (int(px), int(py)), 15, 3)
+        surf.blit(layer, (0, 0))
+
+    def draw(self, surf):
+        self._begin_draw(surf)
+        t, d = self.t, self.duration
+        if t < self.EYE_T:
+            surf.fill((0, 0, 0))
+            hgt = self.H * 0.3
+            eye_strip(surf, self.portrait, (0, self.H / 2 - hgt / 2, self.W, hgt), t, self.color)
+            self._end_draw(surf)
+            return
+        k = _ease((d - t) / 0.4)
+        self.anchors = []
+        cx, cy = self.W / 2, self.H * 0.5
+        # the sky goes white-gold as the plates launch, then black so the pillars of light blaze
+        gold = min(1.0, max(0.0, (t - self.charge_end) / 0.5)) * min(1.0, max(0.0, (self.launch_end + 0.35 - t) / 0.3))
+        night = t > self.launch_end + 0.2
+        bg = pygame.Surface((self.W, self.H), pygame.SRCALPHA)
+        top = (8, 6, 18) if night else (int(28 + 220 * gold), int(20 + 200 * gold), int(8 + 130 * gold))
+        bg.fill((*top, int(240 * k)))
+        surf.blit(bg, (0, 0))
+        rays = pygame.Surface((self.W, self.H), pygame.SRCALPHA)
+        for i in range(12):  # god rays
+            a = i / 12 * math.tau + t * 0.3
+            pts = [(cx, cy - 80), (cx + math.cos(a - 0.08) * 2000, cy + math.sin(a - 0.08) * 2000),
+                   (cx + math.cos(a + 0.08) * 2000, cy + math.sin(a + 0.08) * 2000)]
+            pygame.draw.polygon(rays, (255, 235, 160, int(40 * k)), pts)
+        surf.blit(rays, (0, 0))
+        if t < self.launch_end + 0.4:
+            q = t - self.EYE_T
+            spin = q * (1.5 + q * 2.5)  # spins faster and faster
+            launch = max(0.0, (t - self.charge_end) / (self.launch_end - self.charge_end))
+            rise = min(1.0, q / 0.8) * 50
+            self._wheel(surf, cx, cy - 120 - rise, 210, spin, int(255 * k), launch)
+            self._draw_glowing(surf, self.portrait, 340, (cx, cy + 190 - rise))
+            if t < self.charge_end:
+                subtitle(surf, "Arceus", self.line, t - self.EYE_T, self.line_len, color=(255, 205, 90))
+        else:
+            # Judgment: pillars of light in every type's color slam down everywhere
+            layer = pygame.Surface((self.W, self.H), pygame.SRCALPHA)
+            for x, delay, typ in self.pillars:
+                p = (t - self.launch_end - delay) / 0.5
+                if not 0 <= p <= 1:
+                    continue
+                px = x * self.W
+                gy = self.H * (0.45 + 0.4 * ((x * 13) % 1))
+                wdt = 120 * (1 - p) ** 0.5 if p > 0.25 else 120 * p / 0.25
+                col = gfx.type_color(typ, 0)
+                pygame.draw.rect(layer, (*col, int(110 * k)), (px - wdt, 0, wdt * 2, gy))
+                pygame.draw.rect(layer, (*col, int(220 * k)), (px - wdt / 2, 0, wdt, gy))
+                pygame.draw.rect(layer, (255, 255, 255, int(230 * k)), (px - wdt / 6, 0, wdt / 3, gy))
+                rr = int(40 + 160 * p)
+                pygame.draw.ellipse(layer, (*_lighter(col, 0.4), int(220 * (1 - p) * k)),
+                                    (px - rr, gy - rr / 4, rr * 2, rr / 2), 5)
+            surf.blit(layer, (0, 0))
+            self._draw_glowing(surf, self.portrait, 260, (cx, self.H * 0.42), color=self.color)
+        self._draw_aura_fx(surf, k)
+        if t > self.charge_end:
+            pop = _ease((t - self.charge_end) / 0.2)
+            draw_plate(surf, self.title, (cx, self.H * 0.13), 60, self.color, 1.7 - 0.7 * pop, int(255 * k), angle=-6)
+        bar = int(90 * k)
+        pygame.draw.rect(surf, (0, 0, 0), (0, 0, self.W, bar))
+        pygame.draw.rect(surf, (0, 0, 0), (0, self.H - bar, self.W, bar))
+        if self.flash > 0:
+            f = pygame.Surface((self.W, self.H), pygame.SRCALPHA)
+            f.fill((255, 250, 225, int(255 * min(1.0, self.flash / 0.35))))
             surf.blit(f, (0, 0))
         self._end_draw(surf)
