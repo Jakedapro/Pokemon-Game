@@ -211,24 +211,41 @@ class ShowcaseScene:
         self.r.roster[u.uid] = self.sim.roster()[u.uid]
         return u
 
+    def _fighting(self):
+        """Species already alive in the arena - events never bring a second copy of these."""
+        return {u.mon.entry["species"] for u in self.sim.units if u.alive}
+
+    def _free(self, key):
+        e = self.dex.get(key)
+        return e is not None and e["species"] not in self._fighting()
+
     def _trigger(self, name):
+        """Start an event. Returns False when it can't happen (its Pokemon are already fighting)."""
         cx, cy = (ARENA[0] + ARENA[2]) / 2, (ARENA[1] + ARENA[3]) / 2
         if name == "arceus":
             arceus_id = self.dex.get("arceus")["id"]
-            if self.start_units >= 60 and self.rng.random() < 0.12:
+            if self.start_units >= 60 and self._free("arceus") and self.rng.random() < 0.12:
                 # rare: Arceus crashes down and fights itself
                 def land(_i):
                     self._spawn("arceus", "Arceus", (cx, cy), hp_scale=1.6, radius_scale=1.3, signature="judgment")
                     self.r.god_beam(cx, cy)
                 self.cutscenes.append(Descent(arceus_id, [(arceus_id, "Arceus", (cx, cy))], "", (cx, cy), land,
                                               lands=True))
-                return
+                return True
             # usually Arceus doesn't fight: it drops off a legendary group that fights for itself
-            title, keys = self.rng.choice(ARCEUS_GROUPS)
-            entries = [self.dex.get(k) for k in keys]
-            entries = [e for e in entries if e]
             # small fights get fewer gifts so the original teams still have a chance
             keep = 1 if self.start_units < 16 else 2 if self.start_units < 40 else 3
+            groups = [(t, [self.dex.get(k) for k in ks if self._free(k)]) for t, ks in ARCEUS_GROUPS]
+            groups = [(t, es) for t, es in groups if len(es) >= keep]
+            if groups:
+                title, entries = self.rng.choice(groups)
+            else:  # every famous group is already here: any legendaries that aren't
+                fighting = self._fighting()
+                pool = [e for e in self.dex.selectable() if (e["legendary"] or e["mythical"]) and e["default"]
+                        and e["species"] not in fighting and e["species"] != self.dex.get("arceus")["species"]]
+                if len(pool) < keep:
+                    return False
+                title, entries = "NEW LEGENDS", self.rng.sample(pool, keep)
             entries = self.rng.sample(entries, min(keep, len(entries)))
             if keep == 1:
                 title = f"{entries[0]['name'].upper()} FROM {title}"
@@ -242,6 +259,8 @@ class ShowcaseScene:
                 self.r.god_beam(u.x, u.y)
             self.cutscenes.append(Descent(arceus_id, drops, title, (cx, cy), drop))
         elif name == "primal":
+            if not (self._free("kyogre") and self._free("groudon")):
+                return False
             for key, nm, pos, dom, weather in (("kyogre-primal", "Primal Kyogre", (cx - 160, cy - 260), "sea", "rain"),
                                                ("groudon-primal", "Primal Groudon", (cx + 160, cy + 260), "land", "sun")):
                 def act(key=key, nm=nm, pos=pos, dom=dom, weather=weather):
@@ -253,6 +272,8 @@ class ShowcaseScene:
                 self.cutscenes.append(Cutscene("card", 3.6, pos, 1.6, f"{nm.upper()} AWAKENS", sub,
                                                DOMAIN_TEXT[dom][1], pid, action=act, cry=pid))
         elif name == "rayquaza":
+            if not self._free("rayquaza"):
+                return False
             pid = self.dex.get("rayquaza-mega")["id"]
 
             def act():
@@ -271,6 +292,7 @@ class ShowcaseScene:
             pid = self.dex.get("deoxys")["id"]
             self.cutscenes.append(Cutscene("card", 3.0, (cx, cy), 1.0, "METEOR SHOWER", "THE SKY IS FALLING!",
                                            (230, 80, 80), pid, action=act, cry=pid))
+        return True
 
     def _scan_events(self, events):
         for ev in events:
@@ -333,7 +355,11 @@ class ShowcaseScene:
         for e in self.events_plan:
             if not e["done"] and (frac <= e["frac"] or bt >= e["time"]) and len(alive) >= 2:
                 e["done"] = True
-                self._trigger(e["name"])
+                if not self._trigger(e["name"]):  # its Pokemon are already fighting: something else happens
+                    used = {x["name"] for x in self.events_plan}
+                    for alt in [n for n in EVENTS if n not in used] + ["meteor"]:
+                        if self._trigger(alt):
+                            break
                 break
         if len(alive) == 2 and alive[0].team != alive[1].team and self.start_units > 2 and self._once("final"):
             a, b = alive
