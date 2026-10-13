@@ -429,7 +429,7 @@ class GBABattle(Scene):
             img = pygame.transform.scale_by(G.person(look, "down", 0), 2)
             surf.blit(img, img.get_rect(midbottom=(fx, FOE_AT[1] - 4)))
         if self.mode == "intro" or self.hidden[0]:
-            img = pygame.transform.scale_by(G.person("player", "up", 0), 2.5)
+            img = pygame.transform.scale_by(G.person("player", "up", 0), 2)
             surf.blit(img, img.get_rect(midbottom=(mx - (0 if self.mode == "intro" else 0), ME_AT[1])))
         self._mon(surf, 1, (fx, FOE_AT[1]), dark=self.mode == "intro" and self.intro_t < 0.9)
         self._mon(surf, 0, (mx, ME_AT[1]))

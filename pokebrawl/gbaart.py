@@ -373,80 +373,88 @@ def furniture(kind):
 
 
 # ====================================================================== trainers
-PLAYER_DOWN = [
-    "......KKKK......",
-    "....KKRRRRKK....",
-    "...KRRRRRRRRK...",
-    "..KRRRWWRRRRRK..",
-    "..KRRRRRRRRRRK..",
-    "..KKKKKKKKKKKK..",
-    "..KHSSSSSSSSHK..",
-    "..KHSESSSSESHK..",
-    "...KSSSSSSSSK...",
-    "....KSSssSSK....",
+# trainers are 16x32 like the handheld games (a big head, ~25 px of art standing on the tile's bottom edge)
+_TOP = ["................"] * 7
+_LEGS = ["...KPPPPPPPPK...", "...KPPPKKPPPK...", "...KPPK..KPPK...", "...KpGK..KGpK...", "...KGGK..KGGK...",
+         "...KKK....KKK..."]
+_LEGS_WALK = ["...KPPPPPPPPK...", "...KPPPKKPPPK...", "...KPPK..KPPK...", "...KGGK..KpGK...", "...KKK...KGGK...",
+              "..........KKK..."]
+PLAYER_DOWN = _TOP + [
+    ".....KKKKKK.....",
+    "...KKRRRRRRKK...",
+    "..KRRRRWWRRRRK..",
+    ".KRRRRWWWWRRRRK.",
+    ".KRRRRRRRRRRRRK.",
+    ".KrrrrrrrrrrrrK.",
+    ".KKKKKKKKKKKKKK.",
+    ".KHHSSSSSSSSHHK.",
+    ".KHSSESSSSESSHK.",
+    ".KHSSESSSSESSHK.",
+    "..KSSSSSSSSSSK..",
+    "...KSSSssSSSK...",
+    "....KKSSSSKK....",
     "...KBBKSSKBBK...",
-    "..KBBBBBBBBBBK..",
-    ".KSKBBBBBBBBKSK.",
-    ".KSKbBBBBBBbKSK.",
-    "..KKPPPPPPPPKK..",
-    "...KPPPKKPPPK...",
-    "...KPPK..KPPK...",
-    "...KGGK..KGGK...",
-    "...KKK....KKK...",
-]
-PLAYER_DOWN_WALK = PLAYER_DOWN[:15] + [
-    "...KPPPKKPPPK...",
-    "...KPPK..KGGK...",
-    "...KGGK...KK....",
-    "...KKK..........",
-]
-PLAYER_UP = [
-    "......KKKK......",
-    "....KKRRRRKK....",
-    "...KRRRRRRRRK...",
+    "..KBBBBYBBBBBK..",
+    ".KSKBBBYBBBBKSK.",
+    ".KSKBBBBYBBBKSK.",
+    ".KSKbBBBBYBbKSK.",
+    "..KKbbbbbbbbKK..",
+] + _LEGS
+PLAYER_DOWN_WALK = PLAYER_DOWN[:-6] + _LEGS_WALK
+PLAYER_UP = _TOP + [
+    ".....KKKKKK.....",
+    "...KKRRRRRRKK...",
     "..KRRRRRRRRRRK..",
-    "..KRRRRRRRRRRK..",
-    "..KKRRRRRRRRKK..",
-    "..KHHHHHHHHHHK..",
+    ".KRRRRRRRRRRRRK.",
+    ".KRRRRRRRRRRRRK.",
+    ".KrrrrrrrrrrrrK.",
+    ".KKrrrrrrrrrrKK.",
+    ".KHHHHHHHHHHHHK.",
+    ".KHHHHHHHHHHHHK.",
+    ".KHHHHHHHHHHHHK.",
     "..KHHHHHHHHHHK..",
     "...KHHHHHHHHK...",
-    "....KSSSSSSK....",
+    "....KKSSSSKK....",
     "...KBBBBBBBBK...",
-    "..KBBBBBBBBBBK..",
-    ".KSKBBBBBBBBKSK.",
-    ".KSKbBBBBBBbKSK.",
-    "..KKPPPPPPPPKK..",
-    "...KPPPKKPPPK...",
-    "...KPPK..KPPK...",
-    "...KGGK..KGGK...",
-    "...KKK....KKK...",
-]
-PLAYER_UP_WALK = PLAYER_UP[:15] + PLAYER_DOWN_WALK[15:]
-PLAYER_LEFT = [
-    ".....KKKK.......",
-    "...KKRRRRKK.....",
-    "..KRRRRRRRRK....",
+    "..KBBYYYYYYBBK..",
+    ".KSKBYyyyyYBKSK.",
+    ".KSKBYyyyyYBKSK.",
+    ".KSKbYYYYYYbKSK.",
+    "..KKbbbbbbbbKK..",
+] + _LEGS
+PLAYER_UP_WALK = PLAYER_UP[:-6] + _LEGS_WALK
+PLAYER_LEFT = _TOP + [
+    "....KKKKKK......",
+    "..KKRRRRRRKK....",
     ".KRRRRRRRWWRK...",
-    "KRRRRRRRRRRRK...",
-    "KKKKKKRRRRRRK...",
-    "...KSSSHHHHHK...",
-    "...KESSHHHHHK...",
-    "...KSSSSSHHK....",
-    "....KsSSSSK.....",
-    ".....KBBBK......",
+    ".KRRRRRRRWWRRK..",
+    "KRRRRRRRRRRRRK..",
+    "KrrrrrrrrrrrrK..",
+    "KKKKKKKKKKKKKK..",
+    "..KSSSSHHHHHHK..",
+    "..KESSSSHHHHHK..",
+    "..KESSSSSHHHHK..",
+    "..KSSSSSSHHHK...",
+    "...KsSSSSSSK....",
+    "....KKSSSKK.....",
     "....KBBBBBK.....",
-    "....KBSSBBK.....",
-    "....KbSSBbK.....",
+    "...KBBBBBYYK....",
+    "...KBSSBBYYK....",
+    "...KBSSBByyK....",
+    "...KbBBBbYYK....",
+    "...KKbbbbbKK....",
+    "....KPPPPPK.....",
     "....KPPPPPK.....",
     "....KPPKPPK.....",
     "....KPPKPPK.....",
     "....KGGKGGK.....",
     "....KKKKKKK.....",
 ]
-PLAYER_LEFT_WALK = PLAYER_LEFT[:14] + [
+PLAYER_LEFT_WALK = PLAYER_LEFT[:-6] + [
     "....KPPPPPK.....",
-    "...KPPK.KPPK....",
+    "...KPPPKPPPK....",
     "..KPPK...KPPK...",
+    "..KpGK...KGpK...",
     "..KGGK...KGGK...",
     "..KKK.....KKK...",
 ]
@@ -477,7 +485,8 @@ LOOKS = {   # cap, shirt, pants, hair; cap None = no cap (hair shown)
 
 
 def person(look, face, frame=0, shirt=None):
-    """A trainer sprite (32x38 on the canvas). face: up/down/left/right, frame 0 = standing, 1/2 = steps."""
+    """A trainer sprite (32x64 on the canvas: 16x32 like the handhelds). face: up/down/left/right,
+    frame 0 = standing, 1/2 = steps."""
     key = ("p", look, face, frame, shirt)
     if key in _cache:
         return _cache[key]
@@ -487,10 +496,16 @@ def person(look, face, frame=0, shirt=None):
     grids = {"down": (PLAYER_DOWN, PLAYER_DOWN_WALK), "up": (PLAYER_UP, PLAYER_UP_WALK),
              "left": (PLAYER_LEFT, PLAYER_LEFT_WALK), "right": (PLAYER_LEFT, PLAYER_LEFT_WALK)}[face]
     rows = grids[0] if frame == 0 else grids[1]
+    if not cap:   # no cap: the brim line becomes hair
+        rows = list(rows)
+        r = rows[13]
+        a, b = r.find("K"), r.rfind("K")
+        rows[13] = r[:a + 1] + r[a + 1:b].replace("K", "H") + r[b:]
     capc = cap or hair
-    pal = {"K": OUT, "R": capc, "W": (248, 248, 248) if cap else capc, "H": hair, "S": (248, 208, 168),
-           "s": (224, 176, 136), "E": OUT, "B": sh, "b": tuple(max(0, c - 40) for c in sh), "P": pants,
-           "G": (72, 64, 64)}
+    pal = {"K": OUT, "R": capc, "r": tuple(max(0, c - 48) for c in capc), "W": (248, 248, 248) if cap else capc,
+           "H": hair, "S": (248, 208, 168), "s": (224, 176, 136), "E": OUT, "B": sh,
+           "b": tuple(max(0, c - 40) for c in sh), "P": pants, "p": tuple(max(0, c - 32) for c in pants),
+           "G": (72, 64, 64), "Y": (232, 184, 72), "y": (200, 144, 48)}
     img = _from_grid(rows, pal)
     flip = face == "right" or (face in ("down", "up") and frame == 2)
     if flip:
