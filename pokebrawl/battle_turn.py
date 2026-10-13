@@ -245,7 +245,8 @@ class TurnBattleScene(Scene):
             base = v.get("id")
             e = self.app.dex.all.get(a[2])
             mv = (self.req or {}).get("gmax_move") if a[1] == self.me else None
-            self.finisher = Gigantamax(base, a[2], e["name"] if e else "", mv or self._gmax_move_name(a[2]))
+            self.finisher = Gigantamax(base, a[2], e["name"] if e else "", mv or self._gmax_move_name(a[2]),
+                                       quick=True)
             v["id"], v["gmax"] = a[2], True
             if e:
                 v["name"] = e["name"]
@@ -261,7 +262,8 @@ class TurnBattleScene(Scene):
             e2 = self.app.dex.all.get(a[2])
             if old and e2:
                 self.finisher = MegaEvolution(old, a[2], e2["name"],
-                                              "PRIMAL REVERSION" if "primal" in e2["key"] else "MEGA EVOLUTION")
+                                              "PRIMAL REVERSION" if "primal" in e2["key"] else "MEGA EVOLUTION",
+                                              quick=True)
             self.vis[a[1]]["id"] = a[2]
             e = self.app.dex.all.get(a[2])
             if e:

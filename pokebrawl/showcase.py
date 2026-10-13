@@ -199,6 +199,8 @@ class ShowcaseScene:
         self.gmax_scenes = 0
         self.ko_scenes = 0
         self.last_ko_scene = -99.0
+        self.evo_scenes = 0      # Mega / Primal / Gigantamax cutscenes so far (kept rare so the battle flows)
+        self.last_break = -99.0  # when the last evolution / KO cutscene played
         self.mewtwo = (dex.get("mewtwo") or {}).get("species")
         self.rampages = {}       # uid -> how many rampages that Pokemon has had
         self.spoken = set()      # species that already had their voiced cutscene this battle (once each)
@@ -343,15 +345,27 @@ class ShowcaseScene:
         for ev in events:
             if ev[0] == "mega":
                 self._mega_scene(ev)
-            elif ev[0] == "gmax" and self.gmax_scenes < 3:
+            elif ev[0] == "gmax" and self._evo_break_ok():
                 _, uid, form_id, name, move_name, _t = ev
                 u = self.sim.by_id.get(uid)
                 self.gmax_scenes += 1
+                self._took_break()
                 base = self.dex.all.get(form_id, {}).get("base") or form_id
                 self.cutscenes.append(self._cs(Gigantamax, base, form_id, name, move_name,
                                                focus=(u.x, u.y) if u else None))
             elif ev[0] == "faint" and len(ev) > 5 and ev[5]:
                 self._ko_scene(ev)
+
+    EVO_SCENES, BREAK_GAP = 2, 15.0
+
+    def _evo_break_ok(self):
+        """Evolutions only stop the battle twice per showcase, at least 15s apart; the rest just happen in the
+        arena (the flash and the new form, no cutscene)."""
+        return self.evo_scenes < self.EVO_SCENES and self.t - self.last_break >= self.BREAK_GAP
+
+    def _took_break(self):
+        self.evo_scenes += 1
+        self.last_break = self.t
 
     def _mega_scene(self, ev):
         _, uid, form_id, name = ev
@@ -360,6 +374,10 @@ class ShowcaseScene:
         key = form.get("key", "")
         base = form.get("base") or form_id
         pos = (u.x, u.y) if u else None
+        special = "primal" in key or key == "rayquaza-mega"
+        if not self._evo_break_ok() or not (special or (u and u.boss)):
+            return
+        self._took_break()
         if "primal" in key:
             dom = "sea" if "kyogre" in key else "land"
             clash = self.sim.domain not in (None, dom) or any(
@@ -370,7 +388,7 @@ class ShowcaseScene:
         elif key == "rayquaza-mega":
             self.cutscenes.append(self._cs(MegaEvolution, base, form_id, name, DOMAIN_TEXT["sky"][0],
                                            DOMAIN_TEXT["sky"][1], focus=pos))
-        elif u and u.boss and self.mega_scenes < 3:
+        else:
             self.mega_scenes += 1
             scene = self._cs(MegaEvolution, base, form_id, name, focus=pos, duration=3.3)
             scene.minor = True  # auto-edit may speed these up a little
@@ -430,12 +448,13 @@ class ShowcaseScene:
         """Big knockouts (a boss going down) get a finisher cutscene - a few per battle, spaced out."""
         victim = self.sim.by_id.get(ev[1])
         alive = sum(1 for x in self.sim.units if x.alive)
-        if not victim or not victim.boss or self.ko_scenes >= 4 or alive <= 2 or self.t - self.last_ko_scene < 8:
+        if not victim or not victim.boss or self.ko_scenes >= 2 or alive <= 2 or self.t - self.last_ko_scene < 15 \
+                or self.t - self.last_break < 8:
             return
         fin = self._finisher(ev[5], ev[4], final=False)
         if fin:
             self.ko_scenes += 1
-            self.last_ko_scene = self.t
+            self.last_ko_scene = self.last_break = self.t
             self.cutscenes.append(fin)
 
     def interest(self):

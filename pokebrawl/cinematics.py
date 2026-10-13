@@ -975,7 +975,10 @@ class MegaEvolution(Cutscene):
     LINK, COCOON, CRACK = 0.75, 1.9, 2.05
 
     def __init__(self, base_id, form_id, title, subtitle="MEGA EVOLUTION", color=(170, 90, 230), focus=None,
-                 size=None, duration=3.7):
+                 size=None, duration=3.7, quick=False):
+        if quick:  # the short version (1v1 battles): same beats, about two and a half seconds
+            self.LINK, self.COCOON, self.CRACK = 0.4, 1.05, 1.15
+            duration = 2.4
         super().__init__("mega", duration, focus=focus, zoom=1.6, title=title.upper(), subtitle=subtitle,
                          color=color, portrait=form_id, sound=None, size=size)
         self.base_id, self.form_id = base_id, form_id
@@ -1074,8 +1077,10 @@ class Gigantamax(Cutscene):
 
     GROW, BURST = (0.45, 1.9), 1.95
 
-    def __init__(self, base_id, form_id, name, move_name, focus=None, size=None):
-        super().__init__("gmax", 3.9, focus=focus, zoom=1.3, title="GIGANTAMAX!", subtitle=f"G-MAX {move_name.upper()}",
+    def __init__(self, base_id, form_id, name, move_name, focus=None, size=None, quick=False):
+        if quick:  # the short version (1v1 battles)
+            self.GROW, self.BURST = (0.2, 1.0), 1.05
+        super().__init__("gmax", 2.5 if quick else 3.9, focus=focus, zoom=1.3, title="GIGANTAMAX!", subtitle=f"G-MAX {move_name.upper()}",
                          color=(230, 40, 70), portrait=form_id, sound=None, size=size)
         self.base_id, self.form_id, self.name = base_id, form_id, name
         self.clouds = [(random.random() * 1.0, random.uniform(0.6, 1.4), random.uniform(40, 90)) for _ in range(16)]
