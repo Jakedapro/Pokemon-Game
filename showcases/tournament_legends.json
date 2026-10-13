@@ -1,0 +1,6 @@
+{
+  "title": "Legends Cup",
+  "mode": "tournament",
+  "size": 8,
+  "pokemon": ["Mewtwo", "Rayquaza", "Groudon", "Kyogre", "Dialga", "Palkia", "Giratina", "Zekrom"]
+}

@@ -191,6 +191,10 @@ class ShowcaseScene:
         self.mvp = None
         self.counts = [len(t) for t in teams]
         self.intro_len = 7.6
+        if cfg.get("quick_intro"):  # tournament matches: no Poke Ball intro, straight to the fight
+            self.r.hidden = set()
+            self.popped = set(self.balls)
+            self.intro_len = 0.5
         self.cues = set()
         self.cutscene = None
         self.cutscenes = []
@@ -966,18 +970,19 @@ def record(dex, cfg, out_path, fps=30, log=print, target=None):
     length): boring stretches get fast-forwarded, the hype moments stay at normal speed."""
     from .autoedit import Planner, ff_label
     from .recorder import Recorder
+    from .tournament import make_scene
     disp = gfx.Display(headless=True)
 
     def prog(done, total):
         if done == total or done % 50 == 0:
             log(f"[showcase] sprites {done}/{total}")
 
-    scene = ShowcaseScene(dex, cfg, prog)
+    scene = make_scene(dex, cfg, prog)
     AUDIO.init(headless=True)
     draw_steps = speeds = None
     if target:
         log("[showcase] planning the edit...")
-        planner = Planner(ShowcaseScene(dex, dict(cfg, seed=scene.seed)), fps, target)
+        planner = Planner(make_scene(dex, dict(cfg, seed=scene.seed)), fps, target)
         while not planner.step():
             pass
         draw_steps, speeds, ff, length = planner.schedule()

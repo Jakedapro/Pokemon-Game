@@ -20,7 +20,7 @@ class Planner:
         self.sc = scene
         self.fps = fps
         self.target = target
-        self.max_speed = max_speed
+        self.max_speed = getattr(scene, "max_ff", max_speed)
         self.limit = int(limit_s * fps)
         self.flags = []
         self.done = False

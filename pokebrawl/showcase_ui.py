@@ -11,7 +11,8 @@ from . import gfx, recorder, ui
 from .app import Scene, save_settings
 from .gfx import H, W
 from .audio import AUDIO
-from .showcase import ShowcaseScene, finish_video, list_presets, load_config
+from .showcase import finish_video, list_presets, load_config
+from .tournament import make_scene
 from .types import TYPES
 
 GROUPS = [(f"Gen {g}", {"gen": g}) for g in range(1, 10)] + [
@@ -62,7 +63,7 @@ class ShowcaseMenu(Scene):
         self.b.set(s.get("sc_b", "Gen 3"))
         self.size = ui.Cycle((40, 712, 310, 62), "Per team", SIZES)
         self.size.set(s.get("sc_size", "All"))
-        self.mode = ui.Cycle((370, 712, 310, 62), "Mode", ["Teams", "Royale"])
+        self.mode = ui.Cycle((370, 712, 310, 62), "Mode", ["Teams", "Royale", "Tournament"])
         self.mode.set(s.get("sc_mode_kind", "Teams"))
         self.megas = ui.Cycle((40, 788, 200, 62), "Megas", ["On", "Off"])
         self.bosses = ui.Cycle((260, 788, 200, 62), "Bosses", ["On", "Off"])
@@ -95,7 +96,13 @@ class ShowcaseMenu(Scene):
             ta, tb = {"name": self.a.value, "filter": ga}, {"name": self.b.value, "filter": gb}
             if self.size.value != "All":
                 ta["count"] = tb["count"] = int(self.size.value)
-            if self.mode.value == "Royale":
+            if self.mode.value == "Tournament":
+                same = self.a.value == self.b.value
+                size = 16 if self.size.value == "All" or int(self.size.value) >= 16 else 8
+                title = f"{self.a.value} Tournament" if same else f"{self.a.value} + {self.b.value} Cup"
+                cfg = load_config({"title": title, "mode": "tournament", "size": size,
+                                   "teams": [{"filter": ga}] if same else [{"filter": ga}, {"filter": gb}]})
+            elif self.mode.value == "Royale":
                 same = self.a.value == self.b.value
                 title = f"{self.a.value} Battle Royale!" if same else f"{self.a.value} + {self.b.value} Royale!"
                 cfg = load_config({"title": title, "subtitle": "ONLY ONE SURVIVES", "mode": "royale",
@@ -176,10 +183,10 @@ class ShowcaseLoad(Scene):
     def _build(self):
         try:
             # big battle royales watched live get the wide full-screen arena (recordings stay vertical)
-            scene = ShowcaseScene(self.app.dex, self.cfg, self._prog, wide="auto" if not self.record else False)
+            scene = make_scene(self.app.dex, self.cfg, self._prog, wide="auto" if not self.record else False)
             if self.record and self.cfg.get("video_len"):
                 # identical copy (same seed) for the auto-edit's invisible planning run
-                self.plan_scene = ShowcaseScene(self.app.dex, dict(self.cfg, seed=scene.seed))
+                self.plan_scene = make_scene(self.app.dex, dict(self.cfg, seed=scene.seed))
             self.scene = scene
         except Exception as e:  # noqa: BLE001
             self.error = str(e)

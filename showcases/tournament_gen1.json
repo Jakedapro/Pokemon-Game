@@ -1,0 +1,6 @@
+{
+  "title": "Kanto Cup",
+  "mode": "tournament",
+  "size": 16,
+  "teams": [{"filter": {"gen": 1}}]
+}
