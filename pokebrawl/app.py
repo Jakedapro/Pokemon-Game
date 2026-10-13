@@ -79,6 +79,7 @@ class App:
     def home(self):
         while len(self.stack) > 1:
             self.pop()
+        gfx.SPRITES.shiny_forms = set()
 
     def run(self):
         self.push(LoadingScene(self))

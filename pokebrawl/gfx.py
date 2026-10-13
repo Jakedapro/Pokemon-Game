@@ -201,6 +201,7 @@ class Sprites:
         self.raw = {}
         self.cache = {}
         self.missing = None
+        self.shiny_forms = set()   # forms drawn shiny by default in the current battle (showcases)
 
     def _missing(self):
         if self.missing is None:
@@ -241,7 +242,9 @@ class Sprites:
             self.raw[key] = img or self._missing()
         return self.raw[key]
 
-    def get(self, pid, height, flip=False, outline=None, back=False, white=0.0, ow=2, shiny=False):
+    def get(self, pid, height, flip=False, outline=None, back=False, white=0.0, ow=2, shiny=None):
+        if shiny is None:
+            shiny = pid in self.shiny_forms
         key = (pid, int(height), flip, outline, back, round(white, 1), ow, shiny)
         if key in self.cache:
             return self.cache[key]
@@ -429,3 +432,19 @@ def hp_bar(surf, rect, frac, back=(40, 40, 48)):
     pygame.draw.rect(surf, back, (x, y, w, h), border_radius=3)
     if frac > 0:
         pygame.draw.rect(surf, hp_color(frac), (x, y, max(2, int(w * frac)), h), border_radius=3)
+
+
+def sparkles(surf, center, radius, t, seed=0, n=10, color=(255, 240, 150)):
+    """Shiny sparkles: little four-point stars popping around a sprite."""
+    rng = random.Random(seed)
+    for i in range(n):
+        ph = rng.random() * 6
+        k = (t * 1.3 + ph) % 1.6
+        if k > 1.0:
+            continue
+        a = rng.random() * math.tau
+        d = radius * (0.4 + 0.6 * rng.random())
+        x, y = center[0] + math.cos(a) * d, center[1] + math.sin(a) * d
+        s = 3 + 9 * math.sin(k * math.pi)
+        pygame.draw.polygon(surf, color, [(x, y - s), (x + s * 0.25, y), (x, y + s), (x - s * 0.25, y)])
+        pygame.draw.polygon(surf, color, [(x - s, y), (x, y + s * 0.25), (x + s, y), (x, y - s * 0.25)])

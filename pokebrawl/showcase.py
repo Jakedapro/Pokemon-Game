@@ -12,8 +12,9 @@ from . import gfx
 from .audio import AUDIO
 from .cinematics import (ARCEUS_JUDGMENT, ARCEUS_LAND, ARCEUS_WIN, MEWTWO_RAMPAGE, MEWTWO_WIN, Cutscene, Descent,
                          Finisher, Gigantamax, Judgment, MegaEvolution, Rampage, draw_plate, subtitle)
-from .gfx import H, INK, SPRITES, W
-from .pokedex import prefetch
+from .gfx import H, INK, SPRITES, W, sparkles
+from .pokedex import ensure_sprite, prefetch
+from .profile import SHINY_ODDS
 from .duel import DuelView
 from .render import FX, ArenaRenderer
 from .sim import ARENA, Sim
@@ -176,6 +177,18 @@ class ShowcaseScene:
             self.r.gold_from = len(teams)  # only event bosses glow gold
         self.r.feed(self.sim.snapshot())
         self.r.hidden = {u.uid for u in self.sim.units}
+        # shiny Pokemon: 1 in 64, picked from the seed (so recordings and their auto-edit plan agree)
+        srng = random.Random(self.seed * 7919 + 17)
+        self.shinies = [u.uid for u in self.sim.units if srng.randrange(SHINY_ODDS) == 0][:8]
+        forms = set()
+        for uid in self.shinies:  # its Mega / Gigantamax forms stay shiny too
+            e = self.sim.by_id[uid].mon.entry
+            forms |= {e["id"], *e.get("megas", []), *([e["gmax"]] if e.get("gmax") else [])}
+        SPRITES.shiny_forms = forms
+        for uid in self.shinies:
+            ensure_sprite(self.sim.by_id[uid].mon.entry["id"], shiny=True)
+        self.r.shiny = set(self.shinies)
+        self.shiny_called = False
         self.r.auto_zoom = False
         self.r.show_boss_bars = False
         self.t = 0.0
@@ -548,6 +561,15 @@ class ShowcaseScene:
             elif ev.key == pygame.K_ESCAPE:
                 self.done = True
 
+    def _call_shinies(self):
+        if self.shiny_called:
+            return
+        self.shiny_called = True
+        for uid in self.shinies:
+            self.r._label(uid, "Shiny!", "normal", (255, 225, 90))
+        if self.shinies:
+            AUDIO.play("tera", 0.6)
+
     # ------------------------------------------------------------------ timeline
     def update(self, dt):
         if self.paused:
@@ -575,6 +597,7 @@ class ShowcaseScene:
             if t >= self.intro_len:
                 AUDIO.play("go")
                 self.phase = "battle"
+                self._call_shinies()
                 self.r.auto_zoom = True
                 self.r.show_boss_bars = True
             self.r.update(dt)
@@ -776,6 +799,13 @@ class ShowcaseScene:
                        int(255 * (1 - max(0.0, k - 0.5) * 2)), angle=-6)
         if self.phase in ("battle", "won") and self.cutscene is None and self.duel is None:
             self._draw_counts(surf)
+            q = self.t - self.intro_len - 1.0
+            if self.shinies and 0 < q < 3.0:   # "SHINY METAPOD SPOTTED!"
+                names = [self.sim.by_id[u].mon.name.upper() for u in self.shinies]
+                line = f"SHINY {names[0]} SPOTTED!" if len(names) == 1 else f"{len(names)} SHINIES SPOTTED!"
+                a = int(255 * min(1.0, q / 0.2, (3.0 - q) / 0.4))
+                draw_plate(surf, line, (self.W / 2, self.H * 0.2), 30, (255, 215, 80), 1.0, a, angle=-3)
+                sparkles(surf, (self.W / 2, self.H * 0.2), 260, q, 3, 8)
         if self.cutscene is not None:
             self.cutscene.draw(surf)
         if self.phase in ("won", "outro") or (self.phase == "finale" and self.finale["t"] < 1.2):

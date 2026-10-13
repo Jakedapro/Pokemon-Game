@@ -9,7 +9,7 @@ import pygame
 from . import gfx, profile, ui
 from .app import Scene
 from .audio import AUDIO
-from .gfx import H, SPRITES, W
+from .gfx import H, SPRITES, W, sparkles
 from .tournament import short_name
 
 STAT_NAMES = [("hp", "HP"), ("atk", "Attack"), ("def", "Defense"), ("spa", "Sp. Atk"), ("spd", "Sp. Def"),
@@ -31,22 +31,6 @@ def type_row(surf, types, cx, y, size=14):
     for t, w in zip(types, widths):
         gfx.pill(surf, t.upper(), (x + w / 2, y), gfx.type_color(t, 0), size)
         x += w + 6
-
-
-def sparkles(surf, center, radius, t, seed=0, n=10, color=(255, 240, 150)):
-    """Shiny sparkles: little four-point stars popping around a sprite."""
-    rng = random.Random(seed)
-    for i in range(n):
-        ph = rng.random() * 6
-        k = (t * 1.3 + ph) % 1.6
-        if k > 1.0:
-            continue
-        a = rng.random() * math.tau
-        d = radius * (0.4 + 0.6 * rng.random())
-        x, y = center[0] + math.cos(a) * d, center[1] + math.sin(a) * d
-        s = 3 + 9 * math.sin(k * math.pi)
-        pygame.draw.polygon(surf, color, [(x, y - s), (x + s * 0.25, y), (x, y + s), (x - s * 0.25, y)])
-        pygame.draw.polygon(surf, color, [(x - s, y), (x, y + s * 0.25), (x + s, y), (x, y - s * 0.25)])
 
 
 def rank_bar(surf, rect, data, t):

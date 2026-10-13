@@ -92,6 +92,7 @@ class ArenaRenderer:
         self.labels_alive = 0
         self.show_units = True
         self.hidden = set()     # uids not drawn (still in their balls)
+        self.shiny = set()      # shiny uids: they twinkle
         self.white = {}         # uid -> whiteness (capture effect)
         self.scale_over = {}    # uid -> scale override
         self.rng = random.Random(3)
@@ -443,6 +444,20 @@ class ArenaRenderer:
         if self.show_boss_bars:
             self._draw_boss_bars(surf)
 
+    def _twinkle(self, w, rect, uid):
+        """Shiny Pokemon: little four-point stars popping around them."""
+        for i in range(3):
+            k = (self.t * 1.1 + i * 0.37 + uid * 0.13) % 1.0
+            if k > 0.6:
+                continue
+            a = (uid * 2.4 + i * 2.1 + math.floor(self.t * 1.1 + i * 0.37 + uid * 0.13) * 1.7) % math.tau
+            x = rect.centerx + math.cos(a) * rect.w * 0.55
+            y = rect.centery + math.sin(a) * rect.h * 0.55
+            s = 2 + 6 * math.sin(k / 0.6 * math.pi)
+            col = (255, 240, 160)
+            pygame.draw.polygon(w, col, [(x, y - s), (x + s * 0.3, y), (x, y + s), (x - s * 0.3, y)])
+            pygame.draw.polygon(w, col, [(x - s, y), (x, y + s * 0.3), (x + s, y), (x, y - s * 0.3)])
+
     def _draw_unit(self, w, u):
         hgt = u.r * 2.3 * self.scale_over.get(u.uid, 1.0) * min(1.0, 0.3 + u.spawn * 3)
         outline = None
@@ -472,6 +487,8 @@ class ArenaRenderer:
         if u.flags & 128:  # Gigantamax: red glow and the swirling red clouds over its head
             glow(w, rect.centerx, rect.centery, u.r * 2.2, (200, 30, 60), 0.9)
         w.blit(img, rect)
+        if u.uid in self.shiny:
+            self._twinkle(w, rect, u.uid)
         if u.flags & 128:
             for i in range(7):
                 a = i / 7 * math.tau + self.t * 1.2

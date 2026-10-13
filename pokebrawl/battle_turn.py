@@ -37,6 +37,7 @@ MY_POS = (220, 780)
 class TurnBattleScene(Scene):
     def __init__(self, app, session):
         super().__init__(app)
+        SPRITES.shiny_forms = set()   # (showcase shinies don't carry over into 1v1s)
         self.s = session
         self.me = session.my_side
         self.foe = 1 - self.me
