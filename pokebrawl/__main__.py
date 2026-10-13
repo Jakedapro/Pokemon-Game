@@ -18,6 +18,8 @@ APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 def main(argv=None):
     p = argparse.ArgumentParser(prog="pokebrawl", description="Pokemon arena battles: practice, showcase, PvP")
     sub = p.add_subparsers(dest="cmd")
+    un = sub.add_parser("unlock", help=argparse.SUPPRESS)
+    un.add_argument("code")
     sc = sub.add_parser("showcase", help="play or record a showcase JSON file")
     sc.add_argument("file")
     sc.add_argument("--record", metavar="OUT.mp4")
@@ -74,7 +76,15 @@ def main(argv=None):
         else:
             print("Not a git install - rerun the install command to update.")
         return
+    if args.cmd == "unlock":
+        from .app import load_settings, try_unlock
+        print("Showcase unlocked on this computer." if try_unlock(load_settings(), args.code) else "Wrong code.")
+        return
     if args.cmd == "showcase":
+        from .app import creator_unlocked, load_settings
+        if not creator_unlocked(load_settings()):
+            print("Showcase is locked.")
+            return
         from .pokedex import load_dex
         from .showcase import load_config, record
         cfg = load_config(args.file)

@@ -61,7 +61,9 @@ The host runs the battle. Rules: Species Clause, Item Clause, one Mega and one T
 
 Room codes go over normal HTTPS (via the free ntfy.sh service), so they work even on school or work Wi-Fi that blocks games. If that's unavailable, the game falls back to public MQTT servers. Run `pokebrawl nettest` to see what works on your network.
 
-## Showcases (content mode)
+## Showcases (content mode, owner only)
+
+Showcase is hidden for everyone except the game's owner, who unlocks it on their computer with a secret code.
 
 Pick a preset or build a custom matchup in the app:
 

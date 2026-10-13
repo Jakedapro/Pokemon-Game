@@ -17,6 +17,28 @@ STYLE_NAMES = {"turn": "Turn-based", "realtime": "Arena"}
 SETTINGS_FILE = os.path.join(pokedex.HOME, "settings.txt")
 
 
+# Showcase mode is only for the game's owner: it unlocks on a computer once the secret code is typed on the
+# main menu (or `pokebrawl unlock CODE`). Only the code's hash lives here.
+CREATOR_HASH = "a9fd4f63c5e7bb920cb0be1d72831ea1ca584575b218f98cdb04bbfba125e50a"
+
+
+def creator_unlocked(settings):
+    import hashlib
+    key = settings.get("creator_key", "")
+    return bool(key) and hashlib.sha256(key.strip().upper().encode()).hexdigest() == CREATOR_HASH
+
+
+def try_unlock(settings, code):
+    """Returns True (and remembers it) if code is the owner's code."""
+    import hashlib
+    code = code.strip().upper()
+    if hashlib.sha256(code.encode()).hexdigest() != CREATOR_HASH:
+        return False
+    settings["creator_key"] = code
+    save_settings(settings)
+    return True
+
+
 def load_settings():
     out = {}
     try:
@@ -235,23 +257,9 @@ class PrefetchScene(Scene):
 class MainMenu(Scene):
     def __init__(self, app):
         super().__init__(app)
-        x, w = 60, 600
-        self.buttons = [
-            ui.Button((x, 236, w, 140), "Adventure", (232, 150, 40), 44, "Catch Pokemon, beat 8 gyms, become Champion",
-                      tag="adventure", icon=25),
-            ui.Button((x, 392, w, 140), "Practice", ui.SHELL, 44, "Turn-based battles against a bot",
-                      tag="practice", icon=6),
-            ui.Button((x, 548, w, 140), "Showcase", (38, 104, 188), 44, "Mass battles and royales for your videos",
-                      tag="showcase", icon=384),
-            ui.Button((x, 704, w, 140), "PvP", (34, 140, 88), 44, "Battle your friends with a room code",
-                      tag="pvp", icon=448),
-            ui.Button((x, 860, 190, 100), "Teams", ui.SCREEN2, 28, tag="teams"),
-            ui.Button((x + 205, 860, 190, 100), "Pokedex", ui.SCREEN2, 28, tag="dex"),
-            ui.Button((x + 410, 860, 190, 100), "Replays", ui.SCREEN2, 28, tag="replays"),
-            ui.Button((x, 984, 190, 84), "Trainer", (130, 60, 200), 24, tag="trainer"),
-            ui.Button((x + 205, 984, 190, 84), "Settings", ui.SCREEN2, 24, tag="settings"),
-            ui.Button((x + 410, 984, 190, 84), "Quit", ui.SCREEN2, 24, tag="quit"),
-        ]
+        self.typed = ""
+        self.unlock_t = -9.0
+        self._build()
         from .updater import AutoUpdater
         from .version import current
         self.version = current()
@@ -259,16 +267,35 @@ class MainMenu(Scene):
         self.restart_btn = ui.Button((60, 1100, 600, 72), "Restart to update", (34, 140, 88), 26,
                                      "or it installs next time you open the game")
 
+    def _build(self):
+        x, w = 60, 600
+        big = [("Adventure", (232, 150, 40), "Catch Pokemon, beat 8 gyms, become Champion", "adventure", 25),
+               ("Practice", ui.SHELL, "Turn-based battles against a bot", "practice", 6)]
+        if creator_unlocked(self.app.settings):
+            big.append(("Showcase", (38, 104, 188), "Mass battles and royales for your videos", "showcase", 384))
+        big.append(("PvP", (34, 140, 88), "Battle your friends with a room code", "pvp", 448))
+        h = 140 if len(big) == 4 else 182
+        gap = (608 - h * len(big)) // max(1, len(big) - 1)
+        self.buttons = [ui.Button((x, 236 + i * (h + gap), w, h), label, col, 44, sub, tag=tag, icon=icon)
+                        for i, (label, col, sub, tag, icon) in enumerate(big)] + [
+            ui.Button((x, 860, 190, 100), "Teams", ui.SCREEN2, 28, tag="teams"),
+            ui.Button((x + 205, 860, 190, 100), "Pokedex", ui.SCREEN2, 28, tag="dex"),
+            ui.Button((x + 410, 860, 190, 100), "Replays", ui.SCREEN2, 28, tag="replays"),
+            ui.Button((x, 984, 190, 84), "Trainer", (130, 60, 200), 24, tag="trainer"),
+            ui.Button((x + 205, 984, 190, 84), "Settings", ui.SCREEN2, 24, tag="settings"),
+            ui.Button((x + 410, 984, 190, 84), "Quit", ui.SCREEN2, 24, tag="quit"),
+        ]
+
     TIPS = ["Win battles for a chance to meet a legendary",
-            "1 in 64 showcase Pokemon is shiny",
+            "Shiny Pokemon are 1 in 512 in Adventure",
             "Tournament mode: 8 or 16 Pokemon, one champion",
             "Hold a Choice item and you're locked into one move",
             "Press G in a 1v1 to Gigantamax (if your Pokemon can)",
-            "Recordings auto-edit down to TikTok length",
+            "Hold X to run in Adventure",
             "Rank up for a guaranteed legendary encounter",
             "Tap a sprite in the Pokedex to see its shiny",
             "Only one legendary per team in PvP",
-            "Big battle royales go full screen"]
+            "Talk to the nurse in any Pokemon Center to heal"]
 
     def update(self, dt):
         AUDIO.music("menu")
@@ -321,6 +348,15 @@ class MainMenu(Scene):
                     self.go(b.tag)
             if math.hypot(pos[0] - 650, pos[1] - 62) < 46:   # the rank badge in the corner
                 self.go("trainer")
+        if ev.type == pygame.TEXTINPUT:   # the owner's secret code, typed anywhere on this screen
+            self.typed = (self.typed + ev.text.upper())[-16:]
+            for n in range(8, 13):
+                if len(self.typed) >= n and try_unlock(self.app.settings, self.typed[-n:]):
+                    self.typed = ""
+                    self.unlock_t = self.app.t
+                    AUDIO.play("win")
+                    self._build()
+                    break
         if ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE:
             self.app.running = False
 
@@ -330,7 +366,7 @@ class MainMenu(Scene):
             self.app.push(AdventureTitle(self.app))
         elif tag == "practice":
             self.app.push(PracticeSetup(self.app))
-        elif tag == "showcase":
+        elif tag == "showcase" and creator_unlocked(self.app.settings):
             from .showcase_ui import ShowcaseMenu
             self.app.push(ShowcaseMenu(self.app))
         elif tag == "pvp":
@@ -358,6 +394,8 @@ class MainMenu(Scene):
         ui.menu_background(surf, self.app.t)
         ui.header(surf, "PokeBrawl", f"{len(self.app.dex.selectable())} Pokemon and {len(self.app.dex.moves)} moves")
         self._draw_parade(surf)
+        if self.app.t - self.unlock_t < 3:
+            gfx.text(surf, "Showcase unlocked on this computer", (W / 2, 1050 + 85), 20, ui.SIGNAL, None, 0)
         rk = profile.rank_of(self._rp())
         ui.rank_badge(surf, (650, 58), 34, rk, self.app.t)
         gfx.text(surf, rk["label"], (650, 118), 13, (255, 230, 235), ui.SHELL_DARK, 2)
