@@ -210,6 +210,19 @@ class ArenaRenderer:
             self._burst(x, y, (255, 200, 80), 30, 260, 5, 0.7)
             self._burst(x, y, (120, 110, 110), 18, 120, 7, 1.0)
             self.shake = 0.35
+        elif kind == "gmax":
+            u = self.units.get(ev[1])
+            if u:
+                self._burst(u.x, u.y, (255, 60, 80), 40, 300, 6, 0.9)
+                self._burst(u.x, u.y - u.r, (255, 150, 170), 24, 200, 4, 0.7)
+                self._label(ev[1], "GIGANTAMAX!", "fire", (220, 30, 60))
+                self.fx.append(FX("ring", 0.8, x=u.x, y=u.y, r=u.r * 3, color=(230, 40, 70), light=(255, 170, 190)))
+            self.shake = max(self.shake, 0.5)
+            AUDIO.play("mega", 0.9)
+        elif kind == "gmax_end":
+            u = self.units.get(ev[1])
+            if u:
+                self._burst(u.x, u.y, (255, 200, 210), 24, 160, 4, 0.6)
         elif kind == "faint":
             _, uid, x, y, form = ev[:5]
             u = self.units.get(uid)
@@ -456,7 +469,16 @@ class ArenaRenderer:
             pygame.draw.circle(w, (255, 255, 200), rect.center, int(u.r * 1.3 + math.sin(self.t * 20) * 3), 2)
         if self.selected == u.uid:
             pygame.draw.ellipse(w, (255, 255, 120), (u.x - u.r * 1.1, u.y + u.r * 0.3, u.r * 2.2, u.r * 0.8), 3)
+        if u.flags & 128:  # Gigantamax: red glow and the swirling red clouds over its head
+            glow(w, rect.centerx, rect.centery, u.r * 2.2, (200, 30, 60), 0.9)
         w.blit(img, rect)
+        if u.flags & 128:
+            for i in range(7):
+                a = i / 7 * math.tau + self.t * 1.2
+                cx = rect.centerx + math.cos(a) * u.r * 0.9
+                cy = rect.top + 4 + math.sin(a) * u.r * 0.22
+                pygame.draw.circle(w, (150, 20, 45), (int(cx), int(cy)), int(u.r * 0.26))
+                pygame.draw.circle(w, (230, 60, 90), (int(cx), int(cy - 2)), int(u.r * 0.17))
         if u.flags & 32:
             col = type_color(self.roster.get(u.uid, {}).get("tera", "normal"), 1)
             cx, top = rect.centerx, rect.top - 6

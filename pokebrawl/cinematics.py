@@ -926,3 +926,230 @@ class Finisher(Cutscene):
             f.fill((255, 255, 255, int(255 * min(1.0, self.flash / 0.25))))
             surf.blit(f, (0, 0))
         self._end_draw(surf)
+
+
+def _helix(surf, a, b, t, width=4, phase=0.0, amp=18):
+    """Two twisting strands of rainbow light from a to b (the Key Stone / Mega Stone link)."""
+    (x0, y0), (x1, y1) = a, b
+    n = 28
+    L = math.hypot(x1 - x0, y1 - y0) or 1
+    nx, ny = -(y1 - y0) / L, (x1 - x0) / L
+    for strand in (0, math.pi):
+        pts = []
+        for i in range(n + 1):
+            q = i / n
+            off = math.sin(q * 10 + t * 12 + strand + phase) * amp
+            pts.append((x0 + (x1 - x0) * q + nx * off, y0 + (y1 - y0) * q + ny * off))
+        for i in range(n):
+            pygame.draw.line(surf, gfx.hsv(i / n + t * 0.8), pts[i], pts[i + 1], width)
+
+
+def mega_symbol(surf, center, r, t, color, alpha=255):
+    """The Mega Evolution emblem: a ring with a twisting DNA helix inside."""
+    layer = pygame.Surface((r * 2 + 20, r * 2 + 20), pygame.SRCALPHA)
+    c = (r + 10, r + 10)
+    pygame.draw.circle(layer, (*color, alpha), c, r, max(4, r // 10))
+    pygame.draw.circle(layer, (255, 255, 255, alpha), c, int(r * 0.86), 2)
+    for strand in (0, math.pi):
+        pts = []
+        for i in range(33):
+            q = i / 32
+            ang = math.pi * 0.75 + q * math.pi * 1.5 + t * 0.6
+            rr = r * (0.15 + 0.6 * q)
+            off = math.sin(q * 9 + strand + t * 4) * r * 0.08
+            pts.append((c[0] + math.cos(ang) * (rr + off), c[1] + math.sin(ang) * (rr + off)))
+        pygame.draw.lines(layer, (*_lighter(color, 0.4), alpha), False, pts, max(3, r // 14))
+    surf.blit(layer, layer.get_rect(center=(int(center[0]), int(center[1]))))
+
+
+class MegaEvolution(Cutscene):
+    """Key Stone and Mega Stone link up -> the Pokemon is wrapped in a rainbow cocoon -> it cracks -> the Mega
+    form bursts out in front of a giant Mega symbol."""
+
+    LINK, COCOON, CRACK = 0.75, 1.9, 2.05
+
+    def __init__(self, base_id, form_id, title, subtitle="MEGA EVOLUTION", color=(170, 90, 230), focus=None,
+                 size=None, duration=3.7):
+        super().__init__("mega", duration, focus=focus, zoom=1.6, title=title.upper(), subtitle=subtitle,
+                         color=color, portrait=form_id, sound=None, size=size)
+        self.base_id, self.form_id = base_id, form_id
+        self.renderer = None
+
+    def update(self, dt, renderer=None):
+        prev, self.t = self.t, self.t + dt
+        if renderer is not None and self.focus:
+            renderer.cam_target = (self.focus[0], self.focus[1], self.zoom)
+        if prev == 0:
+            AUDIO.play("mega", 0.9)
+        if prev < self.LINK <= self.t:
+            AUDIO.play("tera", 0.7)
+        if prev < self.CRACK <= self.t:
+            self.flash = 0.35
+            AUDIO.play("boom", 1.0)
+            AUDIO.cry(self.form_id, 1.0)
+            if renderer is not None:
+                renderer.shake = max(renderer.shake, 0.8)
+            for i in range(4):
+                self.rings.append([self.W / 2, self.H * 0.5, 30 + i * 50, 0.9 + i * 0.1, self.color])
+            self._burst(self.W / 2, self.H * 0.5, 90, self.color)
+        self._update_aura(dt)
+        self.flash = max(0.0, self.flash - dt)
+
+    def draw(self, surf):
+        self._begin_draw(surf)
+        d, t = self.duration, self.t
+        k = _ease(t / 0.3) * _ease((d - t) / 0.35)
+        self.anchors = []
+        cx, cy = self.W / 2, self.H * 0.5
+        bg = pygame.Surface((self.W, self.H), pygame.SRCALPHA)
+        bg.fill((*(int(c * 0.12) for c in self.color), int(245 * k)))
+        surf.blit(bg, (0, 0))
+        vig = _vignette((self.W, self.H))
+        vig.set_alpha(int(255 * k))
+        surf.blit(vig, (0, 0))
+        if t < self.CRACK:
+            # Key Stone (left) and Mega Stone (right), linked by the helix
+            ks, ms = (self.W * 0.14, self.H * 0.26), (self.W * 0.86, self.H * 0.26)
+            for pos, col in ((ks, (120, 200, 255)), (ms, self.color)):
+                pygame.draw.circle(surf, _lighter(col, 0.2), (int(pos[0]), int(pos[1])), 30)
+                pygame.draw.circle(surf, (255, 255, 255), (int(pos[0]), int(pos[1])), 30, 3)
+                _helix(surf, (pos[0] - 14, pos[1]), (pos[0] + 14, pos[1]), t, 2, amp=8)
+            p = min(1.0, t / self.LINK)
+            _helix(surf, ks, (ks[0] + (cx - ks[0]) * p, ks[1] + (cy - 60 - ks[1]) * p), t, 5)
+            _helix(surf, ms, (ms[0] + (cx - ms[0]) * p, ms[1] + (cy - 60 - ms[1]) * p), t, 5, phase=1.3)
+            # the base Pokemon, turning to light inside a spinning rainbow cocoon
+            if t > self.LINK * 0.6:
+                q = min(1.0, (t - self.LINK * 0.6) / (self.COCOON - self.LINK * 0.6))
+                img = SPRITES.get(self.base_id, 300, white=round(min(1.0, q * 1.2), 1))
+                surf.blit(img, img.get_rect(center=(cx, cy)))
+                for i in range(7):
+                    a0 = i / 7 * math.tau + t * (4 + i)
+                    rr = 170 + 20 * math.sin(t * 6 + i) - q * 40
+                    rect = pygame.Rect(cx - rr, cy - rr * 1.15, rr * 2, rr * 2.3)
+                    pygame.draw.arc(surf, gfx.hsv(i / 7 + t * 0.5), rect, a0, a0 + 1.6 + q, 7)
+                if t > self.COCOON:  # cracks across the cocoon
+                    rng = random.Random(3)
+                    for _ in range(8):
+                        a = rng.random() * math.tau
+                        x, y, pts = cx, cy, [(cx, cy)]
+                        for _ in range(4):
+                            x += math.cos(a) * rng.uniform(30, 70)
+                            y += math.sin(a) * rng.uniform(30, 70)
+                            pts.append((x, y))
+                        pygame.draw.lines(surf, (255, 255, 255), False, pts, 4)
+        else:
+            q = t - self.CRACK
+            mega_symbol(surf, (cx, cy - 20), int(260 + 30 * math.sin(t * 2)), t, self.color, int(200 * k))
+            self._draw_glowing(surf, self.form_id, 340, (cx, cy + 190))
+            self._draw_aura_fx(surf, k)
+            pop = _ease(q / 0.2)
+            size = min(44, int(44 * 16 / max(16, len(self.title))))
+            draw_plate(surf, self.title, (cx, self.H * 0.17), size, _lighter(self.color, 0.15), 1.6 - 0.6 * pop,
+                       int(255 * k))
+            if self.subtitle and q > 0.3:
+                n = int(len(self.subtitle) * min(1.0, (q - 0.3) / 0.5))
+                gfx.text(surf, self.subtitle[:n], (cx, self.H * 0.83), 26, _lighter(self.color, 0.5), INK, 3,
+                         alpha=int(255 * k))
+        if t < self.CRACK:
+            self._draw_aura_fx(surf, k)
+        bar = int(100 * k)
+        pygame.draw.rect(surf, (0, 0, 0), (0, 0, self.W, bar))
+        pygame.draw.rect(surf, (0, 0, 0), (0, self.H - bar, self.W, bar))
+        if self.flash > 0:
+            f = pygame.Surface((self.W, self.H), pygame.SRCALPHA)
+            f.fill((255, 255, 255, int(255 * min(1.0, self.flash / 0.35))))
+            surf.blit(f, (0, 0))
+        self._end_draw(surf)
+
+
+class Gigantamax(Cutscene):
+    """The sky turns crimson, red clouds swirl, a red silhouette grows to giant size, then the Gigantamax form
+    towers over everything with red clouds circling its head."""
+
+    GROW, BURST = (0.45, 1.9), 1.95
+
+    def __init__(self, base_id, form_id, name, move_name, focus=None, size=None):
+        super().__init__("gmax", 3.9, focus=focus, zoom=1.3, title="GIGANTAMAX!", subtitle=f"G-MAX {move_name.upper()}",
+                         color=(230, 40, 70), portrait=form_id, sound=None, size=size)
+        self.base_id, self.form_id, self.name = base_id, form_id, name
+        self.clouds = [(random.random() * 1.0, random.uniform(0.6, 1.4), random.uniform(40, 90)) for _ in range(16)]
+
+    def update(self, dt, renderer=None):
+        prev, self.t = self.t, self.t + dt
+        if renderer is not None and self.focus:
+            renderer.cam_target = (self.focus[0], self.focus[1], self.zoom)
+            if self.GROW[0] < self.t < self.GROW[1]:
+                renderer.shake = max(renderer.shake, 0.25)
+        if prev == 0:
+            AUDIO.play("beam", 0.9)
+        if prev < self.BURST <= self.t:
+            self.flash = 0.4
+            AUDIO.play("boom", 1.0)
+            AUDIO.cry(self.form_id, 1.0)
+            if renderer is not None:
+                renderer.shake = max(renderer.shake, 1.0)
+            self._burst(self.W / 2, self.H * 0.45, 90, self.color)
+        self._update_aura(dt)
+        self.flash = max(0.0, self.flash - dt)
+
+    def _sky(self, surf, k):
+        top, bot = (40, 4, 12), (150, 20, 40)
+        sky = pygame.Surface((self.W, self.H), pygame.SRCALPHA)
+        for y in range(0, self.H, 8):
+            q = y / self.H
+            col = tuple(int(top[i] + (bot[i] - top[i]) * q) for i in range(3))
+            pygame.draw.rect(sky, (*col, int(250 * k)), (0, y, self.W, 8))
+        surf.blit(sky, (0, 0))
+        for i, (ph, sp, r) in enumerate(self.clouds):  # swirling dark clouds near the top
+            a = ph * math.tau + self.t * sp * 0.6
+            x = self.W / 2 + math.cos(a) * self.W * 0.45
+            y = self.H * 0.16 + math.sin(a) * self.H * 0.06
+            pygame.draw.circle(surf, (70, 10, 26), (int(x), int(y)), int(r))
+            pygame.draw.circle(surf, (120, 20, 44), (int(x), int(y - r * 0.3)), int(r * 0.7))
+
+    def draw(self, surf):
+        self._begin_draw(surf)
+        d, t = self.duration, self.t
+        k = _ease(t / 0.35) * _ease((d - t) / 0.35)
+        self.anchors = []
+        self._sky(surf, k)
+        cx, ground = self.W / 2, self.H * 0.86
+        # red energy pillars rising from the ground
+        layer = pygame.Surface((self.W, self.H), pygame.SRCALPHA)
+        for i in range(5):
+            x = cx + (i - 2) * 120 + math.sin(t * 3 + i) * 20
+            wdt = 40 + 20 * math.sin(t * 7 + i)
+            pygame.draw.rect(layer, (255, 60, 90, int(70 * k)), (x - wdt / 2, 0, wdt, ground))
+        surf.blit(layer, (0, 0))
+        if t < self.BURST:
+            q = max(0.0, min(1.0, (t - self.GROW[0]) / (self.GROW[1] - self.GROW[0])))
+            hgt = int(140 + (self.H * 1.05 - 140) * q ** 1.6) // 8 * 8
+            img = SPRITES.get(self.base_id, max(16, hgt))
+            sil = gfx.silhouette(img, (255, 50, 80))
+            core = gfx.silhouette(img, (60, 0, 12))
+            surf.blit(sil, sil.get_rect(midbottom=(cx + 6, ground + 6)))
+            surf.blit(core, core.get_rect(midbottom=(cx, ground)))
+        else:
+            q = t - self.BURST
+            hgt = int(self.H * 0.72)
+            self._draw_glowing(surf, self.form_id, hgt, (cx, ground), color=self.color)
+            head_y = ground - hgt * 0.95
+            for i in range(9):  # the Gigantamax cloud crown
+                a = i / 9 * math.tau + t * 1.4
+                x = cx + math.cos(a) * self.W * 0.3
+                y = head_y + math.sin(a) * 40
+                pygame.draw.circle(surf, (150, 20, 45), (int(x), int(y)), 34)
+                pygame.draw.circle(surf, (230, 60, 90), (int(x), int(y - 6)), 22)
+            self._draw_aura_fx(surf, k)
+            pop = _ease(q / 0.2)
+            draw_plate(surf, self.title, (cx, self.H * 0.12), 54, self.color, 1.6 - 0.6 * pop, int(255 * k), angle=-6)
+            draw_plate(surf, self.name.upper(), (cx, self.H * 0.12 + 74), 26, (255, 160, 180), 1.0, int(255 * k))
+            if q > 0.3:
+                n = int(len(self.subtitle) * min(1.0, (q - 0.3) / 0.5))
+                gfx.text(surf, self.subtitle[:n], (cx, self.H * 0.93), 30, (255, 200, 210), INK, 3,
+                         alpha=int(255 * k))
+        if self.flash > 0:
+            f = pygame.Surface((self.W, self.H), pygame.SRCALPHA)
+            f.fill((255, 230, 235, int(255 * min(1.0, self.flash / 0.4))))
+            surf.blit(f, (0, 0))
+        self._end_draw(surf)

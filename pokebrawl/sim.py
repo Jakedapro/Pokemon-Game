@@ -55,7 +55,8 @@ RANGES = {"melee": 0, "projectile": 280, "beam": 330, "aoe": 250, "boom": 70, "h
 class Unit:
     __slots__ = ("mon", "uid", "team", "x", "y", "vx", "vy", "r", "boss", "face", "target", "focus", "retarget",
                  "cd", "anim", "stun", "charging", "charge_move", "shield", "kinds", "dmg_scale", "goto",
-                 "goto_t", "queued", "status_t", "item_t", "spawn_t", "kills", "mega_at", "plan", "storm")
+                 "goto_t", "queued", "status_t", "item_t", "spawn_t", "kills", "mega_at", "plan", "storm",
+                 "gmax_at", "gmax_t")
 
     def __init__(self, mon, uid, team, x, y, r, boss, hp_mult):
         self.mon, self.uid, self.team = mon, uid, team
@@ -82,6 +83,8 @@ class Unit:
         self.kills = 0
         self.mega_at = None
         self.plan = None
+        self.gmax_at = None     # when this Pokemon will Gigantamax (Pokemon with a Gigantamax form only)
+        self.gmax_t = 0.0       # seconds of Gigantamax left
 
     @property
     def alive(self):
@@ -162,6 +165,8 @@ class Sim:
                 u.face = 1 if ti == 0 else -1
                 if self.opts.get("mega", {}).get(ti, "auto") == "auto" and mon.can_mega:
                     u.mega_at = self.rng.uniform(4, 25)
+                elif self.opts.get("gmax", True) and mon.can_gmax:
+                    u.gmax_at = self.rng.uniform(6, 30)
                 self.units.append(u)
                 uid += 1
         self.by_id = {u.uid: u for u in self.units}
@@ -293,7 +298,7 @@ class Sim:
     def tera_allowed(self, u):
         limit = self.opts.get("tera_limit", {}).get(u.team, 0)
         return (limit is None or self.teras_used.get(u.team, 0) < limit) and not u.mon.terastallized \
-            and not u.mon.megaed
+            and not u.mon.megaed and not u.mon.gmaxed
 
     def try_tera(self, u):
         if not self.tera_allowed(u):
@@ -350,6 +355,33 @@ class Sim:
                     self._ability_label(u)
                     self.set_weather(payload[0], 30.0)
         return True
+
+    GMAX_SIZE, GMAX_TIME = 1.9, 22.0
+
+    def gmax_allowed(self, u):
+        """One Gigantamax at a time per team."""
+        return not any(x.alive and x.team == u.team and x.mon.gmaxed for x in self.units)
+
+    def try_gmax(self, u):
+        if not u.mon.can_gmax or not self.gmax_allowed(u):
+            return False
+        form = u.mon.gigantamax()
+        u.r *= self.GMAX_SIZE
+        u.gmax_t = self.GMAX_TIME
+        u.stun = max(u.stun, 1.2)
+        u.shield = max(u.shield, 1.2)
+        name, mtype = u.mon.gmax_move()
+        self.emit("gmax", u.uid, form["id"], form["name"], name, mtype)
+        return True
+
+    def end_gmax(self, u):
+        if not u.mon.gmaxed:
+            return
+        u.mon.end_gmax()
+        u.r /= self.GMAX_SIZE
+        u.gmax_t = 0.0
+        if u.alive:
+            self.emit("gmax_end", u.uid, u.mon.entry["id"])
 
     def set_weather(self, w, dur=20.0):
         self.weather = w
@@ -569,6 +601,14 @@ class Sim:
         if u.stun > 0:
             u.stun -= dt
             return
+        if u.gmax_t > 0:
+            u.gmax_t -= dt
+            if u.gmax_t <= 0:
+                self.end_gmax(u)
+        if u.gmax_at is not None and (self.t >= u.gmax_at or mon.hp_frac() < 0.55):
+            u.gmax_at = None
+            if self.try_gmax(u):
+                return
         if u.mega_at is not None and (self.t >= u.mega_at or mon.hp_frac() < 0.6):
             u.mega_at = None
             self.try_mega(u)
@@ -659,7 +699,10 @@ class Sim:
         kind = move_kind(move)
         mon = u.mon
         mtype = move_type_and_power(mon, move, self.weather)[0]
-        self.emit("use", u.uid, move["name"], mtype, kind)
+        name = move["name"]
+        if mon.gmaxed and mtype == mon.gmax_move()[1]:
+            name = "G-Max " + mon.gmax_move()[0]
+        self.emit("use", u.uid, name, mtype, kind)
         if AB.protean(mon, mtype):
             self._ability_label(u)
         u.anim = 0.25
@@ -922,7 +965,7 @@ class Sim:
             m = u.mon
             flags = (1 if u.boss else 0) | (2 if m.megaed else 0) | (4 if m.can_mega and self.mega_allowed(u) else 0) \
                 | (8 if u.charging > 0 else 0) | (16 if u.shield > 0 else 0) | (32 if m.terastallized else 0) \
-                | (64 if self.tera_allowed(u) else 0)
+                | (64 if self.tera_allowed(u) else 0) | (128 if m.gmaxed else 0)
             units.append([u.uid, u.team, m.entry["id"], round(u.x, 1), round(u.y, 1), round(m.hp_frac(), 4),
                           round(u.r, 1), flags, m.status or "", u.face, round(u.anim, 2),
                           u.target.uid if u.target and u.target.alive else 0])

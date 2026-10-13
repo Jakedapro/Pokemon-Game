@@ -41,6 +41,8 @@ class Mon:
         self.toxic_n = 0
         self.stages = {k: 0 for k in STAGE_KEYS}
         self.megaed = False
+        self.gmaxed = False     # Gigantamax: bigger, more HP, G-Max moves (only Pokemon with a Gigantamax form)
+        self._pre_gmax = None
         self.choice_lock = None
         self.fainted = False
         self.ability = member.ability or best_ability(self.entry)
@@ -68,6 +70,39 @@ class Mon:
     @property
     def can_mega(self):
         return (not self.megaed and self.item == "mega-stone" and self.member.mega in self.dex.all)
+
+    @property
+    def gmax_form(self):
+        gid = self.base_entry.get("gmax")
+        return self.dex.all.get(gid) if gid else None
+
+    @property
+    def can_gmax(self):
+        return self.gmax_form is not None and not (self.gmaxed or self.megaed or self.terastallized)
+
+    def gmax_move(self):
+        """(G-Max move name, its type) for this Pokemon's Gigantamax form."""
+        from .pokedex import GMAX_MOVES
+        key = self.base_entry["key"].split("-")[0]
+        return GMAX_MOVES.get(key, ("Max Strike", self.base_entry["types"][0]))
+
+    def gigantamax(self, hp_mult=1.5):
+        form = self.gmax_form
+        self._pre_gmax = self.entry
+        self.entry = form
+        self.gmaxed = True
+        self.maxhp = round(self.maxhp * hp_mult)
+        self.hp = min(self.maxhp, round(self.hp * hp_mult))
+        return form
+
+    def end_gmax(self):
+        if not self.gmaxed:
+            return
+        frac = self.hp_frac()
+        self.entry = self._pre_gmax or self.base_entry
+        self.gmaxed = False
+        self.maxhp = self.stats["hp"]
+        self.hp = 0 if self.hp <= 0 else max(1, round(self.maxhp * frac))
 
     def hp_frac(self):
         return max(0.0, self.hp / self.maxhp)
@@ -229,6 +264,8 @@ def damage(user, target, move, rng, weather=None, level=None, spread=False, forc
     if move["key"] in ("eruption", "water-spout"):
         power = max(1, 150 * user.hp_frac())
     power *= AB.power_mult(user, target, move, mtype, weather, moved_last)
+    if user.gmaxed and mtype == user.gmax_move()[1]:  # G-Max move
+        power *= 1.3
     stage = move["crit"] + AB.crit_bonus(user)
     crit = force_crit if force_crit is not None else rng.random() < (1 / 24, 1 / 8, 1 / 2, 1, 1)[min(stage, 4)]
     phys = move["cls"] == "phys"

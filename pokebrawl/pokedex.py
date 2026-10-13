@@ -22,7 +22,7 @@ HOME = os.environ.get("POKEBRAWL_HOME", os.path.join(os.path.expanduser("~"), ".
 DATA_DIR = os.path.join(HOME, "data")
 SPRITE_DIR = os.path.join(HOME, "sprites")
 DEX_FILE = os.path.join(DATA_DIR, "pokedex.json")
-DEX_VERSION = 5
+DEX_VERSION = 7
 
 CSV_URL = "https://raw.githubusercontent.com/PokeAPI/pokeapi/master/data/v2/csv/{}.csv"
 SPRITE_URL = "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/{}.png"
@@ -30,7 +30,21 @@ ITEM_URL = "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/ite
 
 STAT_KEYS = {1: "hp", 2: "atk", 3: "def", 4: "spa", 5: "spd", 6: "spe", 7: "acc", 8: "eva"}
 TRANSFORM_MARKERS = ("-mega", "-primal")
-SKIP_FORM_MARKERS = ("-gmax", "-totem", "-cap", "-starter", "-cosplay", "-rock-star", "-belle", "-pop-star",
+# Gigantamax: the G-Max move each Gigantamax Pokemon's moves of its type become
+GMAX_MOVES = {
+    "venusaur": ("Vine Lash", "grass"), "charizard": ("Wildfire", "fire"), "blastoise": ("Cannonade", "water"),
+    "butterfree": ("Befuddle", "bug"), "pikachu": ("Volt Crash", "electric"), "meowth": ("Gold Rush", "normal"),
+    "machamp": ("Chi Strike", "fighting"), "gengar": ("Terror", "ghost"), "kingler": ("Foam Burst", "water"),
+    "lapras": ("Resonance", "ice"), "eevee": ("Cuddle", "normal"), "snorlax": ("Replenish", "normal"),
+    "garbodor": ("Malodor", "poison"), "melmetal": ("Meltdown", "steel"), "rillaboom": ("Drum Solo", "grass"),
+    "cinderace": ("Fireball", "fire"), "inteleon": ("Hydrosnipe", "water"), "corviknight": ("Wind Rage", "flying"),
+    "orbeetle": ("Gravitas", "psychic"), "drednaw": ("Stonesurge", "water"), "coalossal": ("Volcalith", "rock"),
+    "flapple": ("Tartness", "grass"), "appletun": ("Sweetness", "grass"), "sandaconda": ("Sandblast", "ground"),
+    "toxtricity": ("Stun Shock", "electric"), "centiskorch": ("Centiferno", "fire"), "hatterene": ("Smite", "fairy"),
+    "grimmsnarl": ("Snooze", "dark"), "alcremie": ("Finale", "fairy"), "copperajah": ("Steelsurge", "steel"),
+    "duraludon": ("Depletion", "dragon"), "urshifu": ("One Blow", "dark"),
+}
+SKIP_FORM_MARKERS = ("-totem", "-cap", "-starter", "-cosplay", "-rock-star", "-belle", "-pop-star",
                      "-phd", "-libre", "-busted", "-eternamax", "-own-tempo", "-power-construct")
 FLAG_NAMES = {1: "contact", 2: "charge", 3: "recharge", 8: "punch", 9: "sound", 13: "heal", 15: "powder",
               16: "bite", 17: "pulse", 18: "ballistics"}
@@ -159,6 +173,8 @@ def pretty_name(ident):
     if ident in special:
         return special[ident]
     parts = ident.split("-")
+    if parts[-1] == "gmax":
+        return "Gigantamax " + " ".join(p.title() for p in parts[:-1])
     if "mega" in parts:
         i = parts.index("mega")
         base = " ".join(p.title() for p in parts[:i])
@@ -278,7 +294,7 @@ def build_dex(progress=print):
         if sid not in sp or pid not in st or pid not in ty:
             continue
         default = p["is_default"] == "1"
-        transform = any(m in ident for m in TRANSFORM_MARKERS)
+        transform = any(m in ident for m in TRANSFORM_MARKERS) or ident.endswith("-gmax")
         if not default and not transform and any(m in ident for m in SKIP_FORM_MARKERS):
             continue
         s = sp[sid]
@@ -289,14 +305,17 @@ def build_dex(progress=print):
             "default": default, "transform": transform,
             "types": [t for t in ty[pid] if t in TYPES] or ["normal"],
             "stats": {k: v for k, v in st[pid].items() if k in ("hp", "atk", "def", "spa", "spd", "spe")},
-            "megas": [], "base": None, "learn": sorted(learn.get(pid, ())),
+            "megas": [], "gmax": None, "base": None, "learn": sorted(learn.get(pid, ())),
             "abilities": abil.get(pid, []),
         }
     default_for_species = {e["species"]: e["id"] for e in entries.values() if e["default"]}
     for e in entries.values():
         base = default_for_species.get(e["species"])
         if e["transform"] and base:
-            entries[base]["megas"].append(e["id"])
+            if e["key"].endswith("-gmax"):  # Gigantamax forms are their own gimmick, not megas
+                entries[base]["gmax"] = e["id"]
+            else:
+                entries[base]["megas"].append(e["id"])
             e["base"] = base
         if not e["learn"] and base:  # alternate forms without their own learnset use the base form's
             e["learn"] = sorted(learn.get(base, ()))

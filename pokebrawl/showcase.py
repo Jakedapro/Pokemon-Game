@@ -10,7 +10,7 @@ import pygame
 
 from . import gfx
 from .audio import AUDIO
-from .cinematics import Cutscene, Descent, Finisher, draw_plate
+from .cinematics import Cutscene, Descent, Finisher, Gigantamax, MegaEvolution, draw_plate
 from .gfx import H, INK, SPRITES, W
 from .pokedex import prefetch
 from .render import ArenaRenderer
@@ -150,6 +150,8 @@ class ShowcaseScene:
                                      self.arena[1] + (y - old[1]) / (old[3] - old[1]) * (self.arena[3] - self.arena[1]))
         ids = {s["member"].species for t in teams for s in t} | {m for t in teams for s in t for m in
                                                                   ([s["member"].mega] if s["member"].mega else [])}
+        ids |= {dex.all[s["member"].species]["gmax"] for t in teams for s in t
+                if dex.all.get(s["member"].species, {}).get("gmax")}
         self.events_plan = self._plan_events(cfg)
         for key in ("arceus", "kyogre-primal", "groudon-primal", "rayquaza-mega", "deoxys",
                     *(k for _, ks in ARCEUS_GROUPS for k in ks)):
@@ -192,6 +194,9 @@ class ShowcaseScene:
         self.cutscenes = []
         self.start_units = len(self.sim.units)
         self.mega_scenes = 0
+        self.gmax_scenes = 0
+        self.ko_scenes = 0
+        self.last_ko_scene = -99.0
         self.level = cfg.get("level", 50)
         self.storm_msg = None
         self.last_ko = None      # (killer uid, victim form) - the battle's last KO gets a finisher
@@ -320,28 +325,52 @@ class ShowcaseScene:
 
     def _scan_events(self, events):
         for ev in events:
-            if ev[0] != "mega":
-                continue
-            _, uid, form_id, name = ev
-            u = self.sim.by_id.get(uid)
-            key = self.dex.all.get(form_id, {}).get("key", "")
-            pos = (u.x, u.y) if u else None
-            if "primal" in key:
-                dom = "sea" if "kyogre" in key else "land"
-                clash = self.sim.domain not in (None, dom) or any(
-                    x.alive and "primal" in x.mon.entry["key"] and x is not u for x in self.sim.units)
-                sub = "DOMAIN CLASH!" if clash else DOMAIN_TEXT[dom][0]
-                self.cutscenes.append(self._cs(Cutscene, "card", 3.4, pos, 1.7, "PRIMAL REVERSION", sub, DOMAIN_TEXT[dom][1],
-                                               form_id, cry=form_id, action_at=0.35))
-            elif key == "rayquaza-mega":
-                self.cutscenes.append(self._cs(Cutscene, "card", 3.2, pos, 1.7, "MEGA RAYQUAZA", DOMAIN_TEXT["sky"][0],
-                                               DOMAIN_TEXT["sky"][1], form_id, cry=form_id, action_at=0.35))
-            elif u and u.boss and self.mega_scenes < 3:
-                self.mega_scenes += 1
-                card = self._cs(Cutscene, "card", 2.0, pos, 1.8, name.upper(), "MEGA EVOLUTION!", (170, 90, 230), form_id,
-                                cry=form_id, action_at=0.3)
-                card.minor = True  # auto-edit may speed these up a little
-                self.cutscenes.append(card)
+            if ev[0] == "mega":
+                self._mega_scene(ev)
+            elif ev[0] == "gmax" and self.gmax_scenes < 3:
+                _, uid, form_id, name, move_name, _t = ev
+                u = self.sim.by_id.get(uid)
+                self.gmax_scenes += 1
+                base = self.dex.all.get(form_id, {}).get("base") or form_id
+                self.cutscenes.append(self._cs(Gigantamax, base, form_id, name, move_name,
+                                               focus=(u.x, u.y) if u else None))
+            elif ev[0] == "faint" and len(ev) > 5 and ev[5]:
+                self._ko_scene(ev)
+
+    def _mega_scene(self, ev):
+        _, uid, form_id, name = ev
+        u = self.sim.by_id.get(uid)
+        form = self.dex.all.get(form_id, {})
+        key = form.get("key", "")
+        base = form.get("base") or form_id
+        pos = (u.x, u.y) if u else None
+        if "primal" in key:
+            dom = "sea" if "kyogre" in key else "land"
+            clash = self.sim.domain not in (None, dom) or any(
+                x.alive and "primal" in x.mon.entry["key"] and x is not u for x in self.sim.units)
+            sub = "DOMAIN CLASH!" if clash else DOMAIN_TEXT[dom][0]
+            self.cutscenes.append(self._cs(MegaEvolution, base, form_id, name, f"PRIMAL REVERSION - {sub}",
+                                           DOMAIN_TEXT[dom][1], focus=pos))
+        elif key == "rayquaza-mega":
+            self.cutscenes.append(self._cs(MegaEvolution, base, form_id, name, DOMAIN_TEXT["sky"][0],
+                                           DOMAIN_TEXT["sky"][1], focus=pos))
+        elif u and u.boss and self.mega_scenes < 3:
+            self.mega_scenes += 1
+            scene = self._cs(MegaEvolution, base, form_id, name, focus=pos, duration=3.3)
+            scene.minor = True  # auto-edit may speed these up a little
+            self.cutscenes.append(scene)
+
+    def _ko_scene(self, ev):
+        """Big knockouts (a boss going down) get a finisher cutscene - a few per battle, spaced out."""
+        victim = self.sim.by_id.get(ev[1])
+        alive = sum(1 for x in self.sim.units if x.alive)
+        if not victim or not victim.boss or self.ko_scenes >= 4 or alive <= 2 or self.t - self.last_ko_scene < 8:
+            return
+        fin = self._finisher(ev[5], ev[4], final=False)
+        if fin:
+            self.ko_scenes += 1
+            self.last_ko_scene = self.t
+            self.cutscenes.append(fin)
 
     def interest(self):
         """For auto-editing recordings: 2 = must stay at normal speed (intro, cutscenes, the catch),
@@ -363,14 +392,19 @@ class ShowcaseScene:
             return 1
         return 0
 
-    def _finisher(self):
-        killer = self.sim.by_id.get(self.last_ko[0])
+    def _finisher(self, killer_uid=None, victim_form=None, final=True):
+        killer_uid = killer_uid if killer_uid is not None else self.last_ko[0]
+        victim_form = victim_form if victim_form is not None else self.last_ko[1]
+        killer = self.sim.by_id.get(killer_uid)
         if not killer or not killer.alive:
             return None
         moves = [m for m in killer.mon.moves if m["cls"] != "status"] or killer.mon.moves
         mv = next((m for m in moves if m["type"] in killer.mon.types), moves[0])
         mine = killer.team == 0 or self.royale
-        return self._cs(Finisher, killer.mon.entry["id"], self.last_ko[1], mv["name"], mv["type"], mv["cls"], mine, final=True)
+        name = mv["name"]
+        if killer.mon.gmaxed and mv["type"] == killer.mon.gmax_move()[1]:
+            name = "G-Max " + killer.mon.gmax_move()[0]
+        return self._cs(Finisher, killer.mon.entry["id"], victim_form, name, mv["type"], mv["cls"], mine, final=final)
 
     def _check_triggers(self):
         alive = [u for u in self.sim.units if u.alive]
