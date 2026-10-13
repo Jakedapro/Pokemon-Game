@@ -66,7 +66,7 @@ def prepare_voices(lines):
     threading.Thread(target=go, daemon=True).start()
 CRY_DIR = os.path.join(pokedex.HOME, "cries")
 CRY_URL = "https://raw.githubusercontent.com/PokeAPI/cries/main/cries/pokemon/latest/{}.ogg"
-AUDIO_VERSION = 3
+AUDIO_VERSION = 4
 
 # minimum seconds between two plays of the same sound (keeps 300-Pokemon battles from turning into noise)
 THROTTLE = {"ball": 0.03, "hit": 0.045, "hit_super": 0.08, "hit_weak": 0.07, "beam": 0.07, "blast": 0.09, "impact": 0.05,
@@ -180,10 +180,15 @@ def _freq(name, octave):
 
 def _make_music(kind):
     """A looping chiptune track. kind: 'battle' (fast, minor) or 'menu' (chill)."""
-    rng = random.Random({"battle": 7, "menu": 3, "showcase": 11}[kind])
-    bpm = {"battle": 150, "menu": 104, "showcase": 138}[kind]
-    prog = {"battle": ["A", "F", "C", "G"], "menu": ["C", "A", "F", "G"], "showcase": ["D", "A#", "F", "C"]}[kind]
-    minor = {"A": "m", "F": "", "C": "", "G": "", "D": "m", "A#": ""}
+    rng = random.Random({"battle": 7, "menu": 3, "showcase": 11, "town": 21, "route": 5, "gym": 13}[kind])
+    bpm = {"battle": 150, "menu": 104, "showcase": 138, "town": 96, "route": 124, "gym": 144}[kind]
+    prog = {"battle": ["A", "F", "C", "G"], "menu": ["C", "A", "F", "G"], "showcase": ["D", "A#", "F", "C"],
+            "town": ["F", "C", "D", "A#"], "route": ["G", "D", "E", "C"], "gym": ["E", "C", "D", "B"]}[kind]
+    minor = {"A": "m", "F": "", "C": "", "G": "", "D": "m", "A#": "", "E": "m", "B": ""}
+    if kind == "route":
+        minor = dict(minor, D="", E="m")
+    if kind == "gym":
+        minor = dict(minor, D="", E="m")
     beat = 60 / bpm
     bars = 8
     total = bars * 4 * beat
@@ -209,13 +214,14 @@ def _make_music(kind):
         for e8 in range(8):  # bass eighths
             f = _freq(root, 2) * (2 if e8 % 4 == 3 else 1)
             add(t0 + e8 * beat / 2, beat / 2 * 0.9, lambda t, f=f: _tri(f * t), 0.32)
-        for step in range(8 if kind != "menu" else 4):  # lead melody
+        calm = kind in ("menu", "town")
+        for step in range(8 if not calm else 4):  # lead melody
             if rng.random() < 0.18:
                 continue
             nm = rng.choice(chord + [names[(ri + 2) % 12]])
             octv = 5 if rng.random() < 0.7 else 6
             f = _freq(nm, octv)
-            ln = beat / 2 if kind != "menu" else beat
+            ln = beat / 2 if not calm else beat
             add(t0 + step * ln, ln * 0.85, lambda t, f=f: _square(f * t) * 0.6 + _square(f * 1.005 * t) * 0.4,
                 0.07)
         for b in range(4):  # arpeggio pad
@@ -226,7 +232,7 @@ def _make_music(kind):
         for e8 in range(8):  # drums
             st = t0 + e8 * beat / 2
             add(st, 0.03, lambda t: nz(), 0.06)                                   # hat
-            if e8 in (0, 4) or (kind == "battle" and e8 == 5):
+            if e8 in (0, 4) or (kind in ("battle", "gym") and e8 == 5):
                 add(st, 0.12, lambda t: math.sin(2 * math.pi * (110 - 400 * t) * t), 0.5)  # kick
             if e8 in (2, 6):
                 add(st, 0.1, lambda t: nz() * 0.8 + math.sin(2 * math.pi * 190 * t) * 0.3, 0.22)  # snare
@@ -250,7 +256,7 @@ def ensure_assets():
     os.makedirs(SFX_DIR, exist_ok=True)
     for name, samples in _make_sfx().items():
         _write_wav(os.path.join(SFX_DIR, f"{name}.wav"), samples)
-    for kind in ("battle", "menu", "showcase"):
+    for kind in ("battle", "menu", "showcase", "town", "route", "gym"):
         _write_wav(os.path.join(SFX_DIR, f"music_{kind}.wav"), _make_music(kind))
     open(marker, "w").close()
 

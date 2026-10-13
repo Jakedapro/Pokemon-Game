@@ -22,7 +22,7 @@ HOME = os.environ.get("POKEBRAWL_HOME", os.path.join(os.path.expanduser("~"), ".
 DATA_DIR = os.path.join(HOME, "data")
 SPRITE_DIR = os.path.join(HOME, "sprites")
 DEX_FILE = os.path.join(DATA_DIR, "pokedex.json")
-DEX_VERSION = 7
+DEX_VERSION = 8
 
 CSV_URL = "https://raw.githubusercontent.com/PokeAPI/pokeapi/master/data/v2/csv/{}.csv"
 SPRITE_URL = "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/{}.png"
@@ -281,12 +281,43 @@ def build_dex(progress=print):
 
     progress("[pokebrawl] reading learnsets...")
     learn = {}
+    levelup = {}   # pokemon id -> {version group: [(level, move id)]} (level-up moves, for Adventure mode)
     with open(os.path.join(DATA_DIR, "pokemon_moves.csv") if os.path.exists(os.path.join(DATA_DIR, "pokemon_moves.csv"))
               else _download_to("pokemon_moves"), encoding="utf-8") as f:
         for row in csv.DictReader(f):
             mid = int(row["move_id"])
             if mid in moves:
-                learn.setdefault(int(row["pokemon_id"]), set()).add(mid)
+                pid = int(row["pokemon_id"])
+                learn.setdefault(pid, set()).add(mid)
+                if row["pokemon_move_method_id"] == "1":
+                    levelup.setdefault(pid, {}).setdefault(int(row["version_group_id"]), []).append(
+                        (_int(row["level"], 1), mid))
+
+    def lvl_moves(pid):
+        groups = levelup.get(pid)
+        if not groups:
+            return []
+        rows = groups[max(groups, key=lambda g: (len(groups[g]), g))]  # the fullest, newest learnset
+        return sorted({(max(1, lv), m) for lv, m in rows})
+
+    # evolutions: species -> [(evolved species, level)]; stone / trade / friendship evolutions get a level too
+    evo_rows = {}
+    try:
+        for r in _read_csv("pokemon_evolution"):
+            evo_rows.setdefault(int(r["evolved_species_id"]), r)
+    except Exception:  # noqa: BLE001 - optional data
+        pass
+    evolutions = {}
+    for s in species:
+        if not s["evolves_from_species_id"]:
+            continue
+        child, parent = int(s["id"]), int(s["evolves_from_species_id"])
+        r = evo_rows.get(child, {})
+        level = _int(r.get("minimum_level"), 0)
+        if not level:
+            level = 36 if sp.get(parent, {}).get("evolves_from_species_id") else 28
+        evolutions.setdefault(parent, []).append([child, level])
+    base_xp = {int(p["id"]): _int(p["base_experience"], 60) for p in pokemon}
 
     entries = {}
     for p in pokemon:
@@ -307,6 +338,8 @@ def build_dex(progress=print):
             "stats": {k: v for k, v in st[pid].items() if k in ("hp", "atk", "def", "spa", "spd", "spe")},
             "megas": [], "gmax": None, "base": None, "learn": sorted(learn.get(pid, ())),
             "abilities": abil.get(pid, []),
+            "lvl": lvl_moves(pid), "evo": [], "catch": _int(s["capture_rate"], 45),
+            "bxp": base_xp.get(pid, 60) or 60,
         }
     default_for_species = {e["species"]: e["id"] for e in entries.values() if e["default"]}
     for e in entries.values():
@@ -319,6 +352,11 @@ def build_dex(progress=print):
             e["base"] = base
         if not e["learn"] and base:  # alternate forms without their own learnset use the base form's
             e["learn"] = sorted(learn.get(base, ()))
+        if not e["lvl"] and base:
+            e["lvl"] = lvl_moves(base)
+        if e["default"]:
+            e["evo"] = [[default_for_species[c], lv] for c, lv in evolutions.get(e["species"], [])
+                        if c in default_for_species]
         if not e["abilities"] and base:
             e["abilities"] = list(entries[base]["abilities"])
     dex = {"version": DEX_VERSION, "pokemon": sorted(entries.values(), key=lambda e: e["id"]),

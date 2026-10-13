@@ -34,6 +34,9 @@ class BattleExtras:
     # ------------------------------------------------------------------ end of battle
     def finish(self, winner):
         """Call every frame once the battle is over: records the result and saves the replay (once)."""
+        if getattr(self.s, "adventure", False):   # Adventure battles don't count for ranks or replays
+            self.done = True
+            return
         if not self.done:
             self.done = True
             won = winner == self.me

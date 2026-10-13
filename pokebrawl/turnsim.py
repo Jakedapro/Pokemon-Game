@@ -55,9 +55,24 @@ class Side:
         return [m for m in self.mons if not m.fainted]
 
 
+BALLS = {"poke-ball": ("Poke Ball", 1.0), "great-ball": ("Great Ball", 1.5), "ultra-ball": ("Ultra Ball", 2.0),
+         "master-ball": ("Master Ball", 999.0)}
+# bag items usable in battle: (name, heal HP (-1 = full), cures status, revives)
+MEDICINE = {"potion": ("Potion", 20, False, False), "super-potion": ("Super Potion", 60, False, False),
+            "hyper-potion": ("Hyper Potion", 120, False, False), "max-potion": ("Max Potion", -1, False, False),
+            "full-restore": ("Full Restore", -1, True, False), "full-heal": ("Full Heal", 0, True, False),
+            "revive": ("Revive", 0.5, False, True), "max-revive": ("Max Revive", 1.0, False, True)}
+
+
 class TurnBattle:
-    def __init__(self, dex, teams, seed=None, names=None):
+    def __init__(self, dex, teams, seed=None, names=None, wild=False, bag=False, gimmicks=True):
         self.dex = dex
+        self.wild = wild          # Adventure: a wild Pokemon (catchable, you can run)
+        self.bag = bag            # Adventure: side 0 may use items
+        self.gimmicks = gimmicks  # Mega / Tera / Gigantamax allowed
+        self.caught = None        # index of the caught foe
+        self.ran = False
+        self.run_tries = 0
         self.names = list(names or ["Player 1", "Player 2"])
         self.rng = random.Random(seed)
         self.sides = [Side(dex, t, i, self.rng) for i, t in enumerate(teams)]
@@ -138,6 +153,8 @@ class TurnBattle:
             c = choices[side]
             if c["type"] == "switch":
                 actions.append(("switch", side, c["index"]))
+            elif c["type"] in ("ball", "run", "item"):
+                actions.append((c["type"], side, c))
             else:
                 slot = c["slot"]
                 v = self.vol[side]
@@ -158,12 +175,13 @@ class TurnBattle:
     def state(self, viewer=None):
         """Public battle state for UIs."""
         out = {"turn": self.turn, "weather": self.weather, "trick_room": self.trick_room, "over": self.over,
-               "winner": self.winner, "sides": []}
+               "winner": self.winner, "sides": [], "wild": self.wild, "caught": self.caught, "ran": self.ran}
         for s in self.sides:
             v = self.vol[s.index]
             out["sides"].append({
                 "active": s.active,
                 "mons": [{"id": m.entry["id"], "name": m.name, "hp": m.hp, "maxhp": m.maxhp,
+                          "level": m.member.level,
                           "frac": round(m.hp_frac(), 4), "status": m.status, "fainted": m.fainted,
                           "types": m.types, "item": m.member.item_name(self.dex) if m.item != "none" else "",
                           "ability": AB.ability_name(m.ability) if viewer in (None, s.index) else "",
@@ -215,10 +233,12 @@ class TurnBattle:
             lock = f"{item} locks {mon.name} into {mon.moves[mon.choice_lock]['name']} - switch out to pick another move"
         elif v["taunt"] > 0:
             lock = f"{mon.name} is taunted - no status moves"
-        return {"kind": "move", "moves": moves, "can_mega": mon.can_mega and not s.mega_used,
-                "can_gmax": mon.can_gmax and not s.gmax_used and not mon.can_mega,
+        g = self.gimmicks
+        return {"kind": "move", "moves": moves, "can_mega": g and mon.can_mega and not s.mega_used,
+                "can_gmax": g and mon.can_gmax and not s.gmax_used and not mon.can_mega,
                 "gmax_move": mon.gmax_move()[0] if mon.gmax_form else None,
-                "can_tera": not s.tera_used and not mon.megaed and not mon.can_mega and not mon.gmaxed,
+                "can_tera": g and not s.tera_used and not mon.megaed and not mon.can_mega and not mon.gmaxed,
+                "wild": self.wild and side == 0, "bag": self.bag and side == 0,
                 "tera_type": mon.tera_type,
                 "switches": [] if forced else s.bench(), "forced": forced, "lock": lock}
 
@@ -229,6 +249,18 @@ class TurnBattle:
             return c.get("index") in req["switches"]
         if c.get("type") == "move" and req["kind"] == "move":
             return any(m["slot"] == c.get("slot") and not m["disabled"] for m in req["moves"])
+        if req["kind"] != "move":
+            return False
+        if c.get("type") in ("ball", "run"):
+            return req.get("wild") and (c["type"] == "run" or c.get("ball") in BALLS)
+        if c.get("type") == "item":
+            mons = self.sides[0].mons
+            i = c.get("index")
+            if not req.get("bag") or c.get("item") not in MEDICINE or not isinstance(i, int) or \
+                    not 0 <= i < len(mons):
+                return False
+            revive = MEDICINE[c["item"]][3]
+            return mons[i].fainted == revive
         return False
 
     def _speed(self, side):
@@ -241,7 +273,9 @@ class TurnBattle:
     def _order(self, actions):
         def key(a):
             kind, side, arg = a
-            if kind == "switch":
+            if kind in ("ball", "run", "item"):
+                pri = 8
+            elif kind == "switch":
                 pri = 7
             elif kind in ("mega", "tera", "gmax"):
                 pri = 6
@@ -265,7 +299,11 @@ class TurnBattle:
             s = self.sides[side]
             if self.over:
                 return
-            if kind == "switch":
+            if kind in ("ball", "run", "item"):
+                {"ball": self._throw_ball, "run": self._run_away, "item": self._use_item}[kind](side, arg)
+                if self.over:
+                    return
+            elif kind == "switch":
                 self._switch_out(side)
                 self._switch_in(side, arg)
                 self._after_switch_ins([side])
@@ -305,6 +343,65 @@ class TurnBattle:
             v["moved"] = False
             v["flinch"] = False
             self.pending[side] = "move"
+
+    # ------------------------------------------------------------------ Adventure: balls, running, items
+    def _throw_ball(self, side, c):
+        name, mult = BALLS[c["ball"]]
+        foe = self.sides[1 - side].mon
+        self.emit(f"You threw a {name}!", ["ball", 1 - side, c["ball"]])
+        rate = foe.base_entry.get("catch", 45)
+        st = 2.5 if foe.status in ("slp", "frz") else 1.5 if foe.status else 1.0
+        a = (3 * foe.maxhp - 2 * foe.hp) * rate * mult / (3 * foe.maxhp) * st
+        if a >= 255:
+            shakes, caught = 3, True
+        else:
+            b = 65536 / (255 / max(1.0, a)) ** 0.1875
+            shakes = 0
+            while shakes < 4 and self.rng.random() * 65536 < b:
+                shakes += 1
+            caught = shakes >= 4
+            shakes = min(3, shakes)
+        self.emit("", ["shake", 1 - side, shakes, caught])
+        if caught:
+            self.caught = self.sides[1 - side].active
+            self.over, self.winner = True, side
+            self.pending, self.queue = {}, []
+            self.emit(f"Gotcha! {foe.name} was caught!", ["caught", 1 - side])
+        else:
+            self.emit(["Oh no! The Pokemon broke free!", "Aww! It appeared to be caught!",
+                       "Aargh! Almost had it!", "Shoot! It was so close, too!"][shakes], ["breakfree", 1 - side])
+
+    def _run_away(self, side, c):
+        me, foe = self.sides[side].mon, self.sides[1 - side].mon
+        self.run_tries += 1
+        a, b = me.stat("spe"), max(1, foe.stat("spe"))
+        if a >= b or self.rng.random() * 256 < (a * 128 / b + 30 * self.run_tries) % 256:
+            self.ran = True
+            self.over, self.winner = True, None
+            self.pending, self.queue = {}, []
+            self.emit("Got away safely!", ["run", side])
+        else:
+            self.emit("You couldn't get away!")
+
+    def _use_item(self, side, c):
+        name, heal, cure, revive = MEDICINE[c["item"]]
+        s = self.sides[side]
+        mon = s.mons[c["index"]]
+        self.emit(f"You used a {name} on {mon.name}!", ["item", side])
+        if revive:
+            if not mon.fainted:
+                return
+            mon.fainted = False
+            mon.hp = max(1, int(mon.maxhp * heal))
+            self.emit(f"{mon.name} was revived!")
+        elif heal:
+            got = mon.heal(mon.maxhp if heal < 0 else heal)
+            if got:
+                self.emit(f"{mon.name} recovered {got} HP!",
+                          ["hp", side, round(mon.hp_frac(), 4)] if mon is s.mon else None)
+        if cure and mon.status:
+            mon.status, mon.toxic_n = None, 0
+            self.emit(f"{mon.name} was cured!", ["status", side, None] if mon is s.mon else None)
 
     def _check_over(self):
         alive = [bool(s.alive()) for s in self.sides]

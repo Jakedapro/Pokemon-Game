@@ -130,6 +130,26 @@ Tournaments: `{"title": "Legends Cup", "mode": "tournament", "size": 8, "pokemon
 - **Replays:** every battle is saved automatically (a few KB each). Open **REPLAYS** to rewatch at any speed (+/-) or **EXPORT MP4**.
 - **Settings:** music, sound effect and cry volume; your name; your win/loss record vs each friend and bot level.
 
+## Adventure mode
+
+A proper Pokemon journey through the Brawl region:
+
+- **Start:** Professor Hazel's intro, pick your name and a starter (any generation's three starters).
+- **Explore:** walk the map with the arrow keys or WASD (Shift to run, Space to talk, Esc for the menu). Your
+  lead Pokemon follows you around. Nine towns, eight routes, Victory Road and the Pokemon League.
+- **Wild Pokemon:** they jump out of the tall grass. Weaken them, then throw a Poke Ball (Bag in battle), or run.
+  Catch rates and ball wobbles work like the real games. Rare legendaries hide on the later routes, and
+  catching one also adds it to your Legend collection. Shinies are 1 in 512.
+- **Levels:** Pokemon gain experience, level up, learn their real level-up moves and evolve with an evolution
+  scene. The rest of your party gets half experience (like an Exp. Share).
+- **Trainers:** they battle you when you walk into their line of sight, and pay you when you win.
+- **Towns:** the Pokemon Center heals your team, the Poke Mart sells balls and medicine (better stock as you
+  earn badges), and each gym leader gives a badge. You can't pass a town until you've beaten its gym.
+- **The League:** with all 8 badges, challenge Champion Aurelia and enter the Hall of Fame.
+- **Menu:** party (summary, stats, moves, Box), bag, Pokedex, trainer card with your badges, save. The game
+  also saves itself when you change area or finish a battle. Losing a battle sends you back to the last
+  Pokemon Center with half your money.
+
 ## Ranks, legends and the Pokedex
 
 - **Ranks:** every battle earns or costs rank points (more for harder bots and PvP, bonus for win streaks).

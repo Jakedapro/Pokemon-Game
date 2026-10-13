@@ -93,6 +93,9 @@ class Member:
         self.level = level
         self.ability = ability          # ability key; None = the species' best ability
         self.tera = tera                # Tera type; None = its first type
+        self.cur_hp = None
+        self.status = None
+        self.pp = None
 
     def to_dict(self):
         return {"species": self.species, "moves": self.moves, "item": self.item, "nature": self.nature,
@@ -101,8 +104,12 @@ class Member:
 
     @classmethod
     def from_dict(cls, d):
-        return cls(d["species"], d.get("moves", []), d.get("item", "none"), d.get("nature", "Serious"),
-                   d.get("evs"), d.get("mega"), d.get("level", 100), d.get("ability"), d.get("tera"))
+        m = cls(d["species"], d.get("moves", []), d.get("item", "none"), d.get("nature", "Serious"),
+                d.get("evs"), d.get("mega"), d.get("level", 100), d.get("ability"), d.get("tera"))
+        m.cur_hp = d.get("cur_hp")      # Adventure: HP carried between battles (None = full)
+        m.status = d.get("status")
+        m.pp = d.get("pp")
+        return m
 
     def item_name(self, dex):
         if self.item == "mega-stone" and self.mega and self.mega in dex.all:

@@ -51,6 +51,12 @@ class Mon:
         self.tera_type = member.tera or self.entry["types"][0]
         self.terastallized = False
         self.type_override = None
+        if getattr(member, "cur_hp", None) is not None:   # Adventure: damage carried over
+            self.hp = max(0, min(self.maxhp, int(member.cur_hp)))
+            self.fainted = self.hp <= 0
+            self.status = member.status if not self.fainted else None
+        if getattr(member, "pp", None):
+            self.pp = [min(m["pp"], p) for m, p in zip(self.moves, member.pp)] + self.pp[len(member.pp):]
 
     # --------------------------------------------------------------- info
     @property

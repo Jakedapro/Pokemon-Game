@@ -152,3 +152,29 @@ def test_ranks_and_legend_collection(dex, tmp_path, monkeypatch):
     assert all(dex.get(k)["legendary"] or dex.get(k)["mythical"] for k in data["legends"])
     lost = profile.record("bots", "insane", False, dex, rng)
     assert lost["delta"] < 0 and lost["encounter"] is None and lost["streak"] == -1
+
+
+def test_adventure_world_and_progress(dex, tmp_path, monkeypatch):
+    from pokebrawl import adventure as A
+    from pokebrawl.adventure_battle import AdventureSession
+    monkeypatch.setattr(A, "SAVE_FILE", str(tmp_path / "adv.json"))
+    w = A.World(dex)
+    assert len(w.areas) == 19 and w.areas[0]["kind"] == "town" and w.areas[1]["kind"] == "route"
+    for a in w.areas:  # every map is 15 wide and the exits line up
+        assert all(len(r) == A.COLS for r in a["rows"])
+        if a["kind"] == "route":
+            assert all(a["rows"][y][7] in '="' for y in (0, len(a["rows"]) - 1))
+    g = A.new_game("Red", 4, dex)
+    mon = g["party"][0]
+    events = A.gain_xp(dex, mon, A.xp_for(16) - mon["xp"])
+    assert ("evolve", 5) in events and mon["level"] == 16
+    # a wild battle where we just throw Master Balls: always caught
+    g["bag"]["master-ball"] = 1
+    foe = A.make_mon(dex, dex.get("pidgey"), 4, random.Random(1))
+    s = AdventureSession(g, dex, [foe], "wild", seed=3)
+    assert s.choose({"type": "ball", "ball": "master-ball"})
+    r = s.results()
+    assert r["caught"] and r["caught"]["species"] == foe["species"] and "master-ball" not in g["bag"]
+    assert A.add_caught(g, dex, r["caught"]) == "party"
+    A.save(g)
+    assert A.load()["party"][1]["species"] == foe["species"]

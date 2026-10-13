@@ -75,6 +75,13 @@ class TurnBattleScene(Scene):
         self.end_btns = self.x.end_buttons(640)
         self.timer = None  # online: seconds left to choose
         self.pending_updates = []
+        self.adventure = getattr(session, "adventure", False)
+        self.bag_open = False     # Adventure: the bag overlay
+        self.bag_pick = None      # a medicine waiting for "use on which Pokemon?"
+        self.bag_btns = []
+        self.bag_btn = self.run_btn = None
+        self.catch = None         # Poke Ball throw: {"t", "ball", "shakes", "caught", "broke"}
+        self.end_wait = 0.0
 
     def close(self):
         self.s.close()
@@ -99,6 +106,13 @@ class TurnBattleScene(Scene):
             AUDIO.music("battle")
         self.t += dt
         self.weather.update(dt, self.state["weather"] if self.state else None)
+        if self.catch is not None:
+            self.catch["t"] += dt
+        if self.adventure and self._finished():
+            self.end_wait += dt
+            if self.end_wait > 1.0:
+                self.app.pop()
+            return
         if self._finished() and self.state and self.state["over"]:
             self.x.finish(self.state["winner"])
             self.end_btns = self.x.end_buttons(640)
@@ -167,6 +181,10 @@ class TurnBattleScene(Scene):
             dur = 0.95 if self.cur["t"] else 0.45
             if a[0] == "turn":
                 dur = 0.3
+            elif a[0] == "ball":
+                dur = 0.9
+            elif a[0] == "shake":
+                dur = 0.5 + 0.75 * a[2]
             dur /= getattr(self, "anim_speed", 1.0)
             if self.cur_t >= dur:
                 self.cur = None
@@ -234,6 +252,22 @@ class TurnBattleScene(Scene):
         elif kind == "end":
             AUDIO.music(None)
             AUDIO.play("win" if a[1] == self.me else "lose")
+        if kind == "ball":
+            self.catch = {"t": 0.0, "ball": a[2], "shakes": 0, "caught": False, "broke": False, "shake_t": None}
+            AUDIO.play("ball", 0.8)
+        elif kind == "shake" and self.catch is not None:
+            self.catch.update(shakes=a[2], caught=a[3], shake_t=self.catch["t"])
+        elif kind == "caught" and self.catch is not None:
+            AUDIO.play("catch")
+        elif kind == "breakfree" and self.catch is not None:
+            self.catch["broke"] = True
+            self.catch["broke_t"] = self.catch["t"]
+            self.flash[a[1]] = 0.4
+            AUDIO.play("ball", 0.6)
+        elif kind == "run":
+            AUDIO.play("select")
+        elif kind == "item":
+            AUDIO.play("heal", 0.6)
         if kind == "crit":
             self._pop(a[1], "CRITICAL HIT!", (255, 120, 70), 30, -60)
             self.quake = max(self.quake, 0.35)
@@ -356,6 +390,12 @@ class TurnBattleScene(Scene):
                 self.mega_btn = ui.Button((20, 1150, 160, 100), label if on else (label if len(opts) == 1 else
                                                                                   "Gimmick"),
                                           col if on else ui.PANEL2, 26, sub if on else "off")
+        self.bag_btn = self.run_btn = None
+        if self.adventure and req and req["kind"] == "move":
+            wild = req.get("wild")
+            self.bag_btn = ui.Button((20, 1150, 84 if wild else 170, 100), "Bag", (190, 120, 40), 24)
+            if wild:
+                self.run_btn = ui.Button((112, 1150, 78, 100), "Run", (70, 80, 100), 24)
         if self.state and req:
             sd = self.state["sides"][self.me]
             allowed = set(req.get("switches", []))
@@ -364,7 +404,10 @@ class TurnBattleScene(Scene):
                 x = x0 + i * ((W - 20 - x0) // 6)
                 self.party_btns.append((pygame.Rect(x, 1150, (W - 20 - x0) // 6 - 8, 100), i, i in allowed, m))
         self.buttons = self.move_btns + ([self.mega_btn] if self.mega_btn else []) + \
-            (self.end_btns if self._finished() else [])
+            [b for b in (self.bag_btn, self.run_btn) if b] + \
+            (self.end_btns if self._finished() and not self.adventure else [])
+        if self.bag_open:
+            self.buttons = list(self.bag_btns)
 
     def _finished(self):
         return (self.state and self.state["over"] and not self._busy()) or (self.s.error and not self._busy())
@@ -377,6 +420,28 @@ class TurnBattleScene(Scene):
             return
         if self.x.handle(ev, pos):
             return
+        if self.adventure:
+            if self._finished():
+                return
+            if self.bag_open:
+                self._bag_handle(ev, pos)
+                return
+            if ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE:
+                return     # no quitting out of an Adventure battle
+            if ev.type == pygame.KEYDOWN and self.req and self.req["kind"] == "move" and not self._busy():
+                if ev.key == pygame.K_b:
+                    self._open_bag()
+                    return
+                if ev.key == pygame.K_r and self.req.get("wild"):
+                    self._send({"type": "run"})
+                    return
+            if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1 and pos and not self._busy():
+                if self.bag_btn and self.bag_btn.hit(pos):
+                    self._open_bag()
+                    return
+                if self.run_btn and self.run_btn.hit(pos):
+                    self._send({"type": "run"})
+                    return
         if self._finished():
             if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
                 for b in self.end_btns:
@@ -416,6 +481,122 @@ class TurnBattleScene(Scene):
             if ok and rect.collidepoint(pos):
                 self._send({"type": "switch", "index": i})
                 return
+
+    # ------------------------------------------------------------------ Adventure: the bag
+    def _open_bag(self):
+        self.bag_open = True
+        self.bag_pick = None
+        self._bag_layout()
+
+    def _bag_layout(self):
+        self.bag_btns = []
+        if self.bag_pick is None:
+            items = self.s.bag_items()
+            for i, (key, name, n, kind) in enumerate(items[:10]):
+                col = (200, 60, 70) if kind == "ball" else (60, 150, 90) if kind == "heal" else (190, 140, 40)
+                self.bag_btns.append(ui.Button((60 + (i % 2) * 305, 330 + (i // 2) * 96, 295, 84), name, col, 24,
+                                               f"x{n}", tag=(key, kind)))
+        else:
+            mons = self.state["sides"][self.me]["mons"]
+            revive = self.bag_pick[1] == "revive"
+            for i, m in enumerate(mons):
+                ok = m["fainted"] == revive and (revive or m["frac"] < 1 or m["status"])
+                self.bag_btns.append(ui.Button((60, 330 + i * 92, 600, 82), m["name"], ui.SCREEN2, 24,
+                                               f"Lv {m.get('level', '')}  -  {m['hp']}/{m['maxhp']} HP" +
+                                               (f"  -  {m['status'].upper()}" if m["status"] else ""),
+                                               enabled=ok, tag=("mon", i)))
+        self.bag_btns.append(ui.Button((60, 1150, 600, 80), "Back", ui.PANEL2, 26, tag=("back", None)))
+
+    def _bag_handle(self, ev, pos):
+        if ev.type == pygame.KEYDOWN and ev.key in (pygame.K_ESCAPE, pygame.K_b):
+            self.bag_open = False
+            return
+        if ev.type != pygame.MOUSEBUTTONDOWN or ev.button != 1 or pos is None:
+            return
+        for b in self.bag_btns:
+            if not b.hit(pos):
+                continue
+            key, kind = b.tag
+            if key == "back":
+                if self.bag_pick is not None:
+                    self.bag_pick = None
+                    self._bag_layout()
+                else:
+                    self.bag_open = False
+            elif kind == "ball":
+                self.bag_open = False
+                self._send({"type": "ball", "ball": key})
+            elif key == "mon":
+                self.bag_open = False
+                self._send({"type": "item", "item": self.bag_pick[0], "index": kind})
+            else:
+                self.bag_pick = (key, kind)
+                self._bag_layout()
+            return
+
+    def _draw_bag(self, surf):
+        shade = pygame.Surface((W, H), pygame.SRCALPHA)
+        shade.fill((8, 10, 18, 215))
+        surf.blit(shade, (0, 0))
+        title = "Bag" if self.bag_pick is None else "Use on which Pokemon?"
+        gfx.title_text(surf, title.upper(), (W / 2, 250), 44 if self.bag_pick is None else 34)
+        if self.bag_pick is None and len(self.bag_btns) == 1:
+            gfx.text(surf, "Your bag is empty. Buy items at a Poke Mart.", (W / 2, 420), 20, ui.MUTED, chunky=False)
+        for b in self.bag_btns:
+            b.draw(surf)
+            if b.tag[1] == "ball":
+                ball = gfx.ball_sprite(40)
+                surf.blit(ball, ball.get_rect(center=(b.rect.right - 34, b.rect.centery - 4)))
+
+    def _draw_catch(self, surf):
+        """The thrown ball: arc to the foe, suck it in, drop, wobble, click (or burst open)."""
+        c = self.catch
+        t = c["t"]
+        fx, fy = FOE_POS[0], FOE_POS[1] - 60
+        ball = gfx.ball_sprite(36)
+        if t < 0.45:   # the throw
+            p = t / 0.45
+            x = 120 + (fx - 120) * p
+            y = 900 + (fy - 900) * p - math.sin(p * math.pi) * 260
+            img = pygame.transform.rotate(ball, -p * 1080)
+            surf.blit(img, img.get_rect(center=(x, y)))
+            return
+        if c["broke"] and t - c.get("broke_t", t) > 0.35:
+            self.catch = None
+            return
+        if t < 0.75:   # the flash that pulls it in
+            q = (t - 0.45) / 0.3
+            glow = pygame.Surface((W, H), pygame.SRCALPHA)
+            pygame.draw.circle(glow, (255, 120, 140, int(200 * (1 - q))), (fx, fy), int(30 + 90 * (1 - q)))
+            surf.blit(glow, (0, 0))
+        drop = min(1.0, max(0.0, (t - 0.6) / 0.25))
+        y = fy + drop * 80 - abs(math.sin(drop * math.pi * 2)) * 30 * (1 - drop)
+        ang = 0.0
+        st = c.get("shake_t")
+        if st is not None and not c["broke"]:
+            q = t - st - 0.3
+            k = int(q // 0.75) if q > 0 else -1
+            if 0 <= k < c["shakes"] and (q % 0.75) < 0.45:
+                ang = math.sin((q % 0.75) / 0.45 * math.tau) * 24
+        if c["broke"]:
+            q = (t - c["broke_t"]) / 0.35
+            burst = pygame.Surface((W, H), pygame.SRCALPHA)
+            pygame.draw.circle(burst, (255, 255, 255, int(220 * (1 - q))), (fx, int(y)), int(40 + 120 * q))
+            surf.blit(burst, (0, 0))
+            return
+        img = pygame.transform.rotate(ball, ang)
+        surf.blit(img, img.get_rect(center=(fx, y)))
+        if c["caught"] and st is not None and t - st > 0.3 + 0.75 * c["shakes"]:
+            q = min(1.0, (t - st - 0.3 - 0.75 * c["shakes"]) / 0.4)
+            for k in range(3):
+                a = -math.pi / 2 + (k - 1) * 0.7
+                d = 30 + 40 * q
+                pygame.draw.circle(surf, (255, 230, 120), (int(fx + math.cos(a) * d), int(y + math.sin(a) * d)), 6)
+
+    def _foe_hidden(self):
+        """While the foe is inside a thrown ball."""
+        c = self.catch
+        return c is not None and c["t"] > 0.6 and not (c["broke"] and c["t"] - c.get("broke_t", 0) > 0.05)
 
     @staticmethod
     def _gimmicks(req):
@@ -481,7 +662,11 @@ class TurnBattleScene(Scene):
         if self.state:
             self._draw_field_info(surf)
             for side in (self.foe, self.me):
+                if side == self.foe and self._foe_hidden():
+                    continue
                 self._draw_mon(surf, side)
+            if self.catch is not None:
+                self._draw_catch(surf)
             self.weather.draw_front(surf)
             if self.attack is not None:
                 self.attack[0].draw(surf, self.attack[1] / 0.55)
@@ -498,6 +683,9 @@ class TurnBattleScene(Scene):
         self._draw_move_buttons(surf)
         if self.mega_btn:
             self.mega_btn.draw(surf)
+        for b in (self.bag_btn, self.run_btn):
+            if b:
+                b.draw(surf)
         for rect, i, ok, m in self.party_btns:
             col = (60, 56, 80) if ok else (36, 34, 44)
             pygame.draw.rect(surf, INK, rect.inflate(4, 4), border_radius=10)
@@ -511,9 +699,11 @@ class TurnBattleScene(Scene):
         if self.req and self.req["kind"] == "move" and not self._busy() and self.req.get("lock"):
             gfx.text(surf, self.req["lock"], (40, 922), 15, (255, 210, 120), anchor="midleft", ow=1, chunky=False)
         elif self.req and self.req["kind"] == "move" and not self._busy():
-            gfx.text(surf, "Pick a move (1-4)  -  tap a Pokemon below to switch  -  M = Mega, T = Tera", (40, 922), 14,
-                     ui.MUTED, anchor="midleft", ow=1, chunky=False)
-        if self._finished():
+            hint = "Pick a move (1-4)  -  B = Bag" + ("  -  R = Run" if self.req.get("wild") else "") + \
+                "  -  tap a Pokemon to switch" if self.adventure else \
+                "Pick a move (1-4)  -  tap a Pokemon below to switch  -  M = Mega, T = Tera"
+            gfx.text(surf, hint, (40, 922), 14, ui.MUTED, anchor="midleft", ow=1, chunky=False)
+        if self._finished() and not self.adventure:
             shade = pygame.Surface((W, H), pygame.SRCALPHA)
             shade.fill((0, 0, 0, 150))
             surf.blit(shade, (0, 0))
@@ -530,6 +720,8 @@ class TurnBattleScene(Scene):
                 draw_rank_change(surf, self.x.outcome, (W / 2, 466), self.x.outcome_t)
             for b in self.end_btns:
                 b.draw(surf)
+        if self.bag_open:
+            self._draw_bag(surf)
         for text, x, y, col, size, life in self.pops:
             k = min(1.0, (1.1 - life) / 0.12)
             gfx.text(surf, text, (x, y), size, col, INK, 3, alpha=int(255 * min(1.0, life / 0.3)))
@@ -651,6 +843,9 @@ class TurnBattleScene(Scene):
         while size > 15 and gfx.font(size, True).size(name)[0] > 320 - tw:
             size -= 2
         gfx.text(surf, name, (x + 16, y + 24), size, INK, None, anchor="midleft")
+        if info.get("level") and self.adventure:
+            nw = gfx.font(size, True).size(name)[0]
+            gfx.text(surf, f"Lv{info['level']}", (x + 24 + nw, y + 26), 16, (70, 70, 80), None, anchor="midleft")
         if v.get("tera"):
             gfx.pill(surf, "TERA", (x + 344 - tw - 26, y + 22), (40, 40, 60), 11)
         if v.get("status"):

@@ -236,12 +236,14 @@ class MainMenu(Scene):
         super().__init__(app)
         x, w = 60, 600
         self.buttons = [
-            ui.Button((x, 236, w, 176), "Practice", ui.SHELL, 46, "Turn-based battles against a bot",
+            ui.Button((x, 236, w, 140), "Adventure", (232, 150, 40), 44, "Catch Pokemon, beat 8 gyms, become Champion",
+                      tag="adventure", icon=25),
+            ui.Button((x, 392, w, 140), "Practice", ui.SHELL, 44, "Turn-based battles against a bot",
                       tag="practice", icon=6),
-            ui.Button((x, 440, w, 176), "Showcase", (38, 104, 188), 46, "Mass battles and royales for your videos",
+            ui.Button((x, 548, w, 140), "Showcase", (38, 104, 188), 44, "Mass battles and royales for your videos",
                       tag="showcase", icon=384),
-            ui.Button((x, 644, w, 176), "PvP", (34, 140, 88), 46, "Battle your friends with a room code",
-                      tag="pvp", icon=25),
+            ui.Button((x, 704, w, 140), "PvP", (34, 140, 88), 44, "Battle your friends with a room code",
+                      tag="pvp", icon=448),
             ui.Button((x, 860, 190, 100), "Teams", ui.SCREEN2, 28, tag="teams"),
             ui.Button((x + 205, 860, 190, 100), "Pokedex", ui.SCREEN2, 28, tag="dex"),
             ui.Button((x + 410, 860, 190, 100), "Replays", ui.SCREEN2, 28, tag="replays"),
@@ -322,7 +324,10 @@ class MainMenu(Scene):
             self.app.running = False
 
     def go(self, tag):
-        if tag == "practice":
+        if tag == "adventure":
+            from .adventure_ui import AdventureTitle
+            self.app.push(AdventureTitle(self.app))
+        elif tag == "practice":
             self.app.push(PracticeSetup(self.app))
         elif tag == "showcase":
             from .showcase_ui import ShowcaseMenu
