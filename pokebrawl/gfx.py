@@ -37,10 +37,14 @@ def new_surface(size, alpha=False):
 
 # ---------------------------------------------------------------------------- display
 class Display:
-    """Renders to a fixed 720x1280 canvas and scales it into a resizable window (letterboxed)."""
+    """Renders to a fixed 720x1280 canvas and scales it into the window or full screen. The game keeps its
+    9:16 shape in the middle; the space around it shows a blurred, dimmed copy of the game."""
 
-    def __init__(self, headless=False, title="PokeBrawl"):
+    def __init__(self, headless=False, title="PokeBrawl", fullscreen=False):
         self.headless = headless
+        self.fullscreen = False
+        self._backdrop = None
+        self._frame = 0
         if headless:
             os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
         pygame.init()
@@ -48,14 +52,32 @@ class Display:
         if headless:
             self.window = pygame.display.set_mode((W, H))
         else:
-            try:
-                dw, dh = pygame.display.get_desktop_sizes()[0]
-            except Exception:
-                dw, dh = 1280, 800
-            scale = min((dh - 90) / H, (dw - 40) / W, 1.0)
-            self.window = pygame.display.set_mode((int(W * scale), int(H * scale)), pygame.RESIZABLE)
+            self.set_fullscreen(fullscreen)
         self.canvas = new_surface((W, H))
         self._rect = pygame.Rect(0, 0, W, H)
+
+    def set_fullscreen(self, on):
+        if self.headless:
+            return
+        self._backdrop = None
+        if on:
+            try:
+                self.window = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+                self.fullscreen = True
+                return
+            except pygame.error:
+                pass
+        try:
+            dw, dh = pygame.display.get_desktop_sizes()[0]
+        except Exception:
+            dw, dh = 1280, 800
+        scale = min((dh - 90) / H, (dw - 40) / W, 1.0)
+        self.window = pygame.display.set_mode((int(W * scale), int(H * scale)), pygame.RESIZABLE)
+        self.fullscreen = False
+
+    def toggle_fullscreen(self):
+        self.set_fullscreen(not self.fullscreen)
+        return self.fullscreen
 
     def present(self):
         if self.headless:
@@ -64,7 +86,23 @@ class Display:
         s = min(ww / W, wh / H)
         size = (max(1, int(W * s)), max(1, int(H * s)))
         self._rect = pygame.Rect((ww - size[0]) // 2, (wh - size[1]) // 2, *size)
-        self.window.fill((12, 12, 16))
+        if size[0] < ww - 4 or size[1] < wh - 4:
+            # side space: a blurred, darkened copy of the game (refreshed a few times a second - cheap)
+            self._frame += 1
+            if self._backdrop is None or self._backdrop.get_size() != (ww, wh) or self._frame % 8 == 0:
+                tiny = pygame.transform.smoothscale(self.canvas, (9, 16))
+                cover = max(ww / 9, wh / 16)
+                bd = pygame.transform.smoothscale(tiny, (int(9 * cover) + 1, int(16 * cover) + 1))
+                dim = pygame.Surface(bd.get_size())
+                dim.fill((95, 95, 110))
+                bd.blit(dim, (0, 0), special_flags=pygame.BLEND_MULT)
+                self._backdrop = pygame.Surface((ww, wh))
+                self._backdrop.blit(bd, bd.get_rect(center=(ww // 2, wh // 2)))
+            self.window.blit(self._backdrop, (0, 0))
+            shadow = self._rect.inflate(24, 24)
+            pygame.draw.rect(self.window, (0, 0, 0), shadow, border_radius=14)
+        else:
+            self.window.fill((12, 12, 16))
         self.window.blit(pygame.transform.smoothscale(self.canvas, size), self._rect)
         pygame.display.flip()
 

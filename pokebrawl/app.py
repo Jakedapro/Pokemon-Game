@@ -52,13 +52,14 @@ class Scene:
 
 class App:
     def __init__(self, headless=False):
-        self.display = gfx.Display(headless=headless, title="PokeBrawl")
+        self.settings = load_settings()
+        self.display = gfx.Display(headless=headless, title="PokeBrawl",
+                                   fullscreen=self.settings.get("fullscreen", "On") == "On")
         self.clock = pygame.time.Clock()
         self.stack = []
         self.dex = None
         self.running = True
         self.t = 0.0
-        self.settings = load_settings()
         pygame.key.set_repeat(350, 35)
         AUDIO.init(self.settings, headless=headless)
 
@@ -88,6 +89,13 @@ class App:
             for ev in pygame.event.get():
                 if ev.type == pygame.QUIT:
                     self.running = False
+                if ev.type == pygame.KEYDOWN and (ev.key == pygame.K_F11 or (
+                        ev.key == pygame.K_f and ev.mod & (pygame.KMOD_META | pygame.KMOD_CTRL)) or (
+                        ev.key == pygame.K_RETURN and ev.mod & pygame.KMOD_ALT)):
+                    on = self.display.toggle_fullscreen()
+                    self.settings["fullscreen"] = "On" if on else "Off"
+                    save_settings(self.settings)
+                    continue
                 pos = None
                 if hasattr(ev, "pos"):
                     pos = self.display.to_canvas(ev.pos)

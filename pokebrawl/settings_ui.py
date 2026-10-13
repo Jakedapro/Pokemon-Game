@@ -20,7 +20,10 @@ class SettingsScene(Scene):
         self.sfx.set(round(AUDIO.sfx_vol, 1))
         self.cry = ui.Cycle((60, 342, 600, 62), "Pokemon cries", LEVELS, fmt=pct)
         self.cry.set(round(AUDIO.cry_vol, 1))
-        self.auto = ui.Cycle((60, 418, 600, 62), "Auto-update", ["On", "Off"])
+        self.auto = ui.Cycle((60, 418, 290, 62), "Auto-update", ["On", "Off"])
+        self.full = ui.Cycle((370, 418, 290, 62), "Fullscreen", ["On", "Off"])
+        self.full.set("On" if app.display.fullscreen or (app.display.headless and s.get("fullscreen", "On") == "On")
+                      else "Off")
         self.auto.set(s.get("auto_update", "On"))
         self.name = ui.TextInput((60, 514, 600, 56), "Your name (shown to friends)", s.get("name", "Trainer"))
         self.buttons = [ui.Button((40, 1160, 200, 70), "BACK", ui.PANEL2, 24)]
@@ -29,7 +32,8 @@ class SettingsScene(Scene):
     def _save(self):
         s = self.app.settings
         s.update(music_vol=self.music.value, sfx_vol=self.sfx.value, cry_vol=self.cry.value,
-                 name=self.name.value.strip()[:16] or "Trainer", auto_update=self.auto.value)
+                 name=self.name.value.strip()[:16] or "Trainer", auto_update=self.auto.value,
+                 fullscreen=self.full.value)
         save_settings(s)
 
     def handle(self, ev, pos):
@@ -43,6 +47,9 @@ class SettingsScene(Scene):
             return
         if self.auto.click(pos):
             self._save()
+        if self.full.click(pos):
+            self.app.display.set_fullscreen(self.full.value == "On")
+            self._save()
         if self.music.click(pos) or self.sfx.click(pos) or self.cry.click(pos):
             AUDIO.set_volumes(sfx=self.sfx.value, music=self.music.value, cry=self.cry.value)
             AUDIO.play("select")
@@ -54,7 +61,7 @@ class SettingsScene(Scene):
     def draw(self, surf):
         ui.menu_background(surf, self.app.t)
         ui.header(surf, "SETTINGS")
-        for c in (self.music, self.sfx, self.cry, self.auto):
+        for c in (self.music, self.sfx, self.cry, self.auto, self.full):
             c.draw(surf)
         self.name.draw(surf)
         ui.panel(surf, (60, 590, 600, 530))
