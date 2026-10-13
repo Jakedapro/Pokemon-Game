@@ -113,6 +113,8 @@ class TurnBattleScene(Scene):
         for side in (0, 1):
             self.shake[side] = max(0.0, self.shake[side] - dt)
             self.flash[side] = max(0.0, self.flash[side] - dt)
+            if 0 < self.faint[side] <= 0.6:  # time-based so it always finishes before the next Pokemon comes out
+                self.faint[side] += dt * 1.5
             if side in self.sendout:
                 self.sendout[side] += dt
             v = self.vis.get(side)
@@ -536,7 +538,6 @@ class TurnBattleScene(Scene):
         if not v or "id" not in v:
             return
         if self.faint[side] > 0:
-            self.faint[side] += 1 / 60
             if self.faint[side] > 0.6:
                 return
         mine = side == self.me
@@ -576,8 +577,14 @@ class TurnBattleScene(Scene):
         pygame.draw.circle(glow, (255, 255, 255, int(200 * (1 - q))), (int(x), int(cy)), r)
         surf.blit(glow, (0, 0))
         scale = 0.15 + 0.85 * (1 - (1 - q) ** 3)
-        img = SPRITES.get(v["id"], max(8, int(hgt * scale) // 8 * 8), back=mine, white=round(max(0.0, 1 - q * 1.6), 1))
+        full = SPRITES.get(v["id"], hgt, back=mine)
+        img = gfx.rescale(full, (max(2, full.get_width() * scale), max(2, full.get_height() * scale)))
         surf.blit(img, img.get_rect(midbottom=(x, y + 30)))
+        whiten = max(0.0, 1 - q * 1.6)
+        if whiten > 0:  # it comes out of the light: a white cut-out fading away on top
+            sil = gfx.silhouette(img, (255, 255, 255))
+            sil.set_alpha(int(255 * whiten))
+            surf.blit(sil, sil.get_rect(midbottom=(x, y + 30)))
 
     def _draw_hp_box(self, surf, side, pos):
         v = self.vis.get(side)

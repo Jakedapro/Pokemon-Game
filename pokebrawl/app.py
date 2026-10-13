@@ -162,6 +162,8 @@ class PrefetchScene(Scene):
             self.done, self.total = d, t
         pokedex.prefetch(ids, prog)
         pokedex.ensure_item("poke-ball")
+        for pid in ids:  # back sprites too (your side), so send-outs don't freeze while downloading
+            pokedex.ensure_back_sprite(pid)
         from .audio import prefetch_cries
         prefetch_cries(ids)
         self.finished = True

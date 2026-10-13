@@ -476,6 +476,23 @@ def prefetch(ids, progress=None, workers=24):
                 progress(done, len(ids))
 
 
+BACK_SPRITE_URL = "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/back/{}.png"
+
+
+def ensure_back_sprite(pid):
+    """Download the back sprite (how your own Pokemon is shown in 1v1s) so its first send-out doesn't stall."""
+    path = os.path.join(SPRITE_DIR, f"back-{pid}.png")
+    if not os.path.exists(path):
+        try:
+            data = fetch(BACK_SPRITE_URL.format(pid), timeout=10)
+            os.makedirs(SPRITE_DIR, exist_ok=True)
+            with open(path, "wb") as f:
+                f.write(data)
+        except Exception:  # noqa: BLE001 - falls back to the front sprite, as before
+            return None
+    return path
+
+
 def download_all():
     dex = load_dex()
     ensure_item("poke-ball")
