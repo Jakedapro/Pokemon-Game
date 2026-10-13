@@ -55,11 +55,12 @@ RANGES = {"melee": 0, "projectile": 280, "beam": 330, "aoe": 250, "boom": 70, "h
 class Unit:
     __slots__ = ("mon", "uid", "team", "x", "y", "vx", "vy", "r", "boss", "face", "target", "focus", "retarget",
                  "cd", "anim", "stun", "charging", "charge_move", "shield", "kinds", "dmg_scale", "goto",
-                 "goto_t", "queued", "status_t", "item_t", "spawn_t", "kills", "mega_at", "plan")
+                 "goto_t", "queued", "status_t", "item_t", "spawn_t", "kills", "mega_at", "plan", "storm")
 
     def __init__(self, mon, uid, team, x, y, r, boss, hp_mult):
         self.mon, self.uid, self.team = mon, uid, team
         self.x, self.y, self.vx, self.vy = x, y, 0.0, 0.0
+        self.storm = 0.0        # battle royale storm damage waiting to be applied
         self.r, self.boss = r, boss
         self.face = 1
         self.target = self.focus = None
@@ -118,6 +119,8 @@ class Sim:
         mega_limit     {team: max megas, None = unlimited}
         ai             {team: "easy" | "normal" | "hard" | "insane"}
         time_ramp      seconds after which damage ramps up to force an ending
+        zone           battle royale storm: {"start": s, "end": s, "min": radius} - a circle that shrinks in
+                       steps; anyone outside takes damage and runs back in
     """
 
     def __init__(self, dex, teams, seed=None, **opts):
@@ -137,6 +140,8 @@ class Sim:
         self.teras_used = {}
         self.domain = None     # "sea" (Primal Kyogre), "land" (Primal Groudon), "sky" (Mega Rayquaza)
         self.env_blasts = []   # [x, y, rad, frac, type, delay] - meteors etc. that hurt everyone
+        self.zone = None       # [cx, cy, radius] once the battle royale storm starts
+        self._zone_from = None
         self.tick = 0
         self.cmd_log = []      # [tick, team, cmd] - everything needed to replay the battle
         self.started = False
@@ -237,6 +242,47 @@ class Sim:
         self.env_blasts.append([x, y, rad, frac, mtype, delay])
         self.emit("aoe", round(x), round(y), round(rad), mtype, delay, "env")
 
+    ZONE_STEPS = 5
+
+    def _update_zone(self, dt):
+        z = self.opts.get("zone")
+        if not z:
+            return
+        start, end, rmin = z.get("start", 15), z.get("end", 95), z.get("min", 70)
+        if self.t < start:
+            return
+        full = math.hypot(ARENA[2] - ARENA[0], ARENA[3] - ARENA[1]) / 2 + 20
+        if self.zone is None:
+            # center drifts somewhere inside the middle of the arena, picked once
+            cx = (ARENA[0] + ARENA[2]) / 2 + self.rng.uniform(-90, 90)
+            cy = (ARENA[1] + ARENA[3]) / 2 + self.rng.uniform(-160, 160)
+            self.zone = [cx, cy, full]
+            self._zone_from = full
+            self.emit("zone", 1)
+        # shrink in steps: each step = hold, then close in
+        span = (end - start) / self.ZONE_STEPS
+        step = min(self.ZONE_STEPS - 1, int((self.t - start) / span))
+        within = (self.t - start) - step * span
+        r_from = full - (full - rmin) * step / self.ZONE_STEPS
+        r_to = full - (full - rmin) * (step + 1) / self.ZONE_STEPS
+        hold = span * 0.45
+        k = 0.0 if within < hold else min(1.0, (within - hold) / (span - hold))
+        # after the last step the storm keeps closing until nobody can hide
+        r = r_from + (r_to - r_from) * k if self.t < end else max(0.0, rmin * (1 - (self.t - end) / 15))
+        if k > 0 and self._zone_from != r_from:
+            self._zone_from = r_from
+            self.emit("zone", step + 2)
+        self.zone[2] = r
+        cx, cy = self.zone[0], self.zone[1]
+        for u in self.units:
+            if u.alive and math.hypot(u.x - cx, u.y - cy) > r:
+                # per-tick damage is under 1 HP, so build it up and apply whole points
+                u.storm += u.mon.maxhp * 0.10 * dt * (0.6 if u.boss else 1.0)
+                if u.storm >= 1:
+                    whole = int(u.storm)
+                    u.storm -= whole
+                    self._hurt(u, whole, None, chip=True, guard=False)  # Magic Guard doesn't stop the storm
+
     def set_domain(self, d):
         if d == self.domain:
             return
@@ -332,6 +378,7 @@ class Sim:
         self._update_projectiles(dt)
         self._update_blasts(dt)
         self._update_env(dt)
+        self._update_zone(dt)
         teams = self.alive_teams()
         if len(teams) <= 1:
             self.over = True
@@ -530,6 +577,14 @@ class Sim:
             if u.charging <= 0 and u.target and u.target.alive:
                 self._execute(u, u.charge_move, u.target, grid, charged=True)
             return
+        # battle royale: run back inside the storm circle
+        if self.zone and not u.goto:
+            zx, zy, zr = self.zone
+            d = math.hypot(u.x - zx, u.y - zy)
+            if d > zr * 0.92:
+                k = zr * 0.55 / max(d, 1)
+                u.goto = (zx + (u.x - zx) * k, zy + (u.y - zy) * k)
+                u.goto_t = 1.2
         # target
         u.retarget -= dt
         if u.target is None or not u.target.alive or u.retarget <= 0:
@@ -835,10 +890,10 @@ class Sim:
         if move["flinch"] and self.rng.random() * 100 < move["flinch"] * sec and AB.ab(tmon, mon) != "inner-focus":
             tgt.stun = max(tgt.stun, 0.35)
 
-    def _hurt(self, u, dmg, src, eff=1.0, crit=False, chip=False):
+    def _hurt(self, u, dmg, src, eff=1.0, crit=False, chip=False, guard=True):
         if not u.alive:
             return 0
-        if chip and AB.magic_guard(u.mon):
+        if chip and guard and AB.magic_guard(u.mon):
             return 0
         dealt = u.mon.take(dmg, from_full_ok=not chip, attacker=src.mon if src else None)
         if not chip:
@@ -854,7 +909,7 @@ class Sim:
             if kb and src.mon.apply_stages(kb):
                 self._ability_label(src)
                 self.emit("boost", src.uid, 1)
-        self.emit("faint", u.uid, round(u.x), round(u.y), u.mon.entry["id"])
+        self.emit("faint", u.uid, round(u.x), round(u.y), u.mon.entry["id"], src.uid if src else 0)
 
     # ------------------------------------------------------------------ output
     def snapshot(self):
@@ -873,7 +928,8 @@ class Sim:
         ev, self.events = self.events, []
         return {"t": round(self.t, 2), "u": units,
                 "p": [[round(p.x), round(p.y), p.move["type"]] for p in self.projectiles],
-                "e": ev, "w": self.weather, "over": self.over, "win": self.winner}
+                "e": ev, "w": self.weather, "over": self.over, "win": self.winner,
+                "z": [round(v, 1) for v in self.zone] if self.zone else None}
 
     def roster(self):
         """Static info sent once (move names per unit etc.)."""

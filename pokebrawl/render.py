@@ -78,6 +78,9 @@ class ArenaRenderer:
         self.shake = 0.0
         self.show_boss_bars = True
         self.smooth = False
+        self.zone = None        # battle royale storm [cx, cy, r]
+        self.kills = []         # (killer, victim, time) for the kill feed
+        self.gold_from = 2      # teams from here on are event bosses (gold outline)
         self.domain = None
         self._cracks = None
 
@@ -97,6 +100,7 @@ class ArenaRenderer:
                 del self.units[uid]
         self.projectiles = [] if snap.get("over") else snap["p"]
         self.weather = snap.get("w")
+        self.zone = snap.get("z")
         for ev in snap["e"]:
             self._event(ev)
 
@@ -181,8 +185,11 @@ class ArenaRenderer:
             self._burst(x, y, (120, 110, 110), 18, 120, 7, 1.0)
             self.shake = 0.35
         elif kind == "faint":
-            _, uid, x, y, form = ev
+            _, uid, x, y, form = ev[:5]
             u = self.units.get(uid)
+            if len(ev) > 5:
+                self.kills.append((self.unit_name(ev[5]) if ev[5] else "The storm", self.unit_name(uid), self.t))
+                self.kills = self.kills[-5:]
             r = u.r if u else 14
             face = u.face if u else 1
             team = u.team if u else 0
@@ -374,6 +381,7 @@ class ArenaRenderer:
             pygame.draw.rect(w, p.color, (int(p.x) - s // 2, int(p.y) - s // 2, s, s))
         self._draw_weather_over(w)
         self._draw_domain_over(w)
+        self._draw_zone(w)
         # camera
         r = self.view_rect()
         if self.shake > 0:
@@ -400,7 +408,7 @@ class ArenaRenderer:
         outline = None
         if self.mode == "team":
             outline = gfx.TEAM_COLORS[u.team % 4]
-        elif u.team >= 2:
+        elif u.team >= self.gold_from:
             outline = (255, 210, 60)  # event bosses (Arceus, primals...) glow gold
         elif u.flags & 1:
             outline = (230, 50, 50)
@@ -614,6 +622,24 @@ class ArenaRenderer:
             tint = pygame.Surface((W, H), pygame.SRCALPHA)
             tint.fill((60, 190, 120, 50))
             w.blit(tint, (0, 0))
+
+    def _draw_zone(self, w):
+        if not self.zone:
+            return
+        cx, cy, r = self.zone
+        storm = pygame.Surface((W, H), pygame.SRCALPHA)
+        storm.fill((90, 30, 140, 110))
+        pygame.draw.circle(storm, (0, 0, 0, 0), (int(cx), int(cy)), int(r))   # clear inside (no blending)
+        w.blit(storm, (0, 0))
+        pulse = 0.5 + 0.5 * math.sin(self.t * 5)
+        pygame.draw.circle(w, (200, 120, 255), (int(cx), int(cy)), int(r), 4)
+        pygame.draw.circle(w, (255, 220, 255), (int(cx), int(cy)), int(r + 3 + pulse * 3), 1)
+        for i in range(24):  # crackles on the storm wall
+            a = i / 24 * math.tau + self.t * 0.4
+            if self.rng.random() < 0.3:
+                x0, y0 = cx + math.cos(a) * r, cy + math.sin(a) * r
+                pygame.draw.line(w, (230, 180, 255), (x0, y0), (x0 + self.rng.uniform(-10, 10),
+                                                                 y0 + self.rng.uniform(-10, 10)), 2)
 
     def _draw_domain_over(self, w):
         d = self.domain

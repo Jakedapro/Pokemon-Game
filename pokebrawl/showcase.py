@@ -33,6 +33,7 @@ DEFAULTS = {
     "seed": None,
     "finale": True,
     "events": "random",        # "random" | "none" | "chaos" | list of: arceus, primal, rayquaza, meteor
+    "mode": "teams",           # "teams" | "royale" (every Pokemon for itself + a shrinking storm)
 }
 EVENTS = ["arceus", "primal", "rayquaza", "meteor"]
 DOMAIN_TEXT = {"sea": ("DOMAIN: ENDLESS OCEAN", (60, 130, 255)), "land": ("DOMAIN: SCORCHED EARTH", (255, 110, 40)),
@@ -80,7 +81,30 @@ def build_teams(dex, cfg, rng):
         rng.shuffle(specs)
         teams.append(specs)
         names.append(t.get("name", f"Team {len(names) + 1}"))
+    if cfg.get("mode") == "royale":
+        return royale_teams(dex, [s for t in teams for s in t], rng)
     return teams, names
+
+
+def royale_teams(dex, specs, rng):
+    """Battle royale: every Pokemon is its own team, scattered around the arena (no species twice)."""
+    seen, uniq = set(), []
+    for sp in specs:
+        if sp["member"].species not in seen:
+            seen.add(sp["member"].species)
+            uniq.append(sp)
+    n = len(uniq)
+    gap = max(26.0, min(90.0, math.sqrt((ARENA[2] - ARENA[0]) * (ARENA[3] - ARENA[1]) / max(1, n)) * 0.8))
+    placed = []
+    for sp in uniq:
+        for _ in range(60):
+            x = rng.uniform(ARENA[0] + 40, ARENA[2] - 40)
+            y = rng.uniform(ARENA[1] + 60, ARENA[3] - 60)
+            if all((x - px) ** 2 + (y - py) ** 2 > gap * gap for px, py in placed):
+                break
+        placed.append((x, y))
+        sp["pos"] = (x, y)
+    return [[sp] for sp in uniq], [dex.all[sp["member"].species]["name"] for sp in uniq]
 
 
 class ShowcaseScene:
@@ -103,12 +127,18 @@ class ShowcaseScene:
             if e:
                 ids.add(e["id"])
         prefetch(list(ids), progress)
-        n = max(len(t) for t in teams)
+        self.royale = cfg.get("mode") == "royale"
+        n = max(len(t) for t in teams) if not self.royale else len(teams) // 2
         radius = 13 if n > 40 else 17 if n > 12 else 24
+        mega = "auto" if cfg.get("megas", True) else "off"
+        zone = {"start": 12, "end": 12 + max(45, min(80, len(teams) * 0.6)), "min": 60} if self.royale else None
         self.sim = Sim(dex, teams, seed=seed, hp_mult=cfg["hp_mult"], boss_hp_mult=cfg["boss_hp_mult"],
-                       radius=radius, mega={0: "auto", 1: "auto"} if cfg.get("megas", True) else {0: "off", 1: "off"},
-                       ai={0: "normal", 1: "normal"}, time_ramp=cfg.get("time_ramp", 80))
+                       radius=radius, mega={i: mega for i in range(len(teams))},
+                       ai={0: "normal", 1: "normal"}, time_ramp=cfg.get("time_ramp", 80) + (60 if self.royale else 0),
+                       zone=zone)
         self.r = ArenaRenderer(dex, self.sim.roster(), mode="showcase", team_names=self.team_names)
+        if self.royale:
+            self.r.gold_from = len(teams)  # only event bosses glow gold
         self.r.feed(self.sim.snapshot())
         self.r.hidden = {u.uid for u in self.sim.units}
         self.r.auto_zoom = False
@@ -132,6 +162,7 @@ class ShowcaseScene:
         self.start_units = len(self.sim.units)
         self.mega_scenes = 0
         self.level = cfg.get("level", 50)
+        self.storm_msg = None
 
     # ------------------------------------------------------------------ events + cutscenes
     def _plan_events(self, cfg):
@@ -309,6 +340,10 @@ class ShowcaseScene:
                 self.sim.step(dt * self.speed / steps)
                 snap = self.sim.snapshot()
                 self._scan_events(snap["e"])
+                for ev in snap["e"]:
+                    if ev[0] == "zone":
+                        self.storm_msg = (ev[1], self.t)
+                        AUDIO.play("count")
                 self.r.feed(snap)
                 if self.cutscenes:
                     break
@@ -479,7 +514,29 @@ class ShowcaseScene:
             sx, sy = self.r.world_to_screen(x, yy)
             surf.blit(img, img.get_rect(center=(sx, sy)))
 
+    def _draw_royale_hud(self, surf):
+        left = sum(1 for u in self.sim.units if u.alive)
+        ui_w = 190
+        pygame.draw.rect(surf, INK, (W / 2 - ui_w / 2, H - 62, ui_w, 48), border_radius=12)
+        gfx.text(surf, f"{left} LEFT", (W / 2, H - 38), 30, (255, 230, 120) if left <= 10 else (255, 255, 255))
+        now = self.r.t
+        for i, (killer, victim, t) in enumerate(reversed(self.r.kills)):
+            age = now - t
+            if age > 4.0:
+                continue
+            a = int(255 * min(1.0, (4.0 - age) / 0.6))
+            gfx.text(surf, f"{killer}  >  {victim}", (W - 16, 170 + i * 26), 17, (255, 255, 255), INK, 2,
+                     anchor="midright", alpha=a)
+        if self.storm_msg and self.t - self.storm_msg[1] < 2.5:
+            k = self.t - self.storm_msg[1]
+            msg = "THE STORM IS FORMING" if self.storm_msg[0] == 1 else "THE STORM CLOSES IN!"
+            gfx.title_text(surf, msg, (W / 2, H * 0.16), 40, scale=1.15 - 0.15 * min(1.0, k / 0.3),
+                           color=(230, 170, 255), alpha=int(255 * min(1.0, (2.5 - k) / 0.5)))
+
     def _draw_counts(self, surf):
+        if self.royale:
+            self._draw_royale_hud(surf)
+            return
         y = H - 26
         if len(self.counts) <= 2:
             for i, (name, c) in enumerate(zip(self.team_names, self.counts)):
@@ -602,7 +659,8 @@ class ShowcaseScene:
             while fs > 16 and gfx.font(fs, True).size(line)[0] > ui_rect.w - 210:
                 fs -= 2
             gfx.text(surf, line, (ui_rect.x + 190, ui_rect.y + 52), fs, INK, None, anchor="midleft")
-            gfx.text(surf, f"MVP  -  {m.kills} KOs  -  {self.team_names[m.team]}", (ui_rect.x + 190, ui_rect.y + 96),
+            who = "Battle Royale champion" if self.royale else self.team_names[m.team]
+            gfx.text(surf, f"MVP  -  {m.kills} KOs  -  {who}", (ui_rect.x + 190, ui_rect.y + 96),
                      20, (90, 90, 100), None, anchor="midleft", chunky=False)
             for i, typ in enumerate(m.mon.types):
                 gfx.pill(surf, typ.upper(), (ui_rect.x + 230 + i * 90, ui_rect.y + 136), gfx.type_color(typ, 0), 14)

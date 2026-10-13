@@ -9,7 +9,7 @@ import time
 
 from .bot import TurnBot
 from .net import PROTO
-from .team import Member
+from .team import Member, validate
 from .turnsim import TurnBattle
 
 EMOTES = ["GG", "LOL", "NICE!", "EZ", "OOPS", "?!"]
@@ -225,9 +225,17 @@ class Lobby:
                     self.error = "Your friend is on a different game version (both run: pokebrawl update)"
                     return None
                 their = [Member.from_dict(d) for d in msg["team"]][:6]
+                errs = validate(self.dex, their)
+                if errs:
+                    self.conn.send({"t": "badteam", "why": errs[0]})
+                    self.error = f"Your friend's team isn't legal: {errs[0]}"
+                    return None
                 names = [self.my_name, msg.get("name", "Friend")]
                 seed = random.randrange(1 << 30)
                 self.session = TurnHost(self.dex, self.conn, self.my_team, their, names, seed)
+            elif t == "badteam" and self.role == "join":
+                self.error = f"The host says your team isn't legal: {msg.get('why', '')}"
+                return None
             elif t == "start" and self.role == "join":
                 self.session = make_client(self.conn, msg)
                 self.style = msg["style"]

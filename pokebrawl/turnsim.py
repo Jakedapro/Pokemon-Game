@@ -198,9 +198,17 @@ class TurnBattle:
             moves = [{"slot": -1, "name": "Struggle", "type": "normal", "pp": 1, "maxpp": 1, "power": 50,
                       "acc": 101, "cls": "phys", "disabled": False}]
         forced = v["charging"] is not None or v["recharge"]
+        lock = None  # why some moves are greyed out, shown to the player
+        if v["charging"] is not None:
+            lock = f"{mon.name} is charging up {mon.moves[v['charging']]['name']}!"
+        elif mon.choice_lock is not None and mon.item in ("choice-band", "choice-specs", "choice-scarf"):
+            item = mon.item.replace("-", " ").title()
+            lock = f"{item} locks {mon.name} into {mon.moves[mon.choice_lock]['name']} - switch out to pick another move"
+        elif v["taunt"] > 0:
+            lock = f"{mon.name} is taunted - no status moves"
         return {"kind": "move", "moves": moves, "can_mega": mon.can_mega and not s.mega_used,
                 "can_tera": not s.tera_used and not mon.megaed and not mon.can_mega, "tera_type": mon.tera_type,
-                "switches": [] if forced else s.bench(), "forced": forced}
+                "switches": [] if forced else s.bench(), "forced": forced, "lock": lock}
 
     def _valid(self, req, c):
         if not req or not isinstance(c, dict):

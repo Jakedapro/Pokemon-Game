@@ -167,6 +167,7 @@ class Mon:
         if self.item not in ("none", "mega-stone"):
             self.item = "none"
             self.flags["item_lost"] = True
+            self.choice_lock = None  # no Choice item, no lock
 
     def take(self, dmg, from_full_ok=True, attacker=None):
         """Apply damage honoring Focus Sash and Sturdy. Returns damage dealt."""

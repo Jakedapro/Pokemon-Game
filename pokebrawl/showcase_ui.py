@@ -57,15 +57,17 @@ class ShowcaseMenu(Scene):
         self.a.set(s.get("sc_a", "Gen 1"))
         self.b = ui.Cycle((40, 636, 640, 62), "Team B", names)
         self.b.set(s.get("sc_b", "Gen 3"))
-        self.size = ui.Cycle((40, 712, 640, 62), "Per team", SIZES)
+        self.size = ui.Cycle((40, 712, 310, 62), "Per team", SIZES)
         self.size.set(s.get("sc_size", "All"))
+        self.mode = ui.Cycle((370, 712, 310, 62), "Mode", ["Teams", "Royale"])
+        self.mode.set(s.get("sc_mode_kind", "Teams"))
         self.megas = ui.Cycle((40, 788, 200, 62), "Megas", ["On", "Off"])
         self.bosses = ui.Cycle((260, 788, 200, 62), "Bosses", ["On", "Off"])
         self.finale = ui.Cycle((480, 788, 200, 62), "Catch", ["On", "Off"])
         self.speed = ui.Cycle((40, 864, 240, 62), "Speed", ["1x", "2x", "0.5x"])
         self.events = ui.Cycle((300, 864, 380, 62), "Events", list(EVENT_CHOICES))
         self.events.set(s.get("sc_events", "Random"))
-        self.cycles = [self.a, self.b, self.size, self.megas, self.bosses, self.finale, self.speed, self.events]
+        self.cycles = [self.a, self.b, self.size, self.mode, self.megas, self.bosses, self.finale, self.speed, self.events]
         self.custom = s.get("sc_mode", "custom") == "custom"
         self.buttons = [ui.Button((40, 960, 310, 110), "PLAY", (70, 120, 220), 40, "watch it live"),
                         ui.Button((370, 960, 310, 110), "RECORD MP4", (196, 60, 60), 34, "vertical 720x1280"),
@@ -87,7 +89,13 @@ class ShowcaseMenu(Scene):
             ta, tb = {"name": self.a.value, "filter": ga}, {"name": self.b.value, "filter": gb}
             if self.size.value != "All":
                 ta["count"] = tb["count"] = int(self.size.value)
-            cfg = load_config({"title": f"{self.a.value} vs {self.b.value}!", "teams": [ta, tb]})
+            if self.mode.value == "Royale":
+                same = self.a.value == self.b.value
+                title = f"{self.a.value} Battle Royale!" if same else f"{self.a.value} + {self.b.value} Royale!"
+                cfg = load_config({"title": title, "subtitle": "ONLY ONE SURVIVES", "mode": "royale",
+                                   "teams": [ta] if same else [ta, tb]})
+            else:
+                cfg = load_config({"title": f"{self.a.value} vs {self.b.value}!", "teams": [ta, tb]})
             n = int(self.size.value) if self.size.value != "All" else 999
             if n <= 6:
                 cfg["hp_mult"] = 6
@@ -109,14 +117,14 @@ class ShowcaseMenu(Scene):
         if ev.type != pygame.MOUSEBUTTONDOWN or ev.button != 1:
             return
         for c in self.cycles:
-            if c.click(pos) and c in (self.a, self.b, self.size):
+            if c.click(pos) and c in (self.a, self.b, self.size, self.mode):
                 self.custom = True
         if self.buttons[2].hit(pos):
             self.app.pop()
         elif self.buttons[0].hit(pos) or self.buttons[1].hit(pos):
             self.app.settings.update(sc_a=self.a.value, sc_b=self.b.value, sc_size=self.size.value,
                                      sc_mode="custom" if self.custom else "preset",
-                                     sc_events=self.events.value)
+                                     sc_events=self.events.value, sc_mode_kind=self.mode.value)
             save_settings(self.app.settings)
             cfg = self.config()
             if self.buttons[0].hit(pos):

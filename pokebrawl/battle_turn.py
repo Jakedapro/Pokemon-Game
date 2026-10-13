@@ -355,7 +355,9 @@ class TurnBattleScene(Scene):
                 img.set_alpha(70)
             surf.blit(img, img.get_rect(center=(rect.centerx, rect.centery - 8)))
             gfx.hp_bar(surf, (rect.x + 8, rect.bottom - 14, rect.w - 16, 6), m["frac"])
-        if self.req and self.req["kind"] == "move" and not self._busy():
+        if self.req and self.req["kind"] == "move" and not self._busy() and self.req.get("lock"):
+            gfx.text(surf, self.req["lock"], (40, 922), 15, (255, 210, 120), anchor="midleft", ow=1, chunky=False)
+        elif self.req and self.req["kind"] == "move" and not self._busy():
             gfx.text(surf, "Pick a move (1-4)  -  tap a Pokemon below to switch  -  M = Mega, T = Tera", (40, 922), 14,
                      ui.MUTED, anchor="midleft", ow=1, chunky=False)
         if self._finished():

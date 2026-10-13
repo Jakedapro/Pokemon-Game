@@ -1,0 +1,3 @@
+{"title": "Legendary Battle Royale!", "subtitle": "EVERY LEGEND FOR ITSELF",
+ "mode": "royale", "boss_hp_mult": 1.5,
+ "teams": [{"name": "Legends", "filter": {"legendary": true}}]}

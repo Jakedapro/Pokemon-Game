@@ -1,0 +1,3 @@
+{"title": "100 Pokemon Battle Royale!", "subtitle": "WHO IS THE LAST ONE STANDING???",
+ "mode": "royale",
+ "teams": [{"name": "Everyone", "filter": {"fully_evolved": true}, "count": 100}]}

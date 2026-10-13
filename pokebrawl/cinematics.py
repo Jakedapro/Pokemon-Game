@@ -190,7 +190,7 @@ class Cutscene:
     def _glow_title(self, surf, s, pos, size, scale, alpha):
         sz = int(size * scale)
         glow = int(alpha * (0.45 + 0.25 * math.sin(self.t * 10)))
-        gfx.text(surf, s, pos, sz, _lighter(self.color, 0.3), _lighter(self.color, 0.1), max(6, sz // 5),
+        gfx.text(surf, s, pos, sz, _lighter(self.color, 0.3), _lighter(self.color, 0.1), min(9, max(5, sz // 6)),
                  alpha=glow)
         gfx.title_text(surf, s, pos, size, scale=scale, alpha=alpha)
 

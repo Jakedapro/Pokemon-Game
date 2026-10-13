@@ -139,6 +139,10 @@ def validate(dex, members):
     species = [dex.all[m.species]["species"] for m in members if m.species in dex.all]
     if len(species) != len(set(species)):
         errs.append("Species Clause: no duplicate Pokemon")
+    legends = [dex.all[m.species]["name"] for m in members
+               if m.species in dex.all and (dex.all[m.species]["legendary"] or dex.all[m.species]["mythical"])]
+    if len(legends) > 1:
+        errs.append(f"Legend Clause: only one legendary per team ({', '.join(legends)})")
     if sum(1 for m in members if m.item == "mega-stone") > 1:
         errs.append("Only one Mega Stone / Orb per team")
     items = [m.item for m in members if m.item not in ("none", "mega-stone")]
@@ -300,14 +304,19 @@ def random_team(dex, rng=None, size=6, min_bst=480, max_bst=720, legendary=False
             and (legendary or not (e["legendary"] or e["mythical"])) and e["learn"]]
     picks, seen = [], set()
     rng.shuffle(pool)
+    legend_used = False
     for e in pool:
         if e["species"] in seen:
+            continue
+        is_legend = e["legendary"] or e["mythical"]
+        if is_legend and legend_used:  # Legend Clause
             continue
         # keep teams type-diverse
         if sum(1 for p in picks if set(p["types"]) & set(e["types"])) >= 2:
             continue
         picks.append(e)
         seen.add(e["species"])
+        legend_used |= is_legend
         if len(picks) == size:
             break
     items = list(COMP_ITEMS)

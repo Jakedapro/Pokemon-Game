@@ -103,20 +103,30 @@ def font(size, chunky=True):
     return _fonts[key]
 
 
+_text_cache = {}
+
+
 def text(surf, s, pos, size=24, color=WHITE, outline=INK, ow=2, anchor="center", chunky=True, alpha=255):
     """Draw outlined text. anchor: center | topleft | midleft | midright | midtop."""
-    f = font(size, chunky)
-    img = f.render(str(s), True, color)
-    if outline is not None and ow > 0:
-        o = f.render(str(s), True, outline)
-        full = pygame.Surface((img.get_width() + ow * 2, img.get_height() + ow * 2), pygame.SRCALPHA)
-        for dx in range(-ow, ow + 1):
-            for dy in range(-ow, ow + 1):
-                if dx * dx + dy * dy <= ow * ow + 1:
-                    full.blit(o, (dx + ow, dy + ow))
-        full.blit(img, (ow, ow))
-        img = full
+    key = (str(s), size, color, outline, ow, chunky)
+    img = _text_cache.get(key)
+    if img is None:
+        f = font(size, chunky)
+        img = f.render(str(s), True, color)
+        if outline is not None and ow > 0:
+            o = f.render(str(s), True, outline)
+            full = pygame.Surface((img.get_width() + ow * 2, img.get_height() + ow * 2), pygame.SRCALPHA)
+            for dx in range(-ow, ow + 1):
+                for dy in range(-ow, ow + 1):
+                    if dx * dx + dy * dy <= ow * ow + 1:
+                        full.blit(o, (dx + ow, dy + ow))
+            full.blit(img, (ow, ow))
+            img = full
+        if len(_text_cache) > 400:  # big outlined titles are slow to build: keep recent ones
+            _text_cache.clear()
+        _text_cache[key] = img
     if alpha < 255:
+        img = img.copy()
         img.set_alpha(alpha)
     r = img.get_rect(**{anchor: (int(pos[0]), int(pos[1]))})
     surf.blit(img, r)
