@@ -40,6 +40,9 @@ def open_path(path):
         pass
 
 
+# recording: how long the auto-edited video should be (None = keep everything, no fast-forward)
+VIDEO_LENGTHS = {"TikTok (60s)": 60, "Short (30s)": 30, "Long (90s)": 90, "Full battle": None}
+
 # "Random" keeps a preset's own events (most presets: one or two random ones)
 EVENT_CHOICES = {"Random": "random", "Off": "none", "Arceus": ["arceus"], "Primal clash": ["primal"],
                  "Rayquaza": ["rayquaza"], "Meteors": ["meteor"], "CHAOS (all)": "chaos"}
@@ -69,8 +72,11 @@ class ShowcaseMenu(Scene):
         self.events.set(s.get("sc_events", "Random"))
         self.cycles = [self.a, self.b, self.size, self.mode, self.megas, self.bosses, self.finale, self.speed, self.events]
         self.custom = s.get("sc_mode", "custom") == "custom"
-        self.buttons = [ui.Button((40, 960, 310, 110), "PLAY", (70, 120, 220), 40, "watch it live"),
-                        ui.Button((370, 960, 310, 110), "RECORD MP4", (196, 60, 60), 34, "vertical 720x1280"),
+        self.video = ui.Cycle((40, 938, 640, 56), "Video length", list(VIDEO_LENGTHS))
+        self.video.set(s.get("sc_video", "TikTok (60s)"))
+        self.cycles.append(self.video)
+        self.buttons = [ui.Button((40, 1008, 310, 100), "PLAY", (70, 120, 220), 40, "watch it live"),
+                        ui.Button((370, 1008, 310, 100), "RECORD MP4", (196, 60, 60), 34, "auto-edited, 720x1280"),
                         ui.Button((40, 1160, 200, 70), "BACK", ui.PANEL2, 24)]
         if not recorder.available():  # no ffmpeg (no Homebrew / Command Line Tools): watch only
             self.buttons[0].rect.width = 640
@@ -104,6 +110,7 @@ class ShowcaseMenu(Scene):
         cfg["bosses"] = "legendary" if self.bosses.value == "On" else "none"
         cfg["finale"] = self.finale.value == "On"
         cfg["speed"] = {"1x": 1.0, "2x": 2.0, "0.5x": 0.5}[self.speed.value]
+        cfg["video_len"] = VIDEO_LENGTHS[self.video.value]
         if self.events.value != "Random" or self.custom:
             cfg["events"] = EVENT_CHOICES[self.events.value]
         return cfg
@@ -124,7 +131,8 @@ class ShowcaseMenu(Scene):
         elif self.buttons[0].hit(pos) or self.buttons[1].hit(pos):
             self.app.settings.update(sc_a=self.a.value, sc_b=self.b.value, sc_size=self.size.value,
                                      sc_mode="custom" if self.custom else "preset",
-                                     sc_events=self.events.value, sc_mode_kind=self.mode.value)
+                                     sc_events=self.events.value, sc_mode_kind=self.mode.value,
+                                     sc_video=self.video.value)
             save_settings(self.app.settings)
             cfg = self.config()
             if self.buttons[0].hit(pos):
@@ -146,10 +154,10 @@ class ShowcaseMenu(Scene):
         for b in self.buttons:
             if b.enabled:
                 b.draw(surf)
-        gfx.text(surf, "While watching: Space = pause, +/- = speed, Esc = exit", (W / 2, 1100), 16, ui.MUTED,
+        gfx.text(surf, "While watching: Space = pause, +/- = speed, Esc = exit", (W / 2, 1124), 16, ui.MUTED,
                  ow=1, chunky=False)
         if self.buttons[1].enabled:
-            gfx.text(surf, f"Videos are saved to {video_dir()}", (W / 2, 1126), 15, ui.MUTED, ow=1,
+            gfx.text(surf, f"Videos are saved to {video_dir()}", (W / 2, 1146), 15, ui.MUTED, ow=1,
                      chunky=False)
 
 
@@ -159,6 +167,7 @@ class ShowcaseLoad(Scene):
         self.cfg = cfg
         self.record = record
         self.scene = None
+        self.plan_scene = None
         self.error = None
         self.done = 0
         self.total = 1
@@ -166,7 +175,11 @@ class ShowcaseLoad(Scene):
 
     def _build(self):
         try:
-            self.scene = ShowcaseScene(self.app.dex, self.cfg, self._prog)
+            scene = ShowcaseScene(self.app.dex, self.cfg, self._prog)
+            if self.record and self.cfg.get("video_len"):
+                # identical copy (same seed) for the auto-edit's invisible planning run
+                self.plan_scene = ShowcaseScene(self.app.dex, dict(self.cfg, seed=scene.seed))
+            self.scene = scene
         except Exception as e:  # noqa: BLE001
             self.error = str(e)
 
@@ -179,7 +192,8 @@ class ShowcaseLoad(Scene):
 
     def update(self, dt):
         if self.scene:
-            nxt = ShowcaseRecord(self.app, self.scene) if self.record else ShowcasePlay(self.app, self.scene)
+            nxt = ShowcaseRecord(self.app, self.scene, target=self.cfg.get("video_len"), plan_scene=self.plan_scene) \
+                if self.record else ShowcasePlay(self.app, self.scene)
             self.app.replace(nxt)
 
     def draw(self, surf):
@@ -206,14 +220,16 @@ class ShowcasePlay(Scene):
 
 
 class ShowcaseRecord(Scene):
-    """Renders offscreen as fast as possible into an MP4, showing progress."""
+    """Renders offscreen as fast as possible into an MP4, showing progress. With target set (and a showcase
+    scene), it first plans an auto-edit: hype moments at normal speed, boring parts fast-forwarded."""
 
-    def __init__(self, app, scene, fps=30):
+    def __init__(self, app, scene, fps=30, target=None, plan_scene=None):
         super().__init__(app)
         from .recorder import Recorder
         self.sc = scene
         self.fps = fps
         self.frames = 0
+        self.step = 0
         self.canvas = gfx.new_surface((W, H))
         title = scene.cfg.get("title", "showcase") if hasattr(scene, "cfg") else getattr(scene, "title", "battle")
         name = "".join(c if c.isalnum() else "_" for c in title).strip("_")
@@ -221,9 +237,16 @@ class ShowcaseRecord(Scene):
         self.error = None
         self.finished = False
         self.mixing = False
+        self.planner = None
+        self.draw_steps = self.speeds = None
+        self.plan_note = ""
+        if target and plan_scene is not None and hasattr(scene, "interest"):
+            from .autoedit import Planner
+            self.planner = Planner(plan_scene, fps, target)
         try:
             self.rec = Recorder(self.path + ".video.mp4", W, H, fps)
-            AUDIO.capture, AUDIO.clock = [], (lambda: self.frames / self.fps)
+            if self.planner is None:
+                AUDIO.capture, AUDIO.clock = [], (lambda: self.frames / self.fps)
         except RuntimeError as e:
             self.rec = None
             self.error = str(e)
@@ -246,10 +269,24 @@ class ShowcaseRecord(Scene):
     def update(self, dt):
         if self.error or self.finished or self.mixing:
             return
+        if self.planner is not None:  # step 1: plan the edit (an invisible, silent run of the same battle)
+            if self.planner.step(240):
+                self.draw_steps, self.speeds, ff, length = self.planner.schedule()
+                self.plan_note = f"{self.planner.seconds:.0f}s battle -> about {length:.0f}s video"
+                self.planner = None
+                AUDIO.capture, AUDIO.clock = [], (lambda: self.frames / self.fps)
+            return
+        from .autoedit import ff_label
         start = time.time()
         while time.time() - start < 0.03 and not self.sc.done:
             self.sc.update(1 / self.fps)
+            self.step += 1
+            i = self.step - 1
+            if self.draw_steps is not None and i < len(self.draw_steps) and not self.draw_steps[i]:
+                continue
             self.sc.draw(self.canvas)
+            if self.speeds is not None and i < len(self.speeds):
+                ff_label(self.canvas, self.speeds[i])
             self.rec.write(self.canvas)
             self.frames += 1
         if self.sc.done:
@@ -272,9 +309,15 @@ class ShowcaseRecord(Scene):
             thumb = pygame.transform.smoothscale(self.canvas, (W // 2, H // 2))
             surf.blit(thumb, thumb.get_rect(center=(W / 2, 470)))
             secs = self.frames / self.fps
-            msg = f"Saved! {secs:.0f}s video" if self.finished else "Adding sound..." if self.mixing else \
-                f"Recording... {secs:.0f}s  ({getattr(self.sc, 'phase', '')})"
+            if self.planner is not None:
+                msg = f"Planning the edit... {self.planner.seconds:.0f}s of battle"
+            else:
+                msg = f"Saved! {secs:.0f}s video" if self.finished else "Adding sound..." if self.mixing else \
+                    f"Recording... {secs:.0f}s  ({getattr(self.sc, 'phase', '')})"
             gfx.text(surf, msg, (W / 2, 840), 28)
+            if self.plan_note:
+                gfx.text(surf, f"Auto-edit: {self.plan_note}", (W / 2, 940), 18, (255, 240, 150), ow=1,
+                         chunky=False)
             gfx.text(surf, self.path, (W / 2, 890), 15, ui.MUTED, ow=1, chunky=False)
         for b in self.buttons:
             b.draw(surf)

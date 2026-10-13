@@ -175,6 +175,7 @@ class ShowcaseScene:
         self.level = cfg.get("level", 50)
         self.storm_msg = None
         self.last_ko = None      # (killer uid, victim form) - the battle's last KO gets a finisher
+        self.hot_until = 0.0     # auto-edit: keep normal speed until this time (big moment just happened)
 
     # ------------------------------------------------------------------ events + cutscenes
     def _plan_events(self, cfg):
@@ -291,8 +292,30 @@ class ShowcaseScene:
                                                DOMAIN_TEXT["sky"][1], form_id, cry=form_id, action_at=0.35))
             elif u and u.boss and self.mega_scenes < 3:
                 self.mega_scenes += 1
-                self.cutscenes.append(Cutscene("card", 2.0, pos, 1.8, name.upper(), "MEGA EVOLUTION!",
-                                               (170, 90, 230), form_id, cry=form_id, action_at=0.3))
+                card = Cutscene("card", 2.0, pos, 1.8, name.upper(), "MEGA EVOLUTION!", (170, 90, 230), form_id,
+                                cry=form_id, action_at=0.3)
+                card.minor = True  # auto-edit may speed these up a little
+                self.cutscenes.append(card)
+
+    def interest(self):
+        """For auto-editing recordings: 2 = must stay at normal speed (intro, cutscenes, the catch),
+        1 = nice to see (boss KOs, the endgame, the outro) - only lightly sped up, 0 = fast-forward."""
+        if self.phase in ("outro", "won"):
+            return 1
+        if self.phase == "finale":  # the throw through GOTCHA! at full speed; walk-in and card can be quicker
+            return 2 if self.THROW - 0.3 <= self.finale["t"] < self.CAUGHT + 1.8 else 1
+        if self.cutscene is not None and getattr(self.cutscene, "minor", False):
+            return 1
+        if self.phase != "battle" or self.cutscene is not None or self.cutscenes:
+            return 2
+        if self.t - self.intro_len < 2.0:
+            return 2
+        if self.t < self.hot_until:
+            return 1
+        alive = sum(1 for u in self.sim.units if u.alive)
+        if alive <= max(2, int(self.start_units * 0.05)):  # the endgame
+            return 1
+        return 0
 
     def _finisher(self):
         killer = self.sim.by_id.get(self.last_ko[0])
@@ -386,6 +409,9 @@ class ShowcaseScene:
                 for ev in snap["e"]:
                     if ev[0] == "faint" and len(ev) > 5 and ev[5]:
                         self.last_ko = (ev[5], ev[4])
+                    if ev[0] in ("zone", "domain") or (
+                            ev[0] == "faint" and getattr(self.sim.by_id.get(ev[1]), "boss", False)):
+                        self.hot_until = self.t + 1.2
                     if ev[0] == "zone":
                         self.storm_msg = (ev[1], self.t)
                         AUDIO.play("count")
@@ -718,8 +744,10 @@ class ShowcaseScene:
 
 # ---------------------------------------------------------------------- headless rendering
 
-def record(dex, cfg, out_path, fps=30, log=print):
-    """Render a showcase straight to an MP4 (needs ffmpeg)."""
+def record(dex, cfg, out_path, fps=30, log=print, target=None):
+    """Render a showcase straight to an MP4 (needs ffmpeg). target = seconds to auto-edit down to (None = full
+    length): boring stretches get fast-forwarded, the hype moments stay at normal speed."""
+    from .autoedit import Planner, ff_label
     from .recorder import Recorder
     disp = gfx.Display(headless=True)
 
@@ -729,14 +757,28 @@ def record(dex, cfg, out_path, fps=30, log=print):
 
     scene = ShowcaseScene(dex, cfg, prog)
     AUDIO.init(headless=True)
+    draw_steps = speeds = None
+    if target:
+        log("[showcase] planning the edit...")
+        planner = Planner(ShowcaseScene(dex, dict(cfg, seed=scene.seed)), fps, target)
+        while not planner.step():
+            pass
+        draw_steps, speeds, ff, length = planner.schedule()
+        log(f"[showcase] {planner.seconds:.0f}s battle -> about {length:.0f}s video (boring parts x{ff:.1f})")
     rec = Recorder(out_path + ".video.mp4", gfx.W, gfx.H, fps)
     frames = 0
+    step = 0
     AUDIO.capture, AUDIO.clock = [], (lambda: frames / fps)
     try:
         while not scene.done and frames < fps * 60 * 8:
             scene.update(1 / fps)
+            step += 1
+            if draw_steps is not None and step - 1 < len(draw_steps) and not draw_steps[step - 1]:
+                continue
             disp.canvas.fill((0, 0, 0))
             scene.draw(disp.canvas)
+            if speeds is not None and step - 1 < len(speeds):
+                ff_label(disp.canvas, speeds[step - 1])
             rec.write(disp.canvas)
             frames += 1
             if frames % (fps * 10) == 0:

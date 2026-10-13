@@ -929,7 +929,7 @@ class Sim:
         return {"t": round(self.t, 2), "u": units,
                 "p": [[round(p.x), round(p.y), p.move["type"]] for p in self.projectiles],
                 "e": ev, "w": self.weather, "over": self.over, "win": self.winner,
-                "z": [round(v, 1) for v in self.zone] if self.zone else None}
+                "z": [round(v, 1) for v in self.zone] if self.zone and not self.over else None}
 
     def roster(self):
         """Static info sent once (move names per unit etc.)."""

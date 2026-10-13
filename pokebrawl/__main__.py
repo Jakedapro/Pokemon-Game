@@ -1,7 +1,8 @@
 """pokebrawl command line.
 
     pokebrawl                         open the game
-    pokebrawl showcase FILE.json      play a showcase file   (--record out.mp4 to render a video, --seed N)
+    pokebrawl showcase FILE.json      play a showcase file   (--record out.mp4 to render a video, auto-edited
+                                      to ~60s; --length 45 / --full to change that; --seed N)
     pokebrawl relay [--port 7778]     run a relay server so friends can play without port forwarding
     pokebrawl download                download every sprite now (the installer does this)
     pokebrawl update                  update to the latest version
@@ -20,6 +21,9 @@ def main(argv=None):
     sc = sub.add_parser("showcase", help="play or record a showcase JSON file")
     sc.add_argument("file")
     sc.add_argument("--record", metavar="OUT.mp4")
+    sc.add_argument("--length", type=float, default=60,
+                    help="auto-edit the recording to about this many seconds (fast-forwards boring parts)")
+    sc.add_argument("--full", action="store_true", help="record at full length, no auto-edit")
     sc.add_argument("--seed", type=int)
     rl = sub.add_parser("relay", help="run a relay server")
     rl.add_argument("--port", type=int, default=7778)
@@ -78,7 +82,7 @@ def main(argv=None):
             cfg["seed"] = args.seed
         dex = load_dex()
         if args.record:
-            record(dex, cfg, args.record)
+            record(dex, cfg, args.record, target=None if args.full else args.length)
             return
         from . import gfx
         from .app import App

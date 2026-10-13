@@ -115,3 +115,21 @@ def test_replays_reproduce_battles(dex):
                      {"type": "move", "slot": next(m["slot"] for m in req["moves"] if not m["disabled"])})
     tr = TurnReplaySession(dex, json.loads(json.dumps(t.replay())))
     assert [m.hp for sd in t.battle.sides for m in sd.mons] == [m.hp for sd in tr.battle.sides for m in sd.mons]
+
+
+def test_autoedit_plan_is_deterministic_and_shortens(dex):
+    from pokebrawl.autoedit import Planner, schedule
+    from pokebrawl.showcase import ShowcaseScene, load_config
+    cfg = load_config({"title": "t", "teams": [{"name": "A", "filter": {"gen": 1}, "count": 20},
+                                                 {"name": "B", "filter": {"gen": 3}, "count": 20}],
+                       "seed": 4, "events": "none", "finale": False})
+    a, b = Planner(ShowcaseScene(dex, cfg), 30, 20), Planner(ShowcaseScene(dex, cfg), 30, 20)
+    while not a.step():
+        pass
+    while not b.step():
+        pass
+    assert a.flags == b.flags  # the recording replays exactly the battle that was planned
+    draw, speed, ff, length = a.schedule()
+    assert len(draw) == len(a.flags) and length < len(a.flags) / 30 / 2  # much shorter than the battle
+    # short battles are left alone
+    assert schedule([2] * 300, 30, 60)[3] == 10.0
