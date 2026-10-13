@@ -1,635 +1,937 @@
-"""Adventure mode screens around the overworld: title (continue / new game), the professor's intro and the
-starter pick, party, bag, Poke Mart, evolution and the Hall of Fame."""
+"""Adventure mode screens, GBA style (480x320): title, the professor's intro and starter pick, party, summary,
+Box, bag, Poke Mart, Pokedex, trainer card, evolution and the Hall of Fame.
+Controls: arrows move, Z/Enter = A, X/Esc = B. The mouse works too."""
 import math
 
 import pygame
 
 from . import adventure as A
-from . import gfx, ui
+from . import gbaart as G
+from . import gbaui as U
+from . import pixelfont as F
 from .app import Scene
 from .audio import AUDIO
-from .gfx import H, INK, SPRITES, W
-from .trainer_ui import STAT_NAMES, fit, type_row
+from .gfx import PIXEL, type_color
+from .turnsim import MEDICINE
 
-STAT_KEYS = [k for k, _ in STAT_NAMES]
+VW, VH = PIXEL
+STATS = [("hp", "HP"), ("atk", "ATTACK"), ("def", "DEFENSE"), ("spa", "SP. ATK"), ("spd", "SP. DEF"),
+         ("spe", "SPEED")]
 
 
-def mon_card(surf, dex, mon, rect, selected=False, t=0.0):
-    """One party slot: sprite, name, level, HP bar, status."""
-    r = pygame.Rect(rect)
-    hp, mx = A.hp_of(dex, mon)
-    col = (40, 70, 100) if selected else (36, 46, 62)
-    if hp <= 0:
-        col = (70, 40, 46)
-    ui.panel(surf, r, col, 14, border=ui.LENS if selected else None)
-    img = fit(mon["species"], r.h + 10, r.h - 16, mon.get("shiny", False))
-    bob = math.sin(t * 4) * 3 if selected else 0
-    surf.blit(img, img.get_rect(center=(r.x + r.h * 0.6, r.centery + bob)))
-    x = r.x + r.h * 1.25
-    gfx.text(surf, A.name_of(dex, mon), (x, r.y + 24), 24, ui.TEXT, None, 0, anchor="midleft")
-    gfx.text(surf, f"Lv {mon['level']}", (r.right - 20, r.y + 24), 20, ui.SIGNAL, None, 0, anchor="midright")
-    if mon.get("shiny"):
-        gfx.text(surf, "*", (x + gfx.font(24).size(A.name_of(dex, mon))[0] + 10, r.y + 20), 24, (255, 220, 90),
-                 None, 0, anchor="midleft")
-    gfx.hp_bar(surf, (x, r.y + 52, r.right - 140 - x, 12), hp / max(1, mx))
-    gfx.text(surf, f"{hp}/{mx}", (r.right - 20, r.y + 58), 16, ui.TEXT, None, 0, anchor="midright", chunky=False)
-    if mon.get("status") and hp > 0:
-        gfx.pill(surf, mon["status"].upper(), (x + 30, r.y + 84), (180, 90, 60), 13)
-    elif hp <= 0:
-        gfx.pill(surf, "FAINTED", (x + 36, r.y + 84), (160, 50, 60), 13)
-    type_row(surf, dex.all[mon["species"]]["types"], r.right - 110, r.y + 86, 12)
+def bg(surf, top=(160, 200, 240), bottom=(232, 240, 248), stripes=True):
+    for y in range(0, VH, 4):
+        k = y / VH
+        surf.fill(tuple(int(a * (1 - k) + b * k) for a, b in zip(top, bottom)), (0, y, VW, 4))
+    if stripes:
+        for y in range(0, VH, 16):
+            pygame.draw.line(surf, tuple(min(255, c + 8) for c in bottom), (0, y), (VW, y))
+
+
+def title_bar(surf, text, color=(200, 72, 72)):
+    pygame.draw.rect(surf, (48, 48, 56), (0, 0, VW, 34))
+    pygame.draw.rect(surf, color, (0, 0, VW, 30))
+    F.draw(surf, text, (14, 8), U.WHITE, tuple(max(0, c - 70) for c in color))
+
+
+def type_tag(surf, typ, x, y):
+    col = type_color(typ, 0)
+    pygame.draw.rect(surf, (48, 48, 56), (x, y, 64, 18), border_radius=4)
+    pygame.draw.rect(surf, col, (x + 1, y + 1, 62, 16), border_radius=3)
+    label = typ.upper()
+    F.draw(surf, label, (x + 32 - F.width(label, 1) // 2, y + 5), U.WHITE, tuple(max(0, c - 80) for c in col),
+           scale=1)
+    return 68
+
+
+class GBAScene(Scene):
+    canvas_size = PIXEL
 
 
 # ====================================================================== title
-class AdventureTitle(Scene):
+class AdventureTitle(GBAScene):
     def __init__(self, app):
         super().__init__(app)
         self.save = A.load()
-        self.confirm = False
-        self._layout()
-
-    def _layout(self):
-        self.buttons = []
-        if self.save:
-            self.buttons.append(ui.Button((60, 760, 600, 120), "Continue", (34, 140, 88), 40,
-                                          f"{self.save['name']}  -  {len(self.save['badges'])} badges  -  "
-                                          f"{A.playtime_text(self.save.get('playtime', 0))} played", tag="continue"))
-        label = "Really start over?" if self.confirm else "New game"
-        self.buttons.append(ui.Button((60, 900 if self.save else 800, 600, 100), label,
-                                      ui.SHELL if self.confirm else (38, 104, 188), 34,
-                                      "your old save will be replaced" if self.confirm else
-                                      "pick your starter and set off", tag="new"))
-        self.buttons.append(ui.Button((60, 1160, 200, 70), "Back", ui.PANEL2, 24, tag="back"))
-
-    def handle(self, ev, pos):
-        if ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE:
-            self.app.pop()
-        if ev.type != pygame.MOUSEBUTTONDOWN or ev.button != 1:
-            return
-        for b in self.buttons:
-            if not b.hit(pos):
-                continue
-            if b.tag == "back":
-                self.app.pop()
-            elif b.tag == "continue":
-                from .overworld import OverworldScene
-                self.app.replace(OverworldScene(self.app, self.save))
-            elif b.tag == "new":
-                if self.save and not self.confirm:
-                    self.confirm = True
-                    self._layout()
-                    return
-                self.app.replace(NewGame(self.app))
-            return
+        self.t = 0.0
+        self.stage = "press"
+        self.confirm = None
+        opts = ([("continue", "CONTINUE")] if self.save else []) + [("new", "NEW GAME"), ("back", "BACK")]
+        self.menu = U.Menu(opts)
 
     def update(self, dt):
+        self.t += dt
         AUDIO.music("town")
 
+    def handle(self, ev, pos):
+        if self.stage == "press":
+            if U.is_a(ev):
+                self.stage = "menu"
+                AUDIO.play("select")
+            elif U.is_b(ev):
+                self.app.pop()
+            return
+        if self.confirm is not None:
+            k = self.confirm.handle(ev, pos)
+            if k == "yes":
+                self.app.replace(NewGame(self.app))
+            elif k in ("no", "back"):
+                self.confirm = None
+            return
+        k = self.menu.handle(ev, pos)
+        if k == "continue":
+            from .overworld import OverworldScene
+            self.app.replace(OverworldScene(self.app, self.save))
+        elif k == "new":
+            if self.save:
+                self.confirm = U.Menu([("no", "NO"), ("yes", "YES")])
+            else:
+                self.app.replace(NewGame(self.app))
+        elif k in ("back",):
+            self.app.pop()
+
     def draw(self, surf):
-        t = self.app.t
-        surf.fill((120, 200, 104))
-        # a little scene: hills, the sun, Pokemon in the grass
-        pygame.draw.circle(surf, (255, 236, 150), (560, 220), 90)
-        for i, (c, yy) in enumerate((((98, 176, 84), 520), ((80, 156, 72), 600))):
-            pts = [(x, yy + math.sin(x / 120 + i) * 40) for x in range(0, W + 20, 20)] + [(W, H), (0, H)]
-            pygame.draw.polygon(surf, c, pts)
-        pygame.draw.rect(surf, (226, 204, 150), (W // 2 - 50, 600, 100, H))
-        for k, pid in enumerate((25, 1, 4, 7, 133)):
-            img = SPRITES.get(pid, 90, flip=k % 2 == 0)
-            x = 90 + k * 135
-            surf.blit(img, img.get_rect(midbottom=(x, 690 - abs(math.sin(t * 3 + k)) * 12)))
-        gfx.title_text(surf, "POKEBRAWL", (W / 2, 170), 80, color=(255, 230, 110))
-        gfx.title_text(surf, "ADVENTURE", (W / 2, 260), 56)
-        gfx.text(surf, "The Brawl region  -  8 gyms  -  the Pokemon League", (W / 2, 330), 20, INK, None, 0,
-                 chunky=False)
-        if self.save:
-            party = self.save["party"]
-            x0 = W / 2 - (len(party) - 1) * 50
-            for i, m in enumerate(party):
-                img = fit(m["species"], 80, 64, m.get("shiny", False))
-                surf.blit(img, img.get_rect(center=(x0 + i * 100, 700 - 0)))
-        for b in self.buttons:
-            b.draw(surf)
+        t = self.t
+        bg(surf, (64, 104, 200), (152, 200, 240), stripes=False)
+        # rolling hills, a sunset glow and a Pokemon on the hill
+        pygame.draw.circle(surf, (248, 216, 128), (380, 120), 60)
+        for i, (c, yy) in enumerate((((96, 168, 88), 210), ((72, 144, 72), 240))):
+            pts = [(x, yy + int(math.sin(x / 50 + i * 2 + t * 0.2) * 10)) for x in range(0, VW + 8, 8)]
+            pygame.draw.polygon(surf, c, pts + [(VW, VH), (0, VH)])
+        img = G.battle_sprite(6, max_h=120)
+        surf.blit(img, img.get_rect(midbottom=(370, 228 + int(math.sin(t * 2) * 3))))
+        F.draw(surf, "POKeBRAWL", (34, 40), (248, 216, 64), (120, 56, 32), scale=5)
+        F.draw(surf, "ADVENTURE", (40, 92), U.WHITE, (48, 64, 120), scale=3)
+        F.draw(surf, "The Brawl Region", (42, 124), (232, 240, 248), (48, 64, 120))
+        if self.stage == "press":
+            if int(t * 2) % 2 == 0:
+                F.draw(surf, "PRESS Z / ENTER", (VW // 2, 288), U.WHITE, (48, 48, 64), anchor="center")
+            return
+        self.menu.draw(surf, (24, 170, 170, 20 + 26 * len(self.menu.options)))
+        if self.save and self.menu.options[self.menu.index][0] == "continue":
+            s = self.save
+            inner = U.box(surf, (210, 170, 256, 130))
+            F.draw(surf, f"PLAYER   {s['name'].upper()}", (inner.x + 8, inner.y + 6), U.TEXT, U.SHADOW)
+            F.draw(surf, f"TIME     {A.playtime_text(s.get('playtime', 0))}", (inner.x + 8, inner.y + 30), U.TEXT,
+                   U.SHADOW)
+            F.draw(surf, f"POKeDEX  {len(s['caught'])}", (inner.x + 8, inner.y + 54), U.TEXT, U.SHADOW)
+            F.draw(surf, f"BADGES   {len(s['badges'])}", (inner.x + 8, inner.y + 78), U.TEXT, U.SHADOW)
+        if self.confirm is not None:
+            box = U.box(surf, (4, 240, 330, 76))
+            F.draw(surf, "Start over? Your old save", (box.x + 10, box.y + 6), U.TEXT, U.SHADOW)
+            F.draw(surf, "will be replaced.", (box.x + 10, box.y + 32), U.TEXT, U.SHADOW)
+            self.confirm.draw(surf, (360, 240, 116, 76))
 
 
 # ====================================================================== new game
-class NewGame(Scene):
-    """Professor Hazel's intro, your name, then three starters (any generation)."""
-
+class NewGame(GBAScene):
     def __init__(self, app):
         super().__init__(app)
+        self.t = 0.0
         self.stage = "talk"
-        self.lines = ["Hello there! Welcome to the world of Pokemon!",
-                      "My name is Hazel. People call me the Pokemon Professor.",
-                      "This world is full of creatures called Pokemon. Some people keep them as pets...",
-                      "...and others use them to battle. The Brawl region has eight gyms and the Pokemon League.",
-                      "But first - what's your name?"]
-        self.i = 0
-        self.shown = 0.0
-        self.name = ui.TextInput((110, 620, 500, 70), "", app.settings.get("name", "Trainer"), "Your name")
-        self.name.focus = True
+        self.name = app.settings.get("name", "")[:10]
         self.gen = 1
         self.pick = 1
-        self.buttons = []
-        self._layout()
+        self.confirm = None
+        self._talk(["Hello there! Welcome to the world of POKeMON!",
+                    "My name is HAZEL. People call me the POKeMON PROF.",
+                    "This world is inhabited by creatures called POKeMON!",
+                    "For some people, POKeMON are pets. Others use them for battles.",
+                    "Myself... I study POKeMON as a profession.",
+                    "But first, tell me a little about yourself. What is your name?"], self._to_name)
 
-    def _layout(self):
-        if self.stage == "name":
-            self.buttons = [ui.Button((160, 730, 400, 90), "That's me!", (34, 140, 88), 32, tag="ok")]
-        elif self.stage == "starter":
-            self.buttons = [ui.Button((20, 1000, 120, 80), "<", ui.SCREEN2, 34, tag="prev"),
-                            ui.Button((580, 1000, 120, 80), ">", ui.SCREEN2, 34, tag="next"),
-                            ui.Button((160, 1000, 400, 80), "Choose!", (34, 140, 88), 32, tag="choose")]
-        else:
-            self.buttons = []
+    def _talk(self, lines, then):
+        self.text = U.TextBox(lines, then)
+
+    def _to_name(self):
+        self.stage = "name"
+        self.text = None
+
+    def _after_name(self):
+        nm = self.name.strip() or "RED"
+        self.stage = "talk"
+        self._talk([f"Right... So your name is {nm.upper()}.",
+                    "Your very own POKeMON legend is about to unfold!",
+                    "A world of dreams and adventures with POKeMON awaits!",
+                    "But you'll need a partner. Pick one of these POKeMON!"], self._to_pick)
+
+    def _to_pick(self):
+        self.stage = "pick"
+        self.text = None
+        AUDIO.cry(A.STARTERS[self.gen][self.pick], 0.7)
 
     def update(self, dt):
+        self.t += dt
         AUDIO.music("town")
-        self.shown = min(999.0, self.shown + dt * 50)
-
-    def _advance(self):
-        line = self.lines[self.i]
-        if self.shown < len(line):
-            self.shown = len(line)
-            return
-        self.i += 1
-        self.shown = 0
-        if self.i >= len(self.lines):
-            self.stage = "name" if self.stage == "talk" else "starter"
-            self._layout()
+        if self.text is not None:
+            self.text.update(dt)
 
     def handle(self, ev, pos):
-        if ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE:
-            self.app.pop()
-            return
-        if self.stage == "talk" or self.stage == "talk2":
-            if (ev.type == pygame.KEYDOWN and ev.key in (pygame.K_SPACE, pygame.K_RETURN)) or \
-                    (ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1):
-                self._advance()
+        if self.stage == "talk" and self.text is not None:
+            self.text.handle(ev)
             return
         if self.stage == "name":
-            if self.name.handle(ev, pos) and not (ev.type == pygame.KEYDOWN and ev.key == pygame.K_RETURN):
-                return
-            done = (ev.type == pygame.KEYDOWN and ev.key == pygame.K_RETURN) or \
-                (ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1 and self.buttons[0].hit(pos))
-            if done and self.name.value.strip():
-                nm = self.name.value.strip()[:12]
-                self.stage = "talk2"
-                self.lines = [f"{nm}! What a great name.",
-                              "Now, every trainer needs a partner. I have a few here...",
-                              "Choose the Pokemon that will start your journey!"]
-                self.i, self.shown = 0, 0
-                self._layout()
+            if ev.type == pygame.TEXTINPUT and len(self.name) < 10:
+                self.name += "".join(c for c in ev.text if c.isalnum() or c == " ")
+            elif ev.type == pygame.KEYDOWN:
+                if ev.key == pygame.K_BACKSPACE:
+                    self.name = self.name[:-1]
+                elif ev.key in (pygame.K_RETURN, pygame.K_KP_ENTER) and self.name.strip():
+                    self._after_name()
+                elif ev.key == pygame.K_ESCAPE:
+                    self.app.pop()
+            elif ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1 and self.name.strip():
+                self._after_name()
             return
-        if self.stage == "starter":
-            if ev.type == pygame.KEYDOWN:
-                if ev.key in (pygame.K_LEFT, pygame.K_a):
-                    self.pick = (self.pick - 1) % 3
-                elif ev.key in (pygame.K_RIGHT, pygame.K_d):
-                    self.pick = (self.pick + 1) % 3
-                elif ev.key in (pygame.K_UP, pygame.K_DOWN):
-                    self.gen = (self.gen % 9) + 1 if ev.key == pygame.K_UP else (self.gen - 2) % 9 + 1
-                elif ev.key in (pygame.K_RETURN, pygame.K_SPACE):
+        if self.stage == "pick":
+            if self.confirm is not None:
+                k = self.confirm.handle(ev, pos)
+                if k == "yes":
                     self._choose()
+                elif k in ("no", "back"):
+                    self.confirm = None
                 return
-            if ev.type != pygame.MOUSEBUTTONDOWN or ev.button != 1:
-                return
-            for i in range(3):
-                if self._card(i).collidepoint(pos):
-                    if self.pick == i:
-                        self._choose()
-                    self.pick = i
-                    AUDIO.cry(A.STARTERS[self.gen][i], 0.8)
-                    return
-            for b in self.buttons:
-                if b.hit(pos):
-                    if b.tag == "prev":
-                        self.gen = (self.gen - 2) % 9 + 1
-                    elif b.tag == "next":
-                        self.gen = self.gen % 9 + 1
-                    else:
-                        self._choose()
-
-    def _card(self, i):
-        return pygame.Rect(30 + i * 225, 520, 210, 440)
+            d = U.direction(ev)
+            if d in ("left", "right"):
+                self.pick = (self.pick + (1 if d == "right" else -1)) % 3
+                AUDIO.cry(A.STARTERS[self.gen][self.pick], 0.6)
+            elif d in ("up", "down"):
+                self.gen = (self.gen % 9) + 1 if d == "up" else (self.gen - 2) % 9 + 1
+                AUDIO.cry(A.STARTERS[self.gen][self.pick], 0.6)
+            elif ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1 and pos:
+                for i in range(3):
+                    if abs(pos[0] - (100 + i * 140)) < 60 and 120 < pos[1] < 240:
+                        if self.pick == i:
+                            self.confirm = U.Menu([("yes", "YES"), ("no", "NO")])
+                        self.pick = i
+            elif U.is_a(ev):
+                self.confirm = U.Menu([("yes", "YES"), ("no", "NO")])
 
     def _choose(self):
         from .overworld import OverworldScene
         pid = A.STARTERS[self.gen][self.pick]
-        game = A.new_game(self.name.value.strip()[:12], pid, self.app.dex)
-        game["area"], game["x"], game["y"], game["face"] = 0, 3, 19, "down"
-        game["center"] = [0, 3, 19]
+        game = A.new_game((self.name.strip() or "RED")[:10], pid, self.app.dex)
+        lab = next((b for b in _lab_door(game, self.app)), None)
+        if lab:
+            game["area"], game["x"], game["y"] = 0, lab[0], lab[1] + 1
+            game["center"] = [0, lab[0], lab[1] + 1]
+        game["face"] = "down"
         A.save(game)
         AUDIO.cry(pid, 1.0)
         ow = OverworldScene(self.app, game)
-        nm = A.name_of(self.app.dex, game["party"][0])
-        ow.say([f"You chose {nm}! It looks happy to meet you.",
-                "Here are 5 Poke Balls and 3 Potions. Catch Pokemon in the tall grass on Route 1!",
-                "The first gym is in Pebblecrest City, to the north. Good luck!"], "Prof. Hazel")
+        nm = A.name_of(self.app.dex, game["party"][0]).upper()
+        ow.say([f"{game['name'].upper()} received {nm}!", "HAZEL: Take these too. 5 POKe BALLS and 3 POTIONS.",
+                "Catch POKeMON in the tall grass on ROUTE 1, north of here.",
+                "The first GYM is in PEBBLECREST CITY. Good luck!"])
         self.app.replace(ow)
 
     def draw(self, surf):
-        t = self.app.t
-        surf.fill((236, 240, 232))
-        for y in range(0, H, 40):
-            pygame.draw.line(surf, (222, 228, 218), (0, y), (W, y), 2)
-        if self.stage in ("talk", "talk2", "name"):
-            # the professor (drawn simply): lab coat, big smile
-            from .overworld import draw_person
-            draw_person(surf, W / 2, 470, "down", 0, (250, 250, 250), hair=(120, 80, 50), scale=4.5)
-        if self.stage in ("talk", "talk2"):
-            line = self.lines[self.i]
-            from .overworld import Dialogue
-            d = Dialogue([line], "Prof. Hazel")
-            d.shown = self.shown
-            d.draw(surf, t)
+        t = self.t
+        bg(surf, (40, 48, 72), (88, 104, 152))
+        if self.stage in ("talk", "name"):
+            pygame.draw.ellipse(surf, (64, 80, 120), (170, 196, 140, 26))
+            prof = pygame.transform.scale_by(G.person("prof", "down", 0), 3)
+            surf.blit(prof, prof.get_rect(midbottom=(240, 210)))
+        if self.stage == "talk" and self.text is not None:
+            self.text.draw(surf, t)
         elif self.stage == "name":
-            gfx.title_text(surf, "WHAT'S YOUR NAME?", (W / 2, 560), 40)
-            self.name.draw(surf)
-            for b in self.buttons:
-                b.draw(surf)
-        else:
-            gfx.title_text(surf, "CHOOSE YOUR STARTER", (W / 2, 160), 46)
-            gfx.text(surf, f"Generation {self.gen}  (up/down or < > for others)", (W / 2, 230), 20, (90, 90, 110),
-                     None, 0, chunky=False)
+            inner = U.box(surf, (60, 40, 360, 120))
+            F.draw(surf, "YOUR NAME?", (inner.x + 12, inner.y + 6), U.TEXT, U.SHADOW)
+            pygame.draw.rect(surf, (216, 224, 240), (inner.x + 12, inner.y + 40, inner.w - 24, 34), border_radius=4)
+            caret = "_" if int(t * 3) % 2 else " "
+            F.draw(surf, self.name.upper() + caret, (inner.x + 22, inner.y + 46), U.TEXT, U.SHADOW, scale=3)
+            F.draw(surf, "Type it, then press ENTER", (inner.x + 12, inner.y + 84), (120, 120, 136), None)
+        elif self.stage == "pick":
+            pygame.draw.rect(surf, (168, 120, 72), (40, 200, 400, 30), border_radius=6)
+            pygame.draw.rect(surf, (128, 88, 56), (40, 226, 400, 8))
             for i, pid in enumerate(A.STARTERS[self.gen]):
-                r = self._card(i)
-                e = self.app.dex.all[pid]
+                x = 100 + i * 140
                 sel = i == self.pick
-                col = gfx.type_color(e["types"][0], 0)
-                pygame.draw.rect(surf, INK, r.inflate(8, 8), border_radius=20)
-                pygame.draw.rect(surf, tuple(min(255, int(c * 0.35 + 160)) for c in col), r, border_radius=16)
                 if sel:
-                    pygame.draw.rect(surf, col, r, 6, border_radius=16)
-                img = fit(pid, r.w - 20, 200 if sel else 170)
-                bob = math.sin(t * 4) * 6 if sel else 0
-                surf.blit(img, img.get_rect(midbottom=(r.centerx, r.y + 250 + bob)))
-                gfx.text(surf, e["name"], (r.centerx, r.y + 290), 26, INK, None, 0)
-                type_row(surf, e["types"], r.centerx, r.y + 330, 15)
-                gfx.text(surf, f"BST {sum(e['stats'].values())}", (r.centerx, r.y + 370), 16, (80, 80, 90), None,
-                         0, chunky=False)
-                # ball at the bottom of the card
-                ball = gfx.ball_sprite(40)
-                surf.blit(ball, ball.get_rect(center=(r.centerx, r.bottom - 30)))
-            for b in self.buttons:
-                b.draw(surf)
+                    img = G.battle_sprite(pid, max_h=96)
+                    surf.blit(img, img.get_rect(midbottom=(x, 196 + int(math.sin(t * 5) * 2))))
+                    U.cursor(surf, (x - 6, 104))
+                U.ball(surf, (x, 212), 9 if sel else 8)
+            e = self.app.dex.all[A.STARTERS[self.gen][self.pick]]
+            inner = U.box(surf, (4, 240, 472, 76))
+            F.draw(surf, f"{e['name'].upper()}", (inner.x + 10, inner.y + 6), U.TEXT, U.SHADOW)
+            x = inner.x + 10
+            for typ in e["types"]:
+                x += type_tag(surf, typ, x, inner.y + 32)
+            F.draw(surf, f"GEN {self.gen}  (up/down: other regions)", (inner.right - 8, inner.y + 6), (120, 120, 136),
+                   None, anchor="topright")
+            if self.confirm is not None:
+                F.draw(surf, "Choose this one?", (inner.x + 160, inner.y + 34), U.TEXT, U.SHADOW)
+                self.confirm.draw(surf, (370, 160, 104, 76))
+
+
+def _lab_door(game, app):
+    w = A.World(app.dex)
+    for y, row in enumerate(w.areas[0]["rows"]):
+        for x, ch in enumerate(row):
+            if ch == "P":
+                yield (x, y)
 
 
 # ====================================================================== party
-class PartyScene(Scene):
-    def __init__(self, app, game, pick=None):
+class PartyScene(GBAScene):
+    """GBA party screen: the lead in the big slot on the left, the rest on the right."""
+
+    def __init__(self, app, game, pick=None, title=None):
         super().__init__(app)
         self.game = game
-        self.sel = None
-        self.box_view = False
-        self.pick = pick          # callback(index) for "use item on which Pokemon?"
-        self._layout()
+        self.dex = app.dex
+        self.index = 0
+        self.pick = pick
+        self.sub = None
+        self.swap = None
+        self.title = title
+        self.t = 0.0
+        self.msg = None
 
-    def _layout(self):
-        if self.sel is None:
-            self.buttons = [ui.Button((40, 1180, 200, 70), "Back", ui.PANEL2, 24, tag="back")]
-            if not self.pick:
-                self.buttons.append(ui.Button((480, 1180, 200, 70), f"Box ({len(self.game['box'])})", ui.SCREEN2,
-                                              24, tag="box"))
-        else:
-            self.buttons = [ui.Button((40, 1180, 200, 70), "Back", ui.PANEL2, 24, tag="close")]
-            if self.box_view:
-                self.buttons.append(ui.Button((260, 1180, 420, 70), "Add to party", (34, 140, 88), 24, tag="take",
-                                              enabled=len(self.game["party"]) < 6))
-            else:
-                self.buttons.append(ui.Button((260, 1180, 200, 70), "Make lead", (38, 104, 188), 22, tag="lead",
-                                              enabled=self.sel > 0))
-                self.buttons.append(ui.Button((480, 1180, 200, 70), "To Box", ui.SCREEN2, 22, tag="stash",
-                                              enabled=len(self.game["party"]) > 1))
-
-    def _list(self):
-        return self.game["box"] if self.box_view else self.game["party"]
+    def update(self, dt):
+        self.t += dt
 
     def _slot(self, i):
-        if self.box_view:
-            return pygame.Rect(40 + (i % 4) * 160, 170 + (i // 4) * 150, 150, 140)
-        return pygame.Rect(40, 170 + i * 162, 640, 150)
+        if i == 0:
+            return pygame.Rect(8, 36, 196, 108)
+        return pygame.Rect(212, 6 + (i - 1) * 46, 262, 42)
 
     def handle(self, ev, pos):
-        if ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE:
-            if self.sel is not None:
-                self.sel = None
-                self._layout()
-            elif self.box_view:
-                self.box_view = False
-                self._layout()
+        party = self.game["party"]
+        n = len(party)
+        if self.sub is not None:
+            k = self.sub.handle(ev, pos)
+            if k == "summary":
+                self.sub = None
+                self.app.push(SummaryScene(self.app, self.game, self.index))
+            elif k == "switch":
+                self.sub = None
+                self.swap = self.index
+            elif k == "box":
+                self.sub = None
+                if n > 1:
+                    self.game["box"].append(party.pop(self.index))
+                    self.index = min(self.index, len(party) - 1)
+            elif k in ("cancel", "back"):
+                self.sub = None
+            return
+        d = U.direction(ev)
+        if d:
+            if d == "right" and self.index == 0 and n > 1:
+                self.index = 1
+            elif d == "left" and self.index > 0:
+                self.index = 0
+            elif d == "down" and self.index < n - 1:
+                self.index += 1
+            elif d == "up" and self.index > 0:
+                self.index -= 1
+            AUDIO.play("click", 0.25)
+            return
+        if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1 and pos:
+            for i in range(n):
+                if self._slot(i).collidepoint(pos):
+                    self.index = i
+                    break
+            else:
+                return
+        if U.is_a(ev):
+            if self.swap is not None:
+                a, b = self.swap, self.index
+                party[a], party[b] = party[b], party[a]
+                self.swap = None
+                AUDIO.play("select", 0.5)
+                return
+            if self.pick:
+                res = self.pick(self.index)
+                if res:
+                    self.msg = res if isinstance(res, str) else None
+                    if not isinstance(res, str):
+                        self.app.pop()
+                return
+            self.sub = U.Menu([("summary", "SUMMARY"), ("switch", "SWITCH"), ("box", "TO BOX", n > 1),
+                               ("cancel", "CANCEL")])
+        elif U.is_b(ev):
+            if self.swap is not None:
+                self.swap = None
             else:
                 self.app.pop()
-            return
-        if ev.type != pygame.MOUSEBUTTONDOWN or ev.button != 1:
-            return
-        for b in self.buttons:
-            if not b.hit(pos):
-                continue
-            g = self.game
-            if b.tag == "back":
-                if self.box_view:
-                    self.box_view = False
-                else:
-                    self.app.pop()
-            elif b.tag == "box":
-                self.box_view = True
-            elif b.tag == "close":
-                self.sel = None
-            elif b.tag == "lead":
-                g["party"].insert(0, g["party"].pop(self.sel))
-                self.sel = 0
-            elif b.tag == "stash":
-                g["box"].append(g["party"].pop(self.sel))
-                self.sel = None
-            elif b.tag == "take":
-                g["party"].append(g["box"].pop(self.sel))
-                self.sel = None
-            AUDIO.play("select", 0.5)
-            self._layout()
-            return
-        if self.sel is None:
-            for i in range(len(self._list())):
-                if self._slot(i).collidepoint(pos):
-                    if self.pick:
-                        if self.pick(i):
-                            self.app.pop()
-                        return
-                    self.sel = i
-                    AUDIO.cry(self._list()[i]["species"], 0.7)
-                    self._layout()
-                    return
 
     def draw(self, surf):
-        t = self.app.t
-        ui.menu_background(surf, t)
-        dex = self.app.dex
-        title = "Box" if self.box_view else ("Use on which Pokemon?" if self.pick else "Pokemon")
-        ui.header(surf, title, f"{len(self.game['party'])} in your party  -  {len(self.game['box'])} in the Box")
-        lst = self._list()
-        if self.sel is None:
-            for i, m in enumerate(lst):
-                r = self._slot(i)
-                if self.box_view:
-                    ui.panel(surf, r, ui.SCREEN2, 12)
-                    img = fit(m["species"], r.w - 20, 90, m.get("shiny", False))
-                    surf.blit(img, img.get_rect(center=(r.centerx, r.y + 58)))
-                    gfx.text(surf, f"{A.name_of(dex, m)[:10]}  Lv{m['level']}", (r.centerx, r.bottom - 20), 14,
-                             ui.TEXT, None, 0, chunky=False)
-                else:
-                    mon_card(surf, dex, m, r, False, t)
-            if self.box_view and not lst:
-                gfx.text(surf, "The Box is empty. Catch more than 6 Pokemon!", (W / 2, 400), 20, ui.MUTED, None, 0,
-                         chunky=False)
+        bg(surf, (64, 136, 120), (104, 184, 160))
+        party = self.game["party"]
+        for i, m in enumerate(party):
+            self._draw_slot(surf, i, m)
+        for i in range(len(party), 6):
+            r = self._slot(i)
+            pygame.draw.rect(surf, (80, 152, 136), r, border_radius=8)
+        msg = self.msg or self.title or ("Move to where?" if self.swap is not None else "Choose a POKeMON.")
+        inner = U.box(surf, (4, 256, 330 if self.sub else 472, 60))
+        F.draw(surf, msg, (inner.x + 8, inner.y + 10), U.TEXT, U.SHADOW)
+        if self.sub is not None:
+            self.sub.draw(surf, (338, 184, 138, 20 + 26 * len(self.sub.options)))
+
+    def _draw_slot(self, surf, i, m):
+        r = self._slot(i)
+        sel = i == self.index
+        hp, mx = A.hp_of(self.dex, m)
+        fainted = hp <= 0
+        col = (232, 112, 104) if fainted else (96, 176, 240) if sel else (72, 128, 200)
+        if self.swap == i:
+            col = (240, 200, 88)
+        pygame.draw.rect(surf, (40, 48, 64), r, border_radius=8)
+        pygame.draw.rect(surf, col, r.inflate(-4, -4), border_radius=7)
+        if sel:
+            pygame.draw.rect(surf, (248, 104, 88), r, 3, border_radius=8)
+        icon = G.icon(m["species"], m.get("shiny", False))
+        bob = int(math.sin(self.t * 8) * 2) if sel else 0
+        nm = A.name_of(self.dex, m).upper()[:10]
+        if i == 0:
+            surf.blit(icon, icon.get_rect(center=(r.x + 30, r.y + 30 + bob)))
+            F.draw(surf, nm, (r.x + 60, r.y + 14), U.WHITE, (40, 56, 96))
+            F.draw(surf, f"Lv{m['level']}", (r.x + 60, r.y + 38), U.WHITE, (40, 56, 96))
+            U.hp_bar(surf, r.x + 30, r.y + 66, 140, hp / max(1, mx))
+            F.draw(surf, f"{hp}/{mx}", (r.right - 12, r.y + 82), U.WHITE, (40, 56, 96), anchor="topright")
         else:
-            self._draw_summary(surf, lst[self.sel], t)
-        for b in self.buttons:
-            b.draw(surf)
+            surf.blit(icon, icon.get_rect(center=(r.x + 22, r.centery + bob)))
+            F.draw(surf, nm, (r.x + 46, r.y + 4), U.WHITE, (40, 56, 96))
+            F.draw(surf, f"Lv{m['level']}", (r.x + 46, r.y + 24), U.WHITE, (40, 56, 96), scale=1)
+            U.hp_bar(surf, r.x + 140, r.y + 8, 110, hp / max(1, mx))
+            F.draw(surf, f"{hp}/{mx}", (r.right - 10, r.y + 22), U.WHITE, (40, 56, 96), anchor="topright")
+        if m.get("status") and not fainted:
+            F.draw(surf, m["status"].upper(), (r.x + (100 if i else 14), r.y + (24 if i else 82)), (248, 200, 64),
+                   None, scale=1)
 
-    def _draw_summary(self, surf, m, t):
+
+class SummaryScene(GBAScene):
+    def __init__(self, app, game, index, box=False):
+        super().__init__(app)
+        self.game = game
+        self.list = game["box"] if box else game["party"]
+        self.index = index
+        self.page = 0
+        self.t = 0.0
+
+    def update(self, dt):
+        self.t += dt
+
+    def handle(self, ev, pos):
+        d = U.direction(ev)
+        if d == "right":
+            self.page = (self.page + 1) % 2
+        elif d == "left":
+            self.page = (self.page - 1) % 2
+        elif d == "down" and self.index < len(self.list) - 1:
+            self.index += 1
+        elif d == "up" and self.index > 0:
+            self.index -= 1
+        elif U.is_b(ev) or (ev.type == pygame.KEYDOWN and ev.key in U.A_KEYS):
+            self.app.pop()
+        elif ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
+            self.page = (self.page + 1) % 2
+
+    def draw(self, surf):
         dex = self.app.dex
+        m = self.list[self.index]
         e = dex.all[m["species"]]
-        r = pygame.Rect(40, 170, 640, 990)
-        ui.panel(surf, r, ui.SCREEN2, 18, border=gfx.type_color(e["types"][0], 0))
-        img = fit(m["species"], 300, 240, m.get("shiny", False))
-        surf.blit(img, img.get_rect(midbottom=(r.centerx, r.y + 270 + math.sin(t * 2) * 4)))
+        bg(surf, (232, 224, 200), (248, 240, 216))
+        title_bar(surf, ["POKeMON INFO", "KNOWN MOVES"][self.page] + "   < >")
+        # left: the Pokemon
+        pygame.draw.rect(surf, (48, 48, 56), (8, 40, 180, 272), border_radius=8)
+        pygame.draw.rect(surf, (200, 216, 232), (10, 42, 176, 268), border_radius=7)
+        img = G.battle_sprite(m["species"], shiny=m.get("shiny", False), max_h=140)
+        surf.blit(img, img.get_rect(midbottom=(98, 200 + int(math.sin(self.t * 2) * 2))))
+        F.draw(surf, A.name_of(dex, m).upper()[:10], (20, 48), U.TEXT, U.SHADOW)
+        F.draw(surf, f"Lv{m['level']}", (20, 72), U.TEXT, U.SHADOW)
         if m.get("shiny"):
-            gfx.sparkles(surf, (r.centerx, r.y + 160), 130, t, m["species"], 10)
-        gfx.text(surf, A.name_of(dex, m), (r.centerx, r.y + 300), 36, ui.TEXT, ui.SHELL_DARK, 3)
-        gfx.text(surf, f"Lv {m['level']}  -  {m.get('nature', '')} nature  -  met at {m.get('origin') or '?'}",
-                 (r.centerx, r.y + 340), 16, ui.MUTED, None, 0, chunky=False)
-        type_row(surf, e["types"], r.centerx, r.y + 372, 15)
-        # experience bar
+            F.draw(surf, "*", (160, 48), (232, 176, 32), None)
+        x = 20
+        for typ in e["types"]:
+            x += type_tag(surf, typ, x, 212)
         lo, hi = A.xp_for(m["level"]), A.xp_for(m["level"] + 1)
-        frac = (m["xp"] - lo) / max(1, hi - lo)
-        gfx.text(surf, "EXP", (r.x + 40, r.y + 410), 15, ui.MUTED, None, 0, anchor="midleft")
-        pygame.draw.rect(surf, (14, 18, 26), (r.x + 90, r.y + 402, 400, 14), border_radius=7)
-        pygame.draw.rect(surf, (80, 170, 240), (r.x + 90, r.y + 402, max(14, int(400 * frac)), 14), border_radius=7)
-        gfx.text(surf, f"{hi - m['xp']} to next", (r.right - 40, r.y + 410), 14, ui.MUTED, None, 0,
-                 anchor="midright", chunky=False)
-        st = A.stats(dex, m)
-        hp, mx = A.hp_of(dex, m)
-        for i, (k, label) in enumerate(STAT_NAMES):
-            y = r.y + 456 + i * 36
-            gfx.text(surf, label, (r.x + 40, y), 16, ui.MUTED, None, 0, anchor="midleft", chunky=False)
-            val = f"{hp}/{mx}" if k == "hp" else str(st[k])
-            gfx.text(surf, val, (r.x + 260, y), 18, ui.TEXT, None, 0, anchor="midright")
-            pygame.draw.rect(surf, (14, 18, 26), (r.x + 280, y - 7, 320, 14), border_radius=7)
-            pygame.draw.rect(surf, gfx.hsv(min(st[k], 250) / 250 * 0.35),
-                             (r.x + 280, y - 7, max(14, int(320 * min(1.0, st[k] / 250))), 14), border_radius=7)
-        y = r.y + 690
-        gfx.text(surf, "Moves", (r.x + 40, y), 20, ui.TEXT, None, 0, anchor="midleft")
-        for i, mid in enumerate(m["moves"]):
-            mv = dex.moves[mid]
-            yy = y + 40 + i * 58
-            box = pygame.Rect(r.x + 30, yy - 22, r.w - 60, 50)
-            pygame.draw.rect(surf, gfx.type_color(mv["type"], 2), box, border_radius=10)
-            gfx.text(surf, mv["name"], (box.x + 16, box.centery), 20, ui.TEXT, None, 0, anchor="midleft")
-            pp = (m.get("pp") or [None] * 4)[i] if m.get("pp") and i < len(m["pp"]) else mv["pp"]
-            gfx.text(surf, f"{mv['type'].upper()}   {mv['power'] or '-'} POW   {pp}/{mv['pp']} PP",
-                     (box.right - 16, box.centery), 14, (235, 235, 240), None, 0, anchor="midright", chunky=False)
+        F.draw(surf, "EXP", (20, 244), U.TEXT, U.SHADOW, scale=1)
+        U.exp_bar(surf, 48, 246, 128, (m["xp"] - lo) / max(1, hi - lo))
+        F.draw(surf, f"To next Lv: {hi - m['xp']}", (20, 262), U.TEXT, U.SHADOW, scale=1)
+        F.draw(surf, f"No.{e['species']:03d}", (20, 282), U.TEXT, U.SHADOW, scale=1)
+        inner = U.box(surf, (196, 40, 280, 274))
+        if self.page == 0:
+            st = A.stats(dex, m)
+            hp, mx = A.hp_of(dex, m)
+            for i, (k, label) in enumerate(STATS):
+                y = inner.y + 6 + i * 26
+                F.draw(surf, label, (inner.x + 8, y), U.TEXT, U.SHADOW)
+                F.draw(surf, f"{hp}/{mx}" if k == "hp" else str(st[k]), (inner.right - 8, y), U.TEXT, U.SHADOW,
+                       anchor="topright")
+            from .abilities import ability_name
+            F.draw(surf, "ABILITY", (inner.x + 8, inner.y + 170), (120, 120, 136), None)
+            F.draw(surf, ability_name(m.get("ability")).upper(), (inner.x + 8, inner.y + 192), U.TEXT, U.SHADOW)
+            F.draw(surf, f"{m.get('nature', '').upper()} nature.", (inner.x + 8, inner.y + 220), U.TEXT, U.SHADOW)
+            F.draw(surf, f"Met at Lv{m.get('met', m['level'])}, {m.get('origin') or 'ROUTE'}.",
+                   (inner.x + 8, inner.y + 240), U.TEXT, U.SHADOW, scale=1)
+        else:
+            pps = m.get("pp") or []
+            for i, mid in enumerate(m["moves"]):
+                mv = dex.moves[mid]
+                y = inner.y + 4 + i * 64
+                type_tag(surf, mv["type"], inner.x + 6, y + 2)
+                F.draw(surf, mv["name"].upper(), (inner.x + 78, y + 2), U.TEXT, U.SHADOW)
+                pp = pps[i] if i < len(pps) else mv["pp"]
+                F.draw(surf, f"PP {pp}/{mv['pp']}", (inner.x + 78, y + 26), U.TEXT, U.SHADOW)
+                F.draw(surf, f"POW {mv['power'] or '-'}", (inner.right - 8, y + 26), (120, 120, 136), None,
+                       anchor="topright")
 
 
-# ====================================================================== bag
-class BagScene(Scene):
+class BoxScene(GBAScene):
+    """Someone's PC: move Pokemon between the party and the Box."""
+
     def __init__(self, app, game):
         super().__init__(app)
         self.game = game
-        self.msg = ""
-        self._layout()
+        self.side = "box"
+        self.index = 0
+        self.msg = "Pick a POKeMON to move."
 
-    def _layout(self):
-        self.buttons = []
-        items = [(k, n) for k, n in self.game["bag"].items() if n > 0]
-        items.sort(key=lambda kv: list(A.SHOP).index(kv[0]) if kv[0] in A.SHOP else 99)
-        for i, (k, n) in enumerate(items):
-            name, price, desc = A.SHOP.get(k, (k, 0, ""))
-            usable = k not in A.BALL_KEYS
-            self.buttons.append(ui.Button((40, 170 + i * 92, 640, 82), f"{name}  x{n}",
-                                          (60, 150, 90) if usable else (200, 60, 70), 26, desc, tag=k))
-        self.buttons.append(ui.Button((40, 1180, 200, 70), "Back", ui.PANEL2, 24, tag="back"))
+    def _list(self):
+        return self.game["box"] if self.side == "box" else self.game["party"]
 
     def handle(self, ev, pos):
-        if ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE:
+        lst = self._list()
+        d = U.direction(ev)
+        if d in ("left", "right"):
+            self.side = "party" if d == "left" else "box"
+            self.index = 0
+        elif d == "down" and self.index < len(lst) - 1:
+            self.index += 1
+        elif d == "up" and self.index > 0:
+            self.index -= 1
+        elif U.is_b(ev):
+            A.save(self.game)
             self.app.pop()
-        if ev.type != pygame.MOUSEBUTTONDOWN or ev.button != 1:
+        elif U.is_a(ev) and lst:
+            g = self.game
+            if self.side == "box":
+                if len(g["party"]) >= 6:
+                    self.msg = "Your party is full!"
+                    return
+                g["party"].append(g["box"].pop(self.index))
+                self.msg = "Withdrew it into your party."
+            else:
+                if len(g["party"]) <= 1:
+                    self.msg = "That's your last POKeMON!"
+                    return
+                g["box"].append(g["party"].pop(self.index))
+                self.msg = "Deposited it in the Box."
+            AUDIO.play("select", 0.5)
+            self.index = max(0, min(self.index, len(self._list()) - 1))
+
+    def draw(self, surf):
+        dex = self.app.dex
+        bg(surf, (120, 168, 216), (184, 216, 240))
+        title_bar(surf, "POKeMON STORAGE   < party | box >", (72, 112, 200))
+        for side, x0 in (("party", 8), ("box", 244)):
+            lst = self.game[side]
+            inner = U.box(surf, (x0, 40, 228, 212), border=(240, 192, 80) if side == self.side else (96, 160, 200))
+            F.draw(surf, "PARTY" if side == "party" else f"BOX ({len(lst)})", (inner.x + 8, inner.y + 4), U.TEXT,
+                   U.SHADOW)
+            start = max(0, self.index - 4) if side == self.side else 0
+            for i, m in enumerate(lst[start:start + 6]):
+                j = start + i
+                y = inner.y + 30 + i * 28
+                icon = G.icon(m["species"], m.get("shiny", False))
+                icon = pygame.transform.scale(icon, (int(icon.get_width() * 0.7), int(icon.get_height() * 0.7)))
+                surf.blit(icon, icon.get_rect(midleft=(inner.x + 18, y + 8)))
+                F.draw(surf, f"{A.name_of(dex, m).upper()[:9]} Lv{m['level']}", (inner.x + 50, y), U.TEXT, U.SHADOW)
+                if side == self.side and j == self.index:
+                    U.cursor(surf, (inner.x + 2, y))
+        inner = U.box(surf, (4, 256, 472, 60))
+        F.draw(surf, self.msg, (inner.x + 8, inner.y + 10), U.TEXT, U.SHADOW)
+
+
+# ====================================================================== bag
+class BagScene(GBAScene):
+    def __init__(self, app, game):
+        super().__init__(app)
+        self.game = game
+        self.sub = None
+        self.msg = None
+        self._refresh()
+
+    def _refresh(self):
+        items = [(k, n) for k, n in self.game["bag"].items() if n > 0]
+        items.sort(key=lambda kv: list(A.SHOP).index(kv[0]) if kv[0] in A.SHOP else 99)
+        self.items = items
+        self.menu = U.Menu([(k, f"{A.SHOP.get(k, (k,))[0].upper()}") for k, n in items] + [("close", "CLOSE BAG")],
+                           index=getattr(self, "menu", None).index if getattr(self, "menu", None) else 0)
+        self.menu.index = min(self.menu.index, len(self.menu.options) - 1)
+
+    def handle(self, ev, pos):
+        if self.sub is not None:
+            k = self.sub.handle(ev, pos)
+            if k == "use":
+                item = self.items[self.menu.index][0]
+                self.sub = None
+                self.app.push(PartyScene(self.app, self.game, pick=lambda i, item=item: self._use(item, i),
+                                         title="Use on which POKeMON?"))
+            elif k in ("cancel", "back"):
+                self.sub = None
             return
-        for b in self.buttons:
-            if b.hit(pos):
-                if b.tag == "back":
-                    self.app.pop()
-                elif b.tag in A.BALL_KEYS:
-                    self.msg = "Throw Poke Balls at wild Pokemon in battle!"
-                else:
-                    item = b.tag
-                    self.app.push(PartyScene(self.app, self.game, pick=lambda i, item=item: self._use(item, i)))
-                return
+        k = self.menu.handle(ev, pos)
+        self.msg = None
+        if k in ("close", "back"):
+            self.app.pop()
+        elif k is not None:
+            if k in A.BALL_KEYS:
+                self.msg = "Throw it at a wild POKeMON in battle!"
+            else:
+                self.sub = U.Menu([("use", "USE"), ("cancel", "CANCEL")])
 
     def _use(self, item, i):
-        from .turnsim import MEDICINE
         dex = self.app.dex
         mon = self.game["party"][i]
         name, heal, cure, revive = MEDICINE[item]
         hp, mx = A.hp_of(dex, mon)
-        if revive != (hp <= 0):
-            return False
+        if revive != (hp <= 0) or (not revive and hp >= mx and not (cure and mon.get("status"))):
+            AUDIO.play("miss", 0.5)
+            return "It won't have any effect."
         if revive:
             mon["cur_hp"] = max(1, int(mx * heal))
         elif heal:
-            if hp >= mx and not (cure and mon.get("status")):
-                return False
             new = mx if heal < 0 else min(mx, hp + heal)
             mon["cur_hp"] = None if new >= mx else new
         if cure:
-            if not mon.get("status") and not heal:
-                return False
             mon["status"] = None
         self.game["bag"][item] -= 1
         if self.game["bag"][item] <= 0:
             del self.game["bag"][item]
         AUDIO.play("heal")
-        self.msg = f"Used a {name} on {A.name_of(dex, mon)}."
-        self._layout()
+        self._refresh()
         return True
 
     def draw(self, surf):
-        ui.menu_background(surf, self.app.t)
-        ui.header(surf, "Bag", f"{self.game['money']} coins")
-        if len(self.buttons) == 1:
-            gfx.text(surf, "Your bag is empty.", (W / 2, 400), 22, ui.MUTED, None, 0)
-        for b in self.buttons:
-            b.draw(surf)
-        if self.msg:
-            gfx.text(surf, self.msg, (W / 2, 1140), 18, ui.SIGNAL, None, 0, chunky=False)
+        bg(surf, (232, 168, 96), (248, 208, 144))
+        # the bag
+        pygame.draw.rect(surf, (48, 48, 56), (24, 40, 140, 150), border_radius=20)
+        pygame.draw.rect(surf, (200, 104, 64), (28, 44, 132, 142), border_radius=18)
+        pygame.draw.rect(surf, (168, 80, 48), (40, 80, 108, 80), border_radius=10)
+        pygame.draw.rect(surf, (232, 200, 96), (84, 110, 20, 14), border_radius=3)
+        F.draw(surf, "ITEMS", (94, 204), U.WHITE, (120, 64, 32), anchor="center", scale=3)
+        rows = len(self.menu.options)
+        self.menu.draw(surf, (184, 8, 292, min(240, 20 + 26 * rows)))
+        for i, (k, n) in enumerate(self.items[:8]):
+            F.draw(surf, f"x{n}", (466, 8 + 12 + i * 26), U.TEXT, U.SHADOW, anchor="topright")
+        inner = U.box(surf, (4, 256, 472, 60))
+        k = self.menu.options[self.menu.index][0]
+        desc = self.msg or (A.SHOP[k][2] if k in A.SHOP else "Close the BAG.")
+        F.draw(surf, desc, (inner.x + 8, inner.y + 10), U.TEXT, U.SHADOW)
+        if self.sub is not None:
+            self.sub.draw(surf, (338, 186, 138, 72))
 
 
 # ====================================================================== mart
-class MartScene(Scene):
+class MartScene(GBAScene):
     def __init__(self, app, game):
         super().__init__(app)
         self.game = game
-        self.msg = "Welcome! How may I help you?"
-        self._layout()
+        self.stage = "top"
+        self.top = U.Menu([("buy", "BUY"), ("sell", "SELL"), ("bye", "SEE YA!")])
+        self.list = None
+        self.qty = 1
+        self.text = None
 
-    def _layout(self):
-        self.buttons = []
-        for i, k in enumerate(A.mart_stock(len(self.game["badges"]))):
-            name, price, desc = A.SHOP[k]
-            have = self.game["bag"].get(k, 0)
-            y = 170 + i * 88
-            self.buttons.append(ui.Button((40, y, 440, 78), name, ui.SCREEN2, 24, f"{desc}  -  you have {have}",
-                                          tag=("info", k)))
-            self.buttons.append(ui.Button((490, y, 90, 78), f"{price}", (38, 104, 188), 18, "buy 1",
-                                          enabled=self.game["money"] >= price, tag=("buy", k, 1)))
-            self.buttons.append(ui.Button((590, y, 90, 78), "x10", (34, 140, 88), 18, f"{price * 10}",
-                                          enabled=self.game["money"] >= price * 10, tag=("buy", k, 10)))
-        self.buttons.append(ui.Button((40, 1180, 200, 70), "Leave", ui.PANEL2, 24, tag=("back",)))
+    def _buy_list(self):
+        stock = A.mart_stock(len(self.game["badges"]))
+        self.list = U.Menu([(k, A.SHOP[k][0].upper()) for k in stock] + [("cancel", "CANCEL")])
+        self.stage = "buy"
+
+    def _sell_list(self):
+        items = [k for k, n in self.game["bag"].items() if n > 0 and A.SHOP.get(k, (0, 0))[1] > 0]
+        self.list = U.Menu([(k, A.SHOP[k][0].upper()) for k in items] + [("cancel", "CANCEL")])
+        self.stage = "sell"
+
+    def update(self, dt):
+        if self.text is not None:
+            self.text.update(dt)
+            if self.text.done:
+                self.text = None
 
     def handle(self, ev, pos):
-        if ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE:
-            self.app.pop()
-        if ev.type != pygame.MOUSEBUTTONDOWN or ev.button != 1:
+        if self.text is not None:
+            self.text.handle(ev)
+            if self.text.done:
+                self.text = None
             return
-        for b in self.buttons:
-            if b.hit(pos):
-                if b.tag[0] == "back":
-                    A.save(self.game)
-                    self.app.pop()
-                elif b.tag[0] == "buy":
-                    _, k, n = b.tag
-                    cost = A.SHOP[k][1] * n
-                    if self.game["money"] >= cost:
-                        self.game["money"] -= cost
-                        self.game["bag"][k] = self.game["bag"].get(k, 0) + n
-                        self.msg = f"Here you are! {n} x {A.SHOP[k][0]}. Thank you!"
-                        AUDIO.play("catch", 0.5)
-                    self._layout()
-                return
+        g = self.game
+        if self.stage == "top":
+            k = self.top.handle(ev, pos)
+            if k == "buy":
+                self._buy_list()
+            elif k == "sell":
+                self._sell_list()
+            elif k in ("bye", "back"):
+                A.save(g)
+                self.app.pop()
+        elif self.stage in ("buy", "sell"):
+            k = self.list.handle(ev, pos)
+            if k in ("cancel", "back"):
+                self.stage = "top"
+            elif k is not None:
+                self.item = k
+                self.qty = 1
+                self.stage = "qty_" + self.stage
+        elif self.stage.startswith("qty_"):
+            selling = self.stage == "qty_sell"
+            price = A.SHOP[self.item][1] // (2 if selling else 1)
+            cap = g["bag"].get(self.item, 0) if selling else max(1, min(99, g["money"] // max(1, price)))
+            d = U.direction(ev)
+            if d in ("up", "right"):
+                self.qty = self.qty + (1 if d == "up" else 10)
+                self.qty = 1 if self.qty > cap else self.qty
+            elif d in ("down", "left"):
+                self.qty = self.qty - (1 if d == "down" else 10)
+                self.qty = cap if self.qty < 1 else self.qty
+            elif U.is_b(ev):
+                self.stage = self.stage[4:]
+            elif U.is_a(ev):
+                total = price * self.qty
+                name = A.SHOP[self.item][0].upper()
+                if selling:
+                    g["bag"][self.item] -= self.qty
+                    if g["bag"][self.item] <= 0:
+                        del g["bag"][self.item]
+                    g["money"] += total
+                    self.text = U.TextBox([f"Turned over the {name} and received {total} coins."])
+                    self._sell_list()
+                elif g["money"] < total:
+                    self.text = U.TextBox(["You don't have enough money."])
+                    self.stage = "buy"
+                else:
+                    g["money"] -= total
+                    g["bag"][self.item] = g["bag"].get(self.item, 0) + self.qty
+                    AUDIO.play("catch", 0.5)
+                    self.text = U.TextBox([f"{name}, and you want {self.qty}. That'll be {total} coins.",
+                                           "Here you are! Thank you!"])
+                    self.stage = "buy"
 
     def draw(self, surf):
-        ui.menu_background(surf, self.app.t)
-        ui.header(surf, "Poke Mart", f"{self.game['money']} coins")
-        for b in self.buttons:
-            b.draw(surf)
-        gfx.text(surf, self.msg, (W / 2, 1140), 18, ui.SIGNAL, None, 0, chunky=False)
+        bg(surf, (152, 200, 232), (224, 240, 248))
+        # the shop counter and clerk
+        pygame.draw.rect(surf, (104, 144, 232), (0, 150, VW, 20))
+        pygame.draw.rect(surf, (240, 232, 216), (0, 170, VW, 70))
+        clerk = pygame.transform.scale_by(G.person("clerk", "down", 0), 3)
+        surf.blit(clerk, clerk.get_rect(midbottom=(80, 160)))
+        g = self.game
+        inner = U.box(surf, (4, 4, 170, 52))
+        F.draw(surf, "MONEY", (inner.x + 8, inner.y + 2), U.TEXT, U.SHADOW, scale=1)
+        F.draw(surf, f"{g['money']}", (inner.right - 8, inner.y + 14), U.TEXT, U.SHADOW, anchor="topright")
+        if self.stage == "top":
+            self.top.draw(surf, (330, 4, 146, 98))
+            if self.text is None:
+                box = U.box(surf, (4, 240, 472, 76))
+                F.draw(surf, "Hi there! May I help you?", (box.x + 10, box.y + 6), U.TEXT, U.SHADOW)
+        elif self.stage in ("buy", "sell") or self.stage.startswith("qty_"):
+            selling = "sell" in self.stage
+            self.list.draw(surf, (196, 4, 280, min(232, 20 + 26 * len(self.list.options))))
+            for i, (k, *_) in enumerate(self.list.options[:8]):
+                if k in A.SHOP:
+                    price = A.SHOP[k][1] // (2 if selling else 1)
+                    val = f"x{g['bag'].get(k, 0)}" if selling else f"{price}"
+                    F.draw(surf, val, (466, 4 + 12 + i * 26), U.TEXT, U.SHADOW, anchor="topright")
+            k = self.list.options[self.list.index][0]
+            box = U.box(surf, (4, 240, 472, 76))
+            F.draw(surf, A.SHOP[k][2] if k in A.SHOP else "Quit shopping.", (box.x + 10, box.y + 6), U.TEXT,
+                   U.SHADOW)
+            F.draw(surf, f"In bag: {g['bag'].get(k, 0)}" if k in A.SHOP else "", (box.x + 10, box.y + 32),
+                   (120, 120, 136), None)
+            if self.stage.startswith("qty_"):
+                price = A.SHOP[self.item][1] // (2 if selling else 1)
+                q = U.box(surf, (240, 186, 236, 52))
+                F.draw(surf, f"x{self.qty:02d}", (q.x + 10, q.y + 6), U.TEXT, U.SHADOW)
+                F.draw(surf, f"{price * self.qty} coins", (q.right - 8, q.y + 6), U.TEXT, U.SHADOW, anchor="topright")
+        if self.text is not None:
+            self.text.draw(surf, 0.0)
+
+
+# ====================================================================== pokedex
+class DexScene(GBAScene):
+    def __init__(self, app, game):
+        super().__init__(app)
+        self.game = game
+        self.dex = app.dex
+        self.entries = sorted({self.dex.all[p]["species"] for p in game["seen"] if p in self.dex.all})
+        self.index = 0
+        self.view = False
+
+    def _entry(self, sid):
+        return next((e for e in self.dex.all.values() if e["species"] == sid and e["default"]), None)
+
+    def handle(self, ev, pos):
+        d = U.direction(ev)
+        n = len(self.entries)
+        if d == "down" and self.index < n - 1:
+            self.index += 1
+        elif d == "up" and self.index > 0:
+            self.index -= 1
+        elif d == "right":
+            self.index = min(n - 1, self.index + 8)
+        elif d == "left":
+            self.index = max(0, self.index - 8)
+        elif U.is_a(ev) and n:
+            self.view = not self.view
+            if self.view:
+                AUDIO.cry(self._entry(self.entries[self.index])["id"], 0.8)
+        elif U.is_b(ev):
+            if self.view:
+                self.view = False
+            else:
+                self.app.pop()
+
+    def draw(self, surf):
+        bg(surf, (200, 56, 56), (232, 104, 96), stripes=False)
+        caught = {self.dex.all[p]["species"] for p in self.game["caught"] if p in self.dex.all}
+        title_bar(surf, f"POKeDEX   SEEN {len(self.entries)}   OWN {len(caught)}", (56, 56, 64))
+        if not self.entries:
+            return
+        sid = self.entries[self.index]
+        e = self._entry(sid)
+        if self.view and e:
+            inner = U.box(surf, (8, 40, 464, 272))
+            img = G.battle_sprite(e["id"], max_h=140)
+            pygame.draw.rect(surf, (216, 224, 232), (inner.x + 8, inner.y + 8, 170, 170), border_radius=6)
+            surf.blit(img, img.get_rect(center=(inner.x + 93, inner.y + 93)))
+            F.draw(surf, f"No.{sid:03d}", (inner.x + 196, inner.y + 10), U.TEXT, U.SHADOW)
+            F.draw(surf, e["name"].upper(), (inner.x + 196, inner.y + 36), U.TEXT, U.SHADOW)
+            x = inner.x + 196
+            for typ in e["types"]:
+                x += type_tag(surf, typ, x, inner.y + 66)
+            if sid in caught:
+                for i, (k, label) in enumerate(STATS):
+                    y = inner.y + 96 + i * 20
+                    F.draw(surf, label, (inner.x + 196, y), U.TEXT, U.SHADOW, scale=1)
+                    v = e["stats"][k]
+                    pygame.draw.rect(surf, (216, 216, 216), (inner.x + 270, y + 2, 160, 8))
+                    pygame.draw.rect(surf, U.hp_color(v / 150), (inner.x + 270, y + 2, min(160, v), 8))
+            else:
+                F.draw(surf, "Not caught yet.", (inner.x + 196, inner.y + 100), (120, 120, 136), None)
+            return
+        inner = U.box(surf, (8, 40, 464, 272))
+        start = max(0, self.index - 4)
+        for i, s in enumerate(self.entries[start:start + 9]):
+            j = start + i
+            y = inner.y + 6 + i * 28
+            en = self._entry(s)
+            if s in caught:
+                U.ball(surf, (inner.x + 30, y + 8), 5)
+            F.draw(surf, f"No.{s:03d}  {(en['name'] if en else '?').upper()}", (inner.x + 46, y), U.TEXT, U.SHADOW)
+            if j == self.index:
+                U.cursor(surf, (inner.x + 4, y))
+        if e:
+            img = G.icon(e["id"])
+            surf.blit(pygame.transform.scale_by(img, 2), (380, 60))
+
+
+# ====================================================================== trainer card
+class CardScene(GBAScene):
+    def __init__(self, app, game):
+        super().__init__(app)
+        self.game = game
+
+    def handle(self, ev, pos):
+        if U.is_a(ev) or U.is_b(ev):
+            self.app.pop()
+
+    def draw(self, surf):
+        g = self.game
+        bg(surf, (64, 120, 200), (120, 168, 232))
+        r = pygame.Rect(20, 16, 440, 288)
+        pygame.draw.rect(surf, (48, 48, 56), r, border_radius=12)
+        pygame.draw.rect(surf, (232, 216, 160), r.inflate(-6, -6), border_radius=10)
+        pygame.draw.rect(surf, (200, 168, 96), (r.x + 10, r.y + 10, r.w - 20, 30), border_radius=6)
+        F.draw(surf, "TRAINER CARD", (r.x + 22, r.y + 16), U.WHITE, (120, 88, 40))
+        rows = [("NAME", g["name"].upper()), ("MONEY", f"{g['money']}"), ("POKeDEX", f"{len(g['caught'])}"),
+                ("TIME", A.playtime_text(g.get("playtime", 0)))]
+        for i, (k, v) in enumerate(rows):
+            y = r.y + 56 + i * 30
+            F.draw(surf, k, (r.x + 22, y), U.TEXT, U.SHADOW)
+            F.draw(surf, v, (r.x + 280, y), U.TEXT, U.SHADOW, anchor="topright")
+        me = pygame.transform.scale_by(G.person("player", "down", 0), 3)
+        surf.blit(me, me.get_rect(midbottom=(r.right - 80, r.y + 176)))
+        pygame.draw.rect(surf, (200, 168, 96), (r.x + 10, r.y + 190, r.w - 20, 86), border_radius=6)
+        for i, gym in enumerate(A.GYMS):
+            x, y = r.x + 50 + i * 50, r.y + 232
+            have = gym[6] in g["badges"]
+            col = type_color(gym[2], 0) if have else (168, 136, 80)
+            pts = [(x + 16 * math.cos(a), y + 16 * math.sin(a)) for a in [k * math.tau / 6 for k in range(6)]]
+            pygame.draw.polygon(surf, (72, 56, 32), [(px + 1, py + 2) for px, py in pts])
+            pygame.draw.polygon(surf, col, pts)
+            if have:
+                pygame.draw.circle(surf, (255, 255, 255), (x - 5, y - 5), 3)
 
 
 # ====================================================================== evolution
-class EvolutionScene(Scene):
+class EvolutionScene(GBAScene):
     no_transition = True
 
     def __init__(self, app, game, mon, to):
         super().__init__(app)
-        self.game = game
-        self.mon = mon
+        self.game, self.mon, self.to = game, mon, to
         self.old = mon["species"]
-        self.to = to
+        self.old_name = A.name_of(app.dex, mon).upper()
         self.t = 0.0
         self.done = False
         self.learned = []
-        self.old_name = A.name_of(app.dex, mon)
+        self.text = U.TextBox([f"What? {self.old_name} is evolving!"], auto=1.6)
         AUDIO.cry(self.old, 0.9)
 
     def update(self, dt):
-        AUDIO.music(None)
         self.t += dt
-        if self.t >= 4.6 and not self.done:
+        AUDIO.music(None)
+        if self.text is not None:
+            self.text.update(dt)
+        if self.t >= 5.0 and not self.done:
             self.done = True
             self.learned = A.evolve(self.app.dex, self.mon, self.to)
             A.save(self.game)
-            AUDIO.play("mega")
+            AUDIO.play("win")
             AUDIO.cry(self.to, 1.0)
+            new = A.name_of(self.app.dex, self.mon).upper()
+            lines = [f"Congratulations! Your {self.old_name} evolved into {new}!"]
+            lines += [f"{new} learned {self.app.dex.moves[mid]['name'].upper()}!" for _, mid, _ in self.learned]
+            self.text = U.TextBox(lines)
 
     def handle(self, ev, pos):
-        if self.done and self.t > 5.6 and ((ev.type == pygame.KEYDOWN and ev.key in (pygame.K_SPACE,
-                                                                                      pygame.K_RETURN)) or
-                                           (ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1)):
+        if not self.done or self.text is None:
+            return
+        if self.text.handle(ev) and self.text.done:
             self.app.pop()
 
     def draw(self, surf):
         t = self.t
-        surf.fill((14, 14, 30))
-        cx, cy = W / 2, H * 0.45
-        # swirling light
-        for i in range(24):
-            a = i / 24 * math.tau + t * (1 + t * 0.4)
-            r = 120 + 200 * ((i * 37) % 10) / 10
-            pygame.draw.circle(surf, (180, 200, 255), (int(cx + math.cos(a) * r), int(cy + math.sin(a) * r)), 3)
-        old_img = fit(self.old, 420, 300, self.mon.get("shiny", False))
-        new_img = fit(self.to, 420, 300, self.mon.get("shiny", False))
-        if t < 4.6:
-            # the two shapes swap faster and faster
-            speed = 1.5 + t * t * 0.9
-            show_new = math.sin(t * speed * 2) > 0.3 and t > 1.2
-            img = new_img if show_new else old_img
-            sil = gfx.silhouette(img, (255, 255, 255)) if t > 0.8 else img
-            surf.blit(sil, sil.get_rect(midbottom=(cx, cy + 150)))
-            gfx.text(surf, f"What? {self.old_name} is evolving!", (W / 2, H * 0.78), 26, (255, 255, 255), INK, 2)
-            if t > 4.2:
-                fl = pygame.Surface((W, H))
-                fl.fill((255, 255, 255))
-                fl.set_alpha(int(255 * (t - 4.2) / 0.4))
-                surf.blit(fl, (0, 0))
+        surf.fill((24, 24, 48))
+        for i in range(30):
+            a = i / 30 * math.tau + t * (0.6 + t * 0.3)
+            rr = 40 + (i * 37 % 100)
+            pygame.draw.circle(surf, (168, 200, 248), (int(240 + math.cos(a) * rr * 1.6), int(120 + math.sin(a) * rr)),
+                               2)
+        old = G.battle_sprite(self.old, shiny=self.mon.get("shiny", False), max_h=150)
+        new = G.battle_sprite(self.to, shiny=self.mon.get("shiny", False), max_h=150)
+        if t < 5.0:
+            show_new = t > 1.5 and math.sin(t * (2 + t * t * 0.8)) > 0.2
+            img = new if show_new else old
+            if t > 1.0:
+                img = img.copy()
+                img.fill((248, 248, 248, 0), special_flags=pygame.BLEND_RGBA_MAX)
+            surf.blit(img, img.get_rect(midbottom=(240, 220)))
+            if t > 4.6:
+                U.fade(surf, (t - 4.6) / 0.4, (248, 248, 248))
         else:
-            q = min(1.0, (t - 4.6) / 0.8)
-            fl = pygame.Surface((W, H))
-            fl.fill((255, 255, 255))
-            fl.set_alpha(int(255 * (1 - q)))
-            surf.blit(new_img, new_img.get_rect(midbottom=(cx, cy + 150)))
-            surf.blit(fl, (0, 0))
-            new_name = A.name_of(self.app.dex, self.mon)
-            gfx.title_text(surf, "CONGRATULATIONS!", (W / 2, H * 0.12), 50, color=(255, 230, 110))
-            gfx.text(surf, f"Your {self.old_name} evolved into {new_name}!", (W / 2, H * 0.78), 26,
-                     (255, 255, 255), INK, 2)
-            for k, (_, mid, forgot) in enumerate(self.learned):
-                gfx.text(surf, f"{new_name} learned {self.app.dex.moves[mid]['name']}!", (W / 2, H * 0.83 + k * 34),
-                         20, (200, 230, 255), INK, 1)
-            if t > 5.6 and int(t * 2) % 2:
-                gfx.text(surf, "tap to continue", (W / 2, H - 60), 18, ui.MUTED, None, 0, chunky=False)
+            surf.blit(new, new.get_rect(midbottom=(240, 220)))
+            U.fade(surf, max(0.0, 1 - (t - 5.0) / 0.6), (248, 248, 248))
+        if self.text is not None:
+            self.text.draw(surf, t)
 
 
 # ====================================================================== hall of fame
-class HallOfFame(Scene):
+class HallOfFame(GBAScene):
     def __init__(self, app, game):
         super().__init__(app)
         self.game = game
@@ -641,80 +943,25 @@ class HallOfFame(Scene):
         AUDIO.music("showcase")
 
     def handle(self, ev, pos):
-        if self.t > 3 and ((ev.type == pygame.KEYDOWN and ev.key in (pygame.K_SPACE, pygame.K_RETURN,
-                                                                      pygame.K_ESCAPE)) or
-                           (ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1)):
+        if self.t > 3 and (U.is_a(ev) or U.is_b(ev)):
             self.app.pop()
 
     def draw(self, surf):
         t = self.t
-        surf.fill((30, 20, 8))
-        rays = pygame.Surface((W, H), pygame.SRCALPHA)
+        surf.fill((40, 24, 8))
         for i in range(16):
             a = i / 16 * math.tau + t * 0.3
-            pts = [(W / 2, H * 0.45), (W / 2 + math.cos(a - 0.09) * 1500, H * 0.45 + math.sin(a - 0.09) * 1500),
-                   (W / 2 + math.cos(a + 0.09) * 1500, H * 0.45 + math.sin(a + 0.09) * 1500)]
-            pygame.draw.polygon(rays, (255, 210, 90, 40), pts)
-        surf.blit(rays, (0, 0))
-        gfx.title_text(surf, "HALL OF FAME", (W / 2, 140), 64, color=(255, 230, 110))
-        gfx.text(surf, f"Champion {self.game['name']}", (W / 2, 220), 30, (255, 255, 255), INK, 2)
-        party = self.game["party"]
-        for i, m in enumerate(party):
-            k = min(1.0, max(0.0, (t - i * 0.5) / 0.5))
+            pts = [(240, 150), (240 + math.cos(a - 0.08) * 600, 150 + math.sin(a - 0.08) * 600),
+                   (240 + math.cos(a + 0.08) * 600, 150 + math.sin(a + 0.08) * 600)]
+            pygame.draw.polygon(surf, (88, 64, 24), pts)
+        F.draw(surf, "HALL OF FAME", (240, 24), (248, 216, 64), (120, 72, 16), scale=4, anchor="center")
+        F.draw(surf, f"CHAMPION {self.game['name'].upper()}", (240, 56), U.WHITE, (96, 64, 24), anchor="center")
+        for i, m in enumerate(self.game["party"]):
+            k = min(1.0, max(0.0, (t - i * 0.4) / 0.4))
             if k <= 0:
                 continue
-            col, row = i % 3, i // 3
-            x, y = 130 + col * 230, 520 + row * 330
-            img = fit(m["species"], 200, 190, m.get("shiny", False))
-            img.set_alpha(int(255 * k))
-            surf.blit(img, img.get_rect(midbottom=(x, y + (1 - k) * 40)))
-            gfx.text(surf, f"{A.name_of(self.app.dex, m)}  Lv{m['level']}", (x, y + 26), 18, (255, 240, 200), INK, 1)
-        if t > 3:
-            gfx.text(surf, f"Play time {A.playtime_text(self.game.get('playtime', 0))}  -  "
-                           f"{len(self.game['caught'])} Pokemon caught", (W / 2, H - 120), 18, (255, 230, 180),
-                     None, 0, chunky=False)
-            gfx.text(surf, "Legendary Pokemon now appear more often on the routes...", (W / 2, H - 80), 16,
-                     (220, 200, 160), None, 0, chunky=False)
-
-
-class AdventureCard(Scene):
-    def __init__(self, app, game):
-        super().__init__(app)
-        self.game = game
-        self.buttons = [ui.Button((40, 1180, 200, 70), "Back", ui.PANEL2, 24)]
-
-    def handle(self, ev, pos):
-        if (ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE) or \
-                (ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1 and self.buttons[0].hit(pos)):
-            self.app.pop()
-
-    def draw(self, surf):
-        g = self.game
-        ui.menu_background(surf, self.app.t)
-        ui.header(surf, "Trainer card", g["name"])
-        r = pygame.Rect(40, 180, 640, 360)
-        ui.panel(surf, r, (250, 246, 232), 18)
-        from .overworld import draw_person
-        draw_person(surf, r.x + 120, r.y + 300, "down", 0, (220, 60, 70), hat=(220, 60, 70), scale=4.0)
-        rows = [("Money", f"{g['money']} coins"), ("Pokedex", f"{len(g['seen'])} seen, {len(g['caught'])} caught"),
-                ("Play time", A.playtime_text(g.get("playtime", 0))), ("Badges", f"{len(g['badges'])} / 8"),
-                ("Champion", "Yes!" if g.get("champion") else "Not yet")]
-        for i, (k, v) in enumerate(rows):
-            y = r.y + 50 + i * 60
-            gfx.text(surf, k, (r.x + 260, y), 18, (100, 100, 110), None, 0, anchor="midleft", chunky=False)
-            gfx.text(surf, v, (r.right - 30, y), 22, INK, None, 0, anchor="midright")
-        gfx.text(surf, "Badges", (W / 2, 600), 26, ui.TEXT, None, 0)
-        for i, gym in enumerate(A.GYMS):
-            x, y = 110 + (i % 4) * 166, 700 + (i // 4) * 170
-            have = gym[6] in g["badges"]
-            col = gfx.type_color(gym[2], 0) if have else (50, 58, 72)
-            pts = [(x + 46 * math.cos(a), y + 46 * math.sin(a)) for a in [k * math.tau / 8 + math.pi / 8
-                                                                          for k in range(8)]]
-            pygame.draw.polygon(surf, INK, [(px * 1.0, py + 3) for px, py in pts])
-            pygame.draw.polygon(surf, col, pts)
-            if have:
-                pygame.draw.circle(surf, (255, 255, 255), (int(x - 14), int(y - 14)), 8)
-            gfx.text(surf, gym[6].replace(" Badge", ""), (x, y + 70), 15, ui.TEXT if have else ui.MUTED, None, 0,
-                     chunky=False)
-        for b in self.buttons:
-            b.draw(surf)
+            x, y = 80 + (i % 3) * 160, 170 + (i // 3) * 120
+            img = G.battle_sprite(m["species"], shiny=m.get("shiny", False), max_h=90)
+            surf.blit(img, img.get_rect(midbottom=(x, y + int((1 - k) * 20))))
+            F.draw(surf, f"{A.name_of(self.app.dex, m).upper()} Lv{m['level']}", (x, y + 8), U.WHITE, (96, 64, 24),
+                   scale=1, anchor="center")

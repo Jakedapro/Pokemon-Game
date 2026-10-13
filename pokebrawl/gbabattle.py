@@ -477,7 +477,7 @@ class GBABattle(Scene):
         img = G.battle_sprite(v["pid"], back=side == 0, shiny=v.get("shiny", False), max_h=150 if side == 0 else 128)
         if dark:
             img = img.copy()
-            img.fill((40, 40, 56, 0), special_flags=pygame.BLEND_RGBA_MIN)
+            img.fill((40, 40, 56), special_flags=pygame.BLEND_RGB_MIN)
         g = self.grow[side]
         if g < 1:
             img = pygame.transform.scale(img, (max(1, int(img.get_width() * g)), max(1, int(img.get_height() * g))))
@@ -516,7 +516,7 @@ class GBABattle(Scene):
         F.draw(surf, f"Lv{v['level']}", (r.right - 52, r.y + 6), U.TEXT, U.SHADOW)
         if self.s.kind == "wild" and self.s.foes[0]["species"] in self.g["caught"]:
             U.ball(surf, (r.x + 8, r.y + 38), 4)
-        U.hp_bar(surf, r.x + 60, r.y + 32, 140, self.frac.get((1, v["idx"]), 1.0))
+        U.hp_bar(surf, r.x + 64, r.y + 32, 116, self.frac.get((1, v["idx"]), 1.0))
         self._status_tag(surf, r.x + 22, r.y + 31, v.get("status"))
 
     def _my_box(self, surf):
@@ -527,7 +527,7 @@ class GBABattle(Scene):
         F.draw(surf, v["name"].upper()[:11], (r.x + 14, r.y + 6), U.TEXT, U.SHADOW)
         F.draw(surf, f"Lv{v['level']}", (r.right - 52, r.y + 6), U.TEXT, U.SHADOW)
         frac = self.frac.get((0, v["idx"]), 1.0)
-        U.hp_bar(surf, r.x + 64, r.y + 30, 144, frac)
+        U.hp_bar(surf, r.x + 66, r.y + 30, 120, frac)
         self._status_tag(surf, r.x + 26, r.y + 29, v.get("status"))
         bm = self.s.battle.sides[0].mons[v["idx"]]
         F.draw(surf, f"{max(0, round(bm.maxhp * frac))}/ {bm.maxhp}", (r.right - 14, r.y + 42), U.TEXT, U.SHADOW,

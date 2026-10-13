@@ -132,23 +132,24 @@ Tournaments: `{"title": "Legends Cup", "mode": "tournament", "size": 8, "pokemon
 
 ## Adventure mode
 
-A proper Pokemon journey through the Brawl region:
+A proper Pokemon journey in the style of the Game Boy Advance games. It opens in its own window with crisp
+pixel art: 16-pixel tiles, pixel trainers and a pixel font (all drawn by the game itself).
 
-- **Start:** Professor Hazel's intro, pick your name and a starter (any generation's three starters).
-- **Explore:** walk the map with the arrow keys or WASD (Shift to run, Space to talk, Esc for the menu). Your
-  lead Pokemon follows you around. Nine towns, eight routes, Victory Road and the Pokemon League.
-- **Wild Pokemon:** they jump out of the tall grass. Weaken them, then throw a Poke Ball (Bag in battle), or run.
-  Catch rates and ball wobbles work like the real games. Rare legendaries hide on the later routes, and
-  catching one also adds it to your Legend collection. Shinies are 1 in 512.
-- **Levels:** Pokemon gain experience, level up, learn their real level-up moves and evolve with an evolution
-  scene. The rest of your party gets half experience (like an Exp. Share).
-- **Trainers:** they battle you when you walk into their line of sight, and pay you when you win.
-- **Towns:** the Pokemon Center heals your team, the Poke Mart sells balls and medicine (better stock as you
-  earn badges), and each gym leader gives a badge. You can't pass a town until you've beaten its gym.
-- **The League:** with all 8 badges, challenge Champion Aurelia and enter the Hall of Fame.
-- **Menu:** party (summary, stats, moves, Box), bag, Pokedex, trainer card with your badges, save. The game
-  also saves itself when you change area or finish a battle. Losing a battle sends you back to the last
-  Pokemon Center with half your money.
+**Controls:** arrow keys / WASD to walk, hold **X** (or Shift) to run, **Z** / Space to talk and confirm,
+**X** / Esc to go back, **Enter** for the START menu. The mouse works in menus too.
+
+- **Start:** Professor Hazel introduces the world, you type your name and pick a starter from any generation.
+- **Explore:** towns, routes with tall grass, Victory Road and the Pokemon League. Your lead Pokemon follows you.
+  Walk into buildings: Pokemon Centers (the nurse heals your team; the PC holds your Box), Poke Marts (buy and
+  sell), houses, the professor's lab, and gyms with trainers inside.
+- **Battles:** FIGHT / BAG / POKeMON / RUN, HP boxes with an EXP bar, sliding intros, send-out animations.
+  Experience is given right after each knockout, with level-ups and new moves mid-battle, and evolutions after.
+- **Catching:** throw Poke Balls from the BAG - the ball wobbles and clicks shut, or the Pokemon breaks free.
+  Rare legendaries hide on the later routes (they also go into your Legend collection). Shinies are 1 in 512.
+- **Trainers** spot you and walk over. **Gym leaders** give badges, and the road north stays closed until you
+  have a town's badge. Beat all 8, then the Champion, and enter the Hall of Fame.
+- **START menu:** Pokedex, party (summary pages, switching order), bag, trainer card with badges, save.
+  The game also saves on every map change. Blacking out sends you back to a Pokemon Center with half your money.
 
 ## Ranks, legends and the Pokedex
 
