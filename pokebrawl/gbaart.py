@@ -1014,3 +1014,251 @@ def hitem():
         _px(s, 6, 6, (255, 200, 190))
         _cache[key] = _scaled(s)
     return _cache[key]
+
+
+# ====================================================================== buildings, handheld style
+OL = (65, 74, 106)          # navy outline (the handhelds don't use black)
+GREY = (123, 123, 131)
+SIDING = (205, 222, 238)
+SIDING_D = (172, 189, 205)
+BASE = (148, 164, 180)
+GLASS = (115, 189, 246)
+GLASS_L = (156, 213, 255)
+GLASS_D = (98, 164, 222)
+FRAME = (246, 246, 255)
+DOOR = (139, 65, 82)
+DOOR_L = (205, 139, 148)
+ROOF_SETS = {   # (main, dark eave, mid lines, highlight)
+    "coral": ((238, 148, 115), (205, 82, 74), (222, 106, 98), (255, 205, 139)),
+    "center": ((230, 98, 90), (172, 57, 57), (205, 74, 74), (255, 172, 148)),
+    "mart": ((98, 164, 222), (57, 98, 172), (82, 131, 197), (172, 222, 255)),
+    "green": ((131, 197, 106), (57, 131, 65), (98, 172, 82), (197, 238, 156)),
+    "purple": ((172, 139, 213), (106, 82, 156), (148, 115, 197), (222, 205, 246)),
+    "gym": ((148, 156, 172), (82, 90, 115), (123, 131, 148), (205, 213, 222)),
+    "lab": ((172, 189, 205), (106, 123, 148), (148, 164, 180), (222, 230, 238)),
+    "league": ((238, 197, 90), (180, 131, 41), (222, 172, 65), (255, 238, 164)),
+}
+
+
+def _window(s, x, y, w=10, h=8):
+    pygame.draw.rect(s, OL, (x, y, w, h))
+    pygame.draw.rect(s, FRAME, (x + 1, y + 1, w - 2, h - 2))
+    pygame.draw.rect(s, GLASS, (x + 2, y + 2, w - 4, h - 4))
+    pygame.draw.line(s, GLASS_L, (x + 2, y + 2), (x + w - 4, y + 2))
+    pygame.draw.line(s, GLASS_D, (x + 2, y + h - 3), (x + w - 3, y + h - 3))
+    pygame.draw.line(s, FRAME, (x + w // 2, y + 1), (x + w // 2, y + h - 2))
+
+
+def hbuilding(kind, wt, ht, door_col, accent=None, seed=0):
+    key = ("hb", kind, wt, ht, door_col, accent, seed % 4)
+    if key in _cache:
+        return _cache[key]
+    w, h = wt * TS, ht * TS
+    s = pygame.Surface((w, h), pygame.SRCALPHA)
+    roof_kind = kind if kind in ROOF_SETS else ["coral", "green", "purple", "coral"][seed % 4]
+    main, dark, mid, hi = ROOF_SETS[roof_kind]
+    roof_h = max(12, int(h * 0.52))
+    wall_top = roof_h - 1
+    brick = kind == "lab"
+    # walls: horizontal siding (or yellow brick for the lab), grey base strip
+    pygame.draw.rect(s, OL, (1, wall_top, w - 2, h - wall_top))
+    wall_c, wall_d = ((246, 238, 197), (222, 205, 123)) if brick else (SIDING, SIDING_D)
+    if kind == "gym":
+        wall_c, wall_d = (189, 197, 213), (148, 156, 172)
+    pygame.draw.rect(s, wall_c, (2, wall_top, w - 4, h - wall_top - 1))
+    for y in range(wall_top + 3, h - 3, 3):
+        pygame.draw.line(s, wall_d, (2, y), (w - 3, y))
+        if brick:
+            for x in range(2 + (y // 3 % 2) * 4, w - 3, 8):
+                _px(s, x, y - 1, wall_d)
+    pygame.draw.rect(s, BASE, (2, h - 3, w - 4, 2))
+    pygame.draw.line(s, OL, (1, h - 1), (w - 2, h - 1))
+    # roof: outline, body with shingle rows, eave strip, ridge highlight
+    pygame.draw.rect(s, OL, (0, 0, w, roof_h + 1), border_radius=3)
+    pygame.draw.rect(s, main, (1, 1, w - 2, roof_h - 3), border_radius=2)
+    for y in range(4, roof_h - 4, 3):
+        pygame.draw.line(s, mid, (2, y), (w - 3, y))
+        for x in range(3 + (y // 3 % 2) * 3, w - 3, 6):
+            _px(s, x, y - 1, mid)
+    pygame.draw.line(s, hi, (3, 2), (w - 4, 2))
+    pygame.draw.rect(s, dark, (1, roof_h - 3, w - 2, 3))
+    pygame.draw.line(s, OL, (0, roof_h), (w - 1, roof_h))
+    # windows (skip where the door is)
+    dx = door_col * TS
+    wy = wall_top + 3
+    if wy + 8 < h - 3:
+        for x in range(4, w - 12, 16):
+            if abs(x + 5 - (dx + 8)) < 10:
+                continue
+            _window(s, x, wy)
+    # the door
+    dy = h - 13
+    glass_door = kind in ("center", "mart", "gym", "league")
+    pygame.draw.rect(s, OL, (dx + 3, dy, 10, 13))
+    if glass_door:
+        pygame.draw.rect(s, GLASS_L, (dx + 4, dy + 1, 8, 11))
+        pygame.draw.rect(s, GLASS, (dx + 4, dy + 6, 8, 6))
+        pygame.draw.line(s, OL, (dx + 8, dy + 1), (dx + 8, dy + 12))
+        pygame.draw.line(s, FRAME, (dx + 5, dy + 2), (dx + 5, dy + 4))
+    else:
+        pygame.draw.rect(s, DOOR, (dx + 4, dy + 1, 8, 12))
+        pygame.draw.line(s, DOOR_L, (dx + 5, dy + 2), (dx + 5, dy + 11))
+        _px(s, dx + 10, dy + 7, (255, 205, 139))
+    pygame.draw.rect(s, BASE, (dx + 2, h - 2, 12, 2))   # door step
+    # signs and emblems
+    cx = w // 2
+    sy = max(3, roof_h // 2 - 4)
+    if kind == "center":   # a ball emblem on the roof
+        pygame.draw.circle(s, OL, (cx, sy + 4), 6)
+        pygame.draw.circle(s, FRAME, (cx, sy + 4), 5)
+        pygame.draw.rect(s, (230, 82, 74), (cx - 5, sy - 1, 11, 5))
+        pygame.draw.line(s, OL, (cx - 5, sy + 4), (cx + 5, sy + 4))
+        pygame.draw.circle(s, OL, (cx, sy + 4), 2)
+        _px(s, cx, sy + 4, FRAME)
+    elif kind == "mart":
+        pygame.draw.rect(s, OL, (cx - 14, sy - 2, 28, 12), border_radius=2)
+        pygame.draw.rect(s, FRAME, (cx - 13, sy - 1, 26, 10), border_radius=2)
+        from . import pixelfont
+        pixelfont.draw(s, "MART", (cx - pixelfont.width("MART", 1) // 2, sy), (57, 98, 172), None, scale=1)
+    elif kind == "gym":
+        col = accent or (205, 213, 222)
+        pygame.draw.rect(s, col, (2, roof_h - 6, w - 4, 3))
+        pygame.draw.rect(s, OL, (cx - 10, sy - 2, 20, 11), border_radius=2)
+        pygame.draw.rect(s, (82, 90, 115), (cx - 9, sy - 1, 18, 9), border_radius=2)
+        pygame.draw.polygon(s, col, [(cx, sy), (cx + 4, sy + 4), (cx, sy + 7), (cx - 4, sy + 4)])
+    elif kind == "league":
+        for k in range(-2, 3):
+            pygame.draw.polygon(s, (255, 238, 164), [(cx + k * 10 - 3, sy + 8), (cx + k * 10, sy),
+                                                      (cx + k * 10 + 3, sy + 8)])
+    out = _scaled(s)
+    _cache[key] = out
+    return out
+
+
+# ====================================================================== interiors, handheld style
+IN_FLOOR = {"center": ((246, 246, 205), (238, 238, 172), (230, 222, 156)),
+            "mart": ((238, 246, 230), (222, 238, 213), (205, 222, 197)),
+            "house": ((230, 205, 156), (222, 189, 139), (197, 164, 115)),
+            "lab": ((238, 238, 246), (222, 222, 238), (205, 205, 222)),
+            "gym": ((197, 205, 222), (180, 189, 205), (156, 164, 189)),
+            "league": ((222, 82, 82), (205, 65, 65), (172, 49, 57))}
+IN_WALL = {"center": ((246, 238, 164), (230, 139, 98)), "mart": ((230, 238, 246), (98, 164, 222)),
+           "house": ((246, 230, 197), (189, 139, 98)), "lab": ((238, 238, 246), (148, 164, 180)),
+           "gym": ((148, 156, 180), (90, 98, 131)), "league": ((106, 74, 131), (238, 197, 90))}
+IN_OL = (82, 82, 106)
+
+
+def hfloor(kind, x, y):
+    key = ("hfl", kind, (x + y) % 2)
+    if key not in _cache:
+        a, b, line = IN_FLOOR.get(kind, IN_FLOOR["house"])
+        s = pygame.Surface((TS, TS))
+        s.fill(a if (x + y) % 2 == 0 else b)
+        pygame.draw.line(s, line, (0, 15), (15, 15))
+        pygame.draw.line(s, line, (15, 0), (15, 15))
+        _px(s, 2, 2, tuple(min(255, c + 8) for c in a))
+        _cache[key] = _scaled(s)
+    return _cache[key]
+
+
+def hwall(kind, lower):
+    """Interior wall: the upper row is plain wall, the lower row has a coloured stripe and a skirting board."""
+    key = ("hwl", kind, lower)
+    if key not in _cache:
+        c, stripe = IN_WALL.get(kind, IN_WALL["house"])
+        s = pygame.Surface((TS, TS))
+        s.fill(c)
+        if lower:
+            pygame.draw.rect(s, stripe, (0, 3, 16, 3))
+            pygame.draw.rect(s, IN_OL, (0, 13, 16, 3))
+            pygame.draw.line(s, tuple(max(0, v - 30) for v in c), (0, 12), (15, 12))
+        else:
+            pygame.draw.line(s, tuple(max(0, v - 20) for v in c), (0, 15), (15, 15))
+            pygame.draw.line(s, tuple(min(255, v + 10) for v in c), (0, 0), (15, 0))
+        _cache[key] = _scaled(s)
+    return _cache[key]
+
+
+def hfurn(kind, room="house"):
+    key = ("hfu", kind, room)
+    if key in _cache:
+        return _cache[key]
+    s = pygame.Surface((TS, TS), pygame.SRCALPHA)
+    if kind in ("counter", "mcounter"):
+        front = (255, 131, 115) if kind == "counter" else (98, 164, 222)
+        pygame.draw.rect(s, IN_OL, (0, 2, 16, 14))
+        pygame.draw.rect(s, (246, 238, 164), (0, 3, 16, 5))
+        pygame.draw.rect(s, front, (0, 8, 16, 7))
+        pygame.draw.line(s, (255, 255, 255), (0, 3), (15, 3))
+        pygame.draw.line(s, tuple(max(0, c - 40) for c in front), (0, 14), (15, 14))
+    elif kind == "machine":   # healing machine: six ball slots
+        pygame.draw.rect(s, IN_OL, (1, 2, 14, 13), border_radius=2)
+        pygame.draw.rect(s, (222, 230, 230), (2, 3, 12, 11), border_radius=2)
+        for i in range(6):
+            pygame.draw.circle(s, (180, 180, 164), (5 + (i % 3) * 3, 6 + (i // 3) * 4), 1)
+        pygame.draw.rect(s, (98, 164, 222), (3, 12, 10, 1))
+    elif kind == "pc":
+        pygame.draw.rect(s, IN_OL, (2, 1, 12, 14), border_radius=1)
+        pygame.draw.rect(s, (222, 230, 230), (3, 2, 10, 12))
+        pygame.draw.rect(s, (82, 82, 106), (4, 3, 8, 6))
+        pygame.draw.rect(s, (115, 189, 246), (5, 4, 6, 4))
+        for x in range(4, 12, 2):
+            _px(s, x, 11, (123, 123, 123))
+    elif kind == "shelf":
+        pygame.draw.rect(s, IN_OL, (0, 0, 16, 16))
+        pygame.draw.rect(s, (189, 205, 222), (1, 1, 14, 14))
+        r = _r(9)
+        for row in (2, 7, 12):
+            pygame.draw.line(s, (148, 164, 180), (1, row + 3), (14, row + 3))
+            for x in range(2, 14, 3):
+                c = r.choice([(255, 131, 115), (98, 164, 222), (255, 222, 106), (131, 213, 98), (246, 246, 255)])
+                pygame.draw.rect(s, c, (x, row, 2, 3))
+    elif kind == "table":
+        pygame.draw.rect(s, IN_OL, (1, 3, 14, 10), border_radius=2)
+        pygame.draw.rect(s, (222, 164, 98), (2, 4, 12, 6), border_radius=2)
+        pygame.draw.line(s, (246, 205, 139), (3, 5), (12, 5))
+        pygame.draw.rect(s, (172, 115, 65), (2, 10, 12, 2))
+        pygame.draw.rect(s, IN_OL, (3, 12, 2, 3))
+        pygame.draw.rect(s, IN_OL, (11, 12, 2, 3))
+    elif kind == "plant":
+        pygame.draw.rect(s, IN_OL, (4, 10, 8, 6), border_radius=1)
+        pygame.draw.rect(s, (230, 139, 98), (5, 11, 6, 4))
+        pygame.draw.circle(s, LEAF_D, (8, 6), 6)
+        pygame.draw.circle(s, LEAF, (8, 6), 5)
+        pygame.draw.circle(s, LEAF_M, (6, 4), 2)
+        _px(s, 6, 3, LEAF_L)
+    elif kind == "mat":
+        pygame.draw.rect(s, IN_OL, (1, 4, 14, 10), border_radius=2)
+        pygame.draw.rect(s, (205, 82, 74), (2, 5, 12, 8), border_radius=1)
+        pygame.draw.rect(s, (238, 148, 115), (4, 7, 8, 4))
+    elif kind == "bed":
+        pygame.draw.rect(s, IN_OL, (1, 0, 14, 16), border_radius=2)
+        pygame.draw.rect(s, (90, 131, 180), (2, 5, 12, 10))
+        pygame.draw.rect(s, (189, 230, 255), (2, 5, 12, 2))
+        pygame.draw.rect(s, (246, 246, 255), (3, 1, 10, 4), border_radius=1)
+    elif kind == "tv":
+        pygame.draw.rect(s, IN_OL, (1, 3, 14, 11), border_radius=1)
+        pygame.draw.rect(s, (123, 123, 131), (2, 4, 12, 9))
+        pygame.draw.rect(s, (115, 189, 246), (3, 5, 10, 7))
+        pygame.draw.line(s, (156, 213, 255), (4, 6), (8, 6))
+        pygame.draw.rect(s, IN_OL, (6, 14, 4, 2))
+    elif kind == "statue":
+        pygame.draw.rect(s, IN_OL, (3, 10, 10, 6))
+        pygame.draw.rect(s, (189, 189, 205), (4, 11, 8, 4))
+        pygame.draw.circle(s, IN_OL, (8, 6), 5)
+        pygame.draw.circle(s, (222, 222, 238), (8, 6), 4)
+        pygame.draw.rect(s, (230, 82, 74), (4, 3, 9, 3))
+    elif kind == "books":
+        pygame.draw.rect(s, IN_OL, (0, 0, 16, 16))
+        pygame.draw.rect(s, (189, 139, 98), (1, 1, 14, 14))
+        for row in (1, 8):
+            for x in range(2, 14, 2):
+                c = [(205, 82, 74), (98, 164, 222), (131, 197, 106), (238, 197, 90)][(x // 2 + row) % 4]
+                pygame.draw.rect(s, c, (x, row + 1, 2, 6))
+    elif kind == "sofa":
+        pygame.draw.rect(s, IN_OL, (0, 3, 16, 12), border_radius=3)
+        pygame.draw.rect(s, (90, 131, 180), (1, 4, 14, 10), border_radius=3)
+        pygame.draw.rect(s, (189, 230, 255), (2, 5, 12, 4), border_radius=2)
+    out = _scaled(s)
+    _cache[key] = out
+    return out

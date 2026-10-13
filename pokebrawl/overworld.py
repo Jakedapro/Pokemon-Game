@@ -24,7 +24,7 @@ BODY = {"c": "center", "m": "mart", "g": "gym", "h": "house", "p": "lab", "l": "
 DIRS = {"up": (0, -1), "down": (0, 1), "left": (-1, 0), "right": (1, 0)}
 OPP = {"up": "down", "down": "up", "left": "right", "right": "left"}
 FURN = {"c": "counter", "k": "mcounter", "m": "machine", "p": "pc", "s": "shelf", "t": "table", "f": "plant",
-        "x": "mat", "b": "bed", "v": "tv", "o": "statue", "r": "books"}
+        "x": "mat", "b": "bed", "v": "tv", "o": "statue", "r": "books", "a": "sofa"}
 
 
 def buildings_of(area):
@@ -607,11 +607,11 @@ class OverworldScene(Scene):
                 dx, dy = x * T, y * T + oy
                 if inside:
                     if ch == "W":
-                        surf.blit(G.wall_tile(kind), (dx, dy))
+                        surf.blit(G.hwall(kind, self.tile(x, y + 1) != "W"), (dx, dy))
                     else:
-                        surf.blit(G.floor_tile(kind, x, y), (dx, dy))
+                        surf.blit(G.hfloor(kind, x, y), (dx, dy))
                         if ch in FURN:
-                            surf.blit(G.furniture(FURN[ch]), (dx, dy))
+                            surf.blit(G.hfurn(FURN[ch], kind), (dx, dy))
                     continue
                 if ch == "=":
                     surf.blit(G.hsand(self._mask(x, y, "=" + "".join(DOORS)), x * 3 + y), (dx, dy))
@@ -645,7 +645,7 @@ class OverworldScene(Scene):
             if kind_b == "gym" and self.cur.get("town"):
                 from .gfx import type_color
                 accent = type_color(A.GYMS[self.cur["town"] - 1][2], 0)
-            surf.blit(G.building(kind_b, bw, bh, door, accent, seed=bx * 3 + by), (bx * T, by * T + oy))
+            surf.blit(G.hbuilding(kind_b, bw, bh, door, accent, seed=bx * 3 + by), (bx * T, by * T + oy))
         for it in self.cur.get("items", []):
             if it["id"] not in self.game["picked"]:
                 surf.blit(G.hgrass(it["x"], it["y"]), (it["x"] * T, it["y"] * T + oy))
