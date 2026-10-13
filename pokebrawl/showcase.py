@@ -10,7 +10,7 @@ import pygame
 
 from . import gfx
 from .audio import AUDIO
-from .cinematics import Cutscene
+from .cinematics import Cutscene, Descent
 from .gfx import H, INK, SPRITES, W
 from .pokedex import prefetch
 from .render import ArenaRenderer
@@ -36,6 +36,16 @@ DEFAULTS = {
     "mode": "teams",           # "teams" | "royale" (every Pokemon for itself + a shrinking storm)
 }
 EVENTS = ["arceus", "primal", "rayquaza", "meteor"]
+# who Arceus brings down with it
+ARCEUS_GROUPS = [
+    ("THE CREATION TRIO", ["dialga", "palkia", "giratina"]),
+    ("THE LEGENDARY BIRDS", ["articuno", "zapdos", "moltres"]),
+    ("THE LEGENDARY BEASTS", ["raikou", "entei", "suicune"]),
+    ("THE LAKE GUARDIANS", ["uxie", "mesprit", "azelf"]),
+    ("THE SWORDS OF JUSTICE", ["cobalion", "terrakion", "virizion"]),
+    ("THE WEATHER TRIO", ["kyogre", "groudon", "rayquaza"]),
+    ("THE TAO TRIO", ["reshiram", "zekrom", "kyurem"]),
+]
 DOMAIN_TEXT = {"sea": ("DOMAIN: ENDLESS OCEAN", (60, 130, 255)), "land": ("DOMAIN: SCORCHED EARTH", (255, 110, 40)),
                "sky": ("DELTA STREAM: THE SKY CALMS", (80, 220, 140))}
 
@@ -122,7 +132,8 @@ class ShowcaseScene:
         ids = {s["member"].species for t in teams for s in t} | {m for t in teams for s in t for m in
                                                                   ([s["member"].mega] if s["member"].mega else [])}
         self.events_plan = self._plan_events(cfg)
-        for key in ("arceus", "kyogre-primal", "groudon-primal", "rayquaza-mega", "deoxys"):
+        for key in ("arceus", "kyogre-primal", "groudon-primal", "rayquaza-mega", "deoxys",
+                    *(k for _, ks in ARCEUS_GROUPS for k in ks)):
             e = dex.get(key)
             if e:
                 ids.add(e["id"])
@@ -185,14 +196,15 @@ class ShowcaseScene:
         self.team_names.append(name)
         return len(self.team_names) - 1
 
-    def _spawn(self, key, team_name, pos, hp_scale=2.0, radius_scale=1.2, signature=None):
+    def _spawn(self, key, team_name, pos, hp_scale=2.0, radius_scale=1.2, signature=None, team=None, floor=0.3):
         entry = self.dex.get(key)
         m = auto_member(self.dex, entry, self.rng, None, allow_mega=False, level=self.level + 10, comp=False)
         sig = self.dex.move(signature) if signature else None
         if sig and sig["id"] not in m.moves:
             m.moves = [sig["id"]] + m.moves[:3]
-        hp_scale *= min(1.0, max(0.3, self.start_units / 180))  # don't steamroll small fights
-        u = self.sim.spawn(m, self._new_team(team_name), pos, boss=True, hp_scale=hp_scale,
+        hp_scale *= min(1.0, max(floor, self.start_units / 180))  # don't steamroll small fights
+        team = self._new_team(team_name) if team is None else team
+        u = self.sim.spawn(m, team, pos, boss=True, hp_scale=hp_scale,
                            radius_scale=radius_scale)
         self.r.roster[u.uid] = self.sim.roster()[u.uid]
         return u
@@ -200,12 +212,24 @@ class ShowcaseScene:
     def _trigger(self, name):
         cx, cy = (ARENA[0] + ARENA[2]) / 2, (ARENA[1] + ARENA[3]) / 2
         if name == "arceus":
-            def act():
-                self._spawn("arceus", "Arceus", (cx, cy), hp_scale=2.6, radius_scale=1.35, signature="judgment")
-                self.r.god_beam(cx, cy)
-            self.cutscenes.append(Cutscene("card", 4.2, (cx, cy), 1.5, "ARCEUS DESCENDS",
-                                           "A GOD HAS ENTERED THE BATTLE", (255, 200, 60),
-                                           self.dex.get("arceus")["id"], action=act, cry=self.dex.get("arceus")["id"]))
+            # Arceus doesn't fight: it drops off a legendary trio that fights for itself
+            title, keys = self.rng.choice(ARCEUS_GROUPS)
+            entries = [self.dex.get(k) for k in keys]
+            entries = [e for e in entries if e]
+            # small fights get fewer gifts so the original teams still have a chance
+            keep = 1 if self.start_units < 16 else 2 if self.start_units < 40 else 3
+            entries = self.rng.sample(entries, min(keep, len(entries)))
+            if keep == 1:
+                title = f"{entries[0]['name'].upper()} FROM {title}"
+            team = self._new_team("Arceus' Chosen")
+            spots = [(cx, cy + 150)] if len(entries) == 1 else [(cx - 170, cy + 40), (cx + 170, cy + 40), (cx, cy + 150)]
+            drops = [(e["id"], e["name"], spots[i % 3]) for i, e in enumerate(entries)]
+
+            def drop(i):
+                u = self._spawn(entries[i]["key"], "Arceus' Chosen", drops[i][2], hp_scale=1.0,
+                                radius_scale=1.1, team=team, floor=0.08)
+                self.r.god_beam(u.x, u.y)
+            self.cutscenes.append(Descent(self.dex.get("arceus")["id"], drops, title, (cx, cy), drop))
         elif name == "primal":
             for key, nm, pos, dom, weather in (("kyogre-primal", "Primal Kyogre", (cx - 160, cy - 260), "sea", "rain"),
                                                ("groudon-primal", "Primal Groudon", (cx + 160, cy + 260), "land", "sun")):

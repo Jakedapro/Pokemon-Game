@@ -280,3 +280,146 @@ class Cutscene:
             pop = _ease((t - 0.45) / 0.25)
             self._glow_title(surf, "VS", (W / 2, 640), 130, 2.2 - 1.2 * pop, int(255 * k))
         self._glow_title(surf, self.title, (W / 2, 250), 54, 1.0, int(255 * k))
+
+
+# the 18 plate colors around Arceus' Judgment wheel
+PLATE_TYPES = ["normal", "fire", "water", "electric", "grass", "ice", "fighting", "poison", "ground", "flying",
+               "psychic", "bug", "rock", "ghost", "dragon", "dark", "steel", "fairy"]
+
+
+class Descent(Cutscene):
+    """Arceus floats down from the sky through god rays, its Judgment wheel turning behind it, cries out, then
+    drops legendaries into the arena in pillars of light one by one, and rises back up and leaves.
+
+    drops: [(pokemon_id, name, (world_x, world_y))]; on_drop(i) spawns drop i in the battle."""
+
+    DOWN, CRY, FIRST, GAP = 2.4, 2.6, 3.2, 1.0
+
+    def __init__(self, arceus_id, drops, group_title, center, on_drop):
+        self.leave = self.FIRST + len(drops) * self.GAP + 0.6
+        super().__init__("descent", self.leave + 1.8, focus=center, zoom=1.12, title="ARCEUS DESCENDS",
+                         subtitle=f"AND BRINGS {group_title}!", color=(255, 205, 90), sound=None)
+        self.arceus = arceus_id
+        self.drops = drops
+        self.on_drop = on_drop
+        self.dropped = set()
+        self.renderer = None
+
+    def update(self, dt, renderer):
+        self.renderer = renderer
+        if self.t == 0:
+            AUDIO.play("beam", 0.9)
+        prev, self.t = self.t, self.t + dt
+        renderer.cam_target = (self.focus[0], self.focus[1], self.zoom)
+        self._update_aura(dt)
+        if prev < self.CRY <= self.t:  # Arceus arrives: cry, flash, shockwave
+            self.flash = 0.35
+            renderer.shake = max(renderer.shake, 0.8)
+            AUDIO.play("boom", 0.9)
+            AUDIO.cry(self.arceus, 1.0)
+            for ax, ay, _, col in self.anchors[:1]:
+                for i in range(4):
+                    self.rings.append([ax, ay - 60, 20 + i * 50, 0.9 + i * 0.12, col])
+                self._burst(ax, ay - 60, 80, col)
+        for i, (pid, _name, _pos) in enumerate(self.drops):
+            at = self.FIRST + i * self.GAP
+            if prev < at <= self.t and i not in self.dropped:
+                self.dropped.add(i)
+                self.on_drop(i)
+                self.flash = 0.2
+                renderer.shake = max(renderer.shake, 0.5)
+                AUDIO.play("boom", 0.8)
+                AUDIO.cry(pid, 0.9)
+                sx, sy = self._screen(i)
+                self.rings.append([sx, sy, 20, 0.8, (255, 240, 180)])
+                self._burst(sx, sy, 40, (255, 225, 140))
+        self.flash = max(0.0, self.flash - dt)
+
+    def _screen(self, i):
+        x, y = self.drops[i][2]
+        return self.renderer.world_to_screen(x, y) if self.renderer else (x, y)
+
+    def _arceus_y(self):
+        t = self.t
+        top, rest = -260, H * 0.37
+        if t < self.DOWN:
+            return top + (rest - top) * _ease(t / self.DOWN)
+        if t < self.leave:
+            return rest
+        return rest + (top - 140 - rest) * min(1.0, ((t - self.leave) / 1.2) ** 2)
+
+    def draw(self, surf):
+        d, t = self.duration, self.t
+        k = _ease(t / 0.5) * _ease((d - t) / 0.5)
+        self.anchors = []
+        # the sky darkens
+        shade = pygame.Surface((W, H), pygame.SRCALPHA)
+        shade.fill((14, 10, 30, int(150 * k)))
+        surf.blit(shade, (0, 0))
+        vig = _vignette()
+        vig.set_alpha(int(200 * k))
+        surf.blit(vig, (0, 0))
+        # god rays fanning down from above
+        ay = self._arceus_y()
+        rays = pygame.Surface((W, H), pygame.SRCALPHA)
+        for i in range(9):
+            a = -0.9 + i * 0.225 + math.sin(t * 0.7 + i) * 0.05
+            spread = 0.05 + 0.02 * math.sin(t * 2 + i * 1.7)
+            pts = [(W / 2, -80), (W / 2 + math.sin(a - spread) * 1800, -80 + math.cos(a - spread) * 1800),
+                   (W / 2 + math.sin(a + spread) * 1800, -80 + math.cos(a + spread) * 1800)]
+            pygame.draw.polygon(rays, (255, 230, 150, int(38 * k)), pts)
+        surf.blit(rays, (0, 0))
+        # pillars of light where the legendaries land
+        for i in range(len(self.drops)):
+            at = self.FIRST + i * self.GAP
+            p = (t - (at - 0.35)) / 1.1
+            if 0 <= p <= 1:
+                sx, sy = self._screen(i)
+                wdt = 90 * (1 - p) ** 0.5 if p > 0.32 else 90 * (p / 0.32)
+                beam = pygame.Surface((W, H), pygame.SRCALPHA)
+                pygame.draw.rect(beam, (255, 235, 170, int(120 * k)), (sx - wdt / 2, 0, wdt, sy))
+                pygame.draw.rect(beam, (255, 255, 255, int(220 * k)), (sx - wdt / 6, 0, wdt / 3, sy))
+                pygame.draw.ellipse(beam, (255, 240, 190, int(160 * k)), (sx - wdt, sy - wdt / 4, wdt * 2, wdt / 2))
+                surf.blit(beam, (0, 0))
+            if at <= t < at + 1.6:  # name pops up over the new arrival
+                sx, sy = self._screen(i)
+                pop = _ease((t - at) / 0.25)
+                fade = int(255 * min(1.0, (at + 1.6 - t) / 0.4) * k)
+                self._glow_title(surf, self.drops[i][1].upper(), (sx, sy - 120), 34, 0.6 + 0.4 * pop, fade)
+        # the Judgment wheel behind Arceus
+        if ay > -200:
+            cx, cy = W / 2, ay - 120
+            rad = 170
+            ring = pygame.Surface((W, H), pygame.SRCALPHA)
+            pygame.draw.circle(ring, (255, 220, 120, int(150 * k)), (int(cx), int(cy)), rad, 6)
+            pygame.draw.circle(ring, (255, 245, 210, int(90 * k)), (int(cx), int(cy)), rad - 18, 2)
+            for j, typ in enumerate(PLATE_TYPES):
+                a = j / len(PLATE_TYPES) * math.tau + t * 0.8
+                px, py = cx + math.cos(a) * rad, cy + math.sin(a) * rad
+                pygame.draw.circle(ring, (*gfx.type_color(typ, 0), int(255 * k)), (int(px), int(py)), 11)
+                pygame.draw.circle(ring, (255, 255, 255, int(255 * k)), (int(px), int(py)), 11, 2)
+            surf.blit(ring, (0, 0))
+            self._draw_glowing(surf, self.arceus, 290, (W / 2, ay + 30))
+        # the new arrivals stand in the light, glowing, until the scene ends
+        for i, (pid, _name, _pos) in enumerate(self.drops):
+            if t >= self.FIRST + i * self.GAP:
+                sx, sy = self._screen(i)
+                self._draw_glowing(surf, pid, 120, (sx, sy + 30), color=(255, 235, 170))
+        self._draw_aura_fx(surf, k)
+        # letterbox + titles
+        bar = int(110 * k)
+        pygame.draw.rect(surf, (0, 0, 0), (0, 0, W, bar))
+        pygame.draw.rect(surf, (0, 0, 0), (0, H - bar, W, bar))
+        if 0.8 < t < self.leave + 0.8:
+            pop = _ease((t - 0.8) / 0.3)
+            self._glow_title(surf, self.title, (W / 2, 62), 50, 0.6 + 0.4 * pop, int(255 * k))
+        if self.subtitle and t > self.CRY:
+            n = int(len(self.subtitle) * min(1.0, (t - self.CRY) / 0.8))
+            size = 28
+            while size > 16 and gfx.font(size, True).size(self.subtitle)[0] > W - 40:
+                size -= 2
+            gfx.text(surf, self.subtitle[:n], (W / 2, H - 56), size, (255, 225, 140), INK, 3, alpha=int(255 * k))
+        if self.flash > 0:
+            f = pygame.Surface((W, H), pygame.SRCALPHA)
+            f.fill((255, 250, 230, int(255 * min(1.0, self.flash / 0.35))))
+            surf.blit(f, (0, 0))
