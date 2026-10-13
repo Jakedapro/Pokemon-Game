@@ -72,7 +72,7 @@ def load_config(path_or_dict):
     return cfg
 
 
-def build_teams(dex, cfg, rng):
+def build_teams(dex, cfg, rng, arena=ARENA):
     teams, names = [], []
     bosses = cfg.get("bosses", "legendary")
     boss_names = {dex.get(b)["id"] for b in bosses if dex.get(b)} if isinstance(bosses, list) else set()
@@ -92,11 +92,11 @@ def build_teams(dex, cfg, rng):
         teams.append(specs)
         names.append(t.get("name", f"Team {len(names) + 1}"))
     if cfg.get("mode") == "royale":
-        return royale_teams(dex, [s for t in teams for s in t], rng)
+        return royale_teams(dex, [s for t in teams for s in t], rng, arena)
     return teams, names
 
 
-def royale_teams(dex, specs, rng):
+def royale_teams(dex, specs, rng, arena=ARENA):
     """Battle royale: every Pokemon is its own team, scattered around the arena (no species twice)."""
     seen, uniq = set(), []
     for sp in specs:
@@ -104,12 +104,12 @@ def royale_teams(dex, specs, rng):
             seen.add(sp["member"].species)
             uniq.append(sp)
     n = len(uniq)
-    gap = max(26.0, min(90.0, math.sqrt((ARENA[2] - ARENA[0]) * (ARENA[3] - ARENA[1]) / max(1, n)) * 0.8))
+    gap = max(26.0, min(90.0, math.sqrt((arena[2] - arena[0]) * (arena[3] - arena[1]) / max(1, n)) * 0.8))
     placed = []
     for sp in uniq:
         for _ in range(60):
-            x = rng.uniform(ARENA[0] + 40, ARENA[2] - 40)
-            y = rng.uniform(ARENA[1] + 60, ARENA[3] - 60)
+            x = rng.uniform(arena[0] + 40, arena[2] - 40)
+            y = rng.uniform(arena[1] + 60, arena[3] - 60)
             if all((x - px) ** 2 + (y - py) ** 2 > gap * gap for px, py in placed):
                 break
         placed.append((x, y))
@@ -120,15 +120,34 @@ def royale_teams(dex, specs, rng):
 class ShowcaseScene:
     """Plays one showcase. `done` becomes True at the end."""
 
-    def __init__(self, dex, cfg, progress=None):
+    WIDE = (1600, 900)   # big battle royales watched live: landscape, full screen, much more room
+    BIG_ROYALE = 60
+
+    def __init__(self, dex, cfg, progress=None, wide=False):
         self.dex = dex
+        self.wide = wide is True
+        self.W, self.H = self.WIDE if self.wide else (W, H)
+        self.size = (self.W, self.H)
+        self.arena = gfx.arena_rect(self.size)
         self.cfg = cfg
         seed = cfg.get("seed")
         if seed is None:
             seed = random.randrange(1 << 30)
         self.seed = seed
         self.rng = random.Random(seed)
-        teams, self.team_names = build_teams(dex, cfg, self.rng)
+        teams, self.team_names = build_teams(dex, cfg, self.rng, self.arena)
+        if wide == "auto" and cfg.get("mode") == "royale" and len(teams) >= self.BIG_ROYALE:
+            # big battle royale: go wide - spread everyone over the landscape arena
+            old = self.arena
+            self.wide, (self.W, self.H) = True, self.WIDE
+            self.size = (self.W, self.H)
+            self.arena = gfx.arena_rect(self.size)
+            for t in teams:
+                for sp in t:
+                    if sp.get("pos"):
+                        x, y = sp["pos"]
+                        sp["pos"] = (self.arena[0] + (x - old[0]) / (old[2] - old[0]) * (self.arena[2] - self.arena[0]),
+                                     self.arena[1] + (y - old[1]) / (old[3] - old[1]) * (self.arena[3] - self.arena[1]))
         ids = {s["member"].species for t in teams for s in t} | {m for t in teams for s in t for m in
                                                                   ([s["member"].mega] if s["member"].mega else [])}
         self.events_plan = self._plan_events(cfg)
@@ -146,8 +165,9 @@ class ShowcaseScene:
         self.sim = Sim(dex, teams, seed=seed, hp_mult=cfg["hp_mult"], boss_hp_mult=cfg["boss_hp_mult"],
                        radius=radius, mega={i: mega for i in range(len(teams))},
                        ai={0: "normal", 1: "normal"}, time_ramp=cfg.get("time_ramp", 80) + (60 if self.royale else 0),
-                       zone=zone)
-        self.r = ArenaRenderer(dex, self.sim.roster(), mode="showcase", team_names=self.team_names)
+                       zone=zone, arena=self.arena)
+        self.r = ArenaRenderer(dex, self.sim.roster(), mode="showcase", team_names=self.team_names,
+                               size=self.size)
         if self.royale:
             self.r.gold_from = len(teams)  # only event bosses glow gold
         self.r.feed(self.sim.snapshot())
@@ -211,6 +231,10 @@ class ShowcaseScene:
         self.r.roster[u.uid] = self.sim.roster()[u.uid]
         return u
 
+    def _cs(self, cls, *args, **kw):
+        """Build a cutscene for this screen size."""
+        return cls(*args, size=self.size, **kw)
+
     def _fighting(self):
         """Species already alive in the arena - events never bring a second copy of these."""
         return {u.mon.entry["species"] for u in self.sim.units if u.alive}
@@ -221,7 +245,7 @@ class ShowcaseScene:
 
     def _trigger(self, name):
         """Start an event. Returns False when it can't happen (its Pokemon are already fighting)."""
-        cx, cy = (ARENA[0] + ARENA[2]) / 2, (ARENA[1] + ARENA[3]) / 2
+        cx, cy = (self.arena[0] + self.arena[2]) / 2, (self.arena[1] + self.arena[3]) / 2
         if name == "arceus":
             arceus_id = self.dex.get("arceus")["id"]
             if self.start_units >= 60 and self._free("arceus") and self.rng.random() < 0.12:
@@ -229,7 +253,7 @@ class ShowcaseScene:
                 def land(_i):
                     self._spawn("arceus", "Arceus", (cx, cy), hp_scale=1.6, radius_scale=1.3, signature="judgment")
                     self.r.god_beam(cx, cy)
-                self.cutscenes.append(Descent(arceus_id, [(arceus_id, "Arceus", (cx, cy))], "", (cx, cy), land,
+                self.cutscenes.append(self._cs(Descent, arceus_id, [(arceus_id, "Arceus", (cx, cy))], "", (cx, cy), land,
                                               lands=True))
                 return True
             # usually Arceus doesn't fight: it drops off a legendary group that fights for itself
@@ -257,7 +281,7 @@ class ShowcaseScene:
                 u = self._spawn(entries[i]["key"], "Arceus' Chosen", drops[i][2], hp_scale=1.0,
                                 radius_scale=1.1, team=team, floor=0.08)
                 self.r.god_beam(u.x, u.y)
-            self.cutscenes.append(Descent(arceus_id, drops, title, (cx, cy), drop))
+            self.cutscenes.append(self._cs(Descent, arceus_id, drops, title, (cx, cy), drop))
         elif name == "primal":
             if not (self._free("kyogre") and self._free("groudon")):
                 return False
@@ -269,7 +293,7 @@ class ShowcaseScene:
                     self.sim.set_domain(dom)
                 sub = DOMAIN_TEXT[dom][0] if dom == "sea" else "DOMAIN CLASH!"
                 pid = self.dex.get(key)["id"]
-                self.cutscenes.append(Cutscene("card", 3.6, pos, 1.6, f"{nm.upper()} AWAKENS", sub,
+                self.cutscenes.append(self._cs(Cutscene, "card", 3.6, pos, 1.6, f"{nm.upper()} AWAKENS", sub,
                                                DOMAIN_TEXT[dom][1], pid, action=act, cry=pid))
         elif name == "rayquaza":
             if not self._free("rayquaza"):
@@ -277,20 +301,20 @@ class ShowcaseScene:
             pid = self.dex.get("rayquaza-mega")["id"]
 
             def act():
-                self._spawn("rayquaza-mega", "Mega Rayquaza", (cx, ARENA[1] + 200), signature="dragon-ascent")
+                self._spawn("rayquaza-mega", "Mega Rayquaza", (cx, self.arena[1] + 200), signature="dragon-ascent")
                 self.sim.weather = None
                 self.sim.emit("weather", None)
                 self.sim.set_domain("sky")
-            self.cutscenes.append(Cutscene("card", 3.8, (cx, ARENA[1] + 260), 1.5, "THE SKY LORD DESCENDS",
+            self.cutscenes.append(self._cs(Cutscene, "card", 3.8, (cx, self.arena[1] + 260), 1.5, "THE SKY LORD DESCENDS",
                                            DOMAIN_TEXT["sky"][0], DOMAIN_TEXT["sky"][1], pid, action=act, cry=pid))
         elif name == "meteor":
             def act():
                 for i in range(24):
-                    self.sim.env_blast(self.rng.uniform(ARENA[0] + 40, ARENA[2] - 40),
-                                       self.rng.uniform(ARENA[1] + 60, ARENA[3] - 60), 80, 0.2, "dragon",
+                    self.sim.env_blast(self.rng.uniform(self.arena[0] + 40, self.arena[2] - 40),
+                                       self.rng.uniform(self.arena[1] + 60, self.arena[3] - 60), 80, 0.2, "dragon",
                                        0.4 + i * 0.18)
             pid = self.dex.get("deoxys")["id"]
-            self.cutscenes.append(Cutscene("card", 3.0, (cx, cy), 1.0, "METEOR SHOWER", "THE SKY IS FALLING!",
+            self.cutscenes.append(self._cs(Cutscene, "card", 3.0, (cx, cy), 1.0, "METEOR SHOWER", "THE SKY IS FALLING!",
                                            (230, 80, 80), pid, action=act, cry=pid))
         return True
 
@@ -307,14 +331,14 @@ class ShowcaseScene:
                 clash = self.sim.domain not in (None, dom) or any(
                     x.alive and "primal" in x.mon.entry["key"] and x is not u for x in self.sim.units)
                 sub = "DOMAIN CLASH!" if clash else DOMAIN_TEXT[dom][0]
-                self.cutscenes.append(Cutscene("card", 3.4, pos, 1.7, "PRIMAL REVERSION", sub, DOMAIN_TEXT[dom][1],
+                self.cutscenes.append(self._cs(Cutscene, "card", 3.4, pos, 1.7, "PRIMAL REVERSION", sub, DOMAIN_TEXT[dom][1],
                                                form_id, cry=form_id, action_at=0.35))
             elif key == "rayquaza-mega":
-                self.cutscenes.append(Cutscene("card", 3.2, pos, 1.7, "MEGA RAYQUAZA", DOMAIN_TEXT["sky"][0],
+                self.cutscenes.append(self._cs(Cutscene, "card", 3.2, pos, 1.7, "MEGA RAYQUAZA", DOMAIN_TEXT["sky"][0],
                                                DOMAIN_TEXT["sky"][1], form_id, cry=form_id, action_at=0.35))
             elif u and u.boss and self.mega_scenes < 3:
                 self.mega_scenes += 1
-                card = Cutscene("card", 2.0, pos, 1.8, name.upper(), "MEGA EVOLUTION!", (170, 90, 230), form_id,
+                card = self._cs(Cutscene, "card", 2.0, pos, 1.8, name.upper(), "MEGA EVOLUTION!", (170, 90, 230), form_id,
                                 cry=form_id, action_at=0.3)
                 card.minor = True  # auto-edit may speed these up a little
                 self.cutscenes.append(card)
@@ -346,7 +370,7 @@ class ShowcaseScene:
         moves = [m for m in killer.mon.moves if m["cls"] != "status"] or killer.mon.moves
         mv = next((m for m in moves if m["type"] in killer.mon.types), moves[0])
         mine = killer.team == 0 or self.royale
-        return Finisher(killer.mon.entry["id"], self.last_ko[1], mv["name"], mv["type"], mv["cls"], mine, final=True)
+        return self._cs(Finisher, killer.mon.entry["id"], self.last_ko[1], mv["name"], mv["type"], mv["cls"], mine, final=True)
 
     def _check_triggers(self):
         alive = [u for u in self.sim.units if u.alive]
@@ -363,7 +387,7 @@ class ShowcaseScene:
                 break
         if len(alive) == 2 and alive[0].team != alive[1].team and self.start_units > 2 and self._once("final"):
             a, b = alive
-            self.cutscenes.append(Cutscene("vs", 3.0, ((a.x + b.x) / 2, (a.y + b.y) / 2), 1.5, "FINAL SHOWDOWN",
+            self.cutscenes.append(self._cs(Cutscene, "vs", 3.0, ((a.x + b.x) / 2, (a.y + b.y) / 2), 1.5, "FINAL SHOWDOWN",
                                            color=(255, 190, 60), portrait=a.mon.entry["id"],
                                            portrait2=b.mon.entry["id"], action_at=0.45, sound="count"))
 
@@ -488,8 +512,8 @@ class ShowcaseScene:
                 self.r._burst(u.x, u.y, (255, 120, 120), 6, 60, 4, 0.5)
         mv = self.r.units.get(m.uid)
         self.target = (mv.x, mv.y) if mv else (m.x, m.y)
-        tx = self.target[0] - 75 if self.target[0] > ARENA[0] + 200 else self.target[0] + 75
-        self.finale = {"t": 0.0, "start": (ARENA[0] - 30 if tx < self.target[0] else ARENA[2] + 30, self.target[1] + 10),
+        tx = self.target[0] - 75 if self.target[0] > self.arena[0] + 200 else self.target[0] + 75
+        self.finale = {"t": 0.0, "start": (self.arena[0] - 30 if tx < self.target[0] else self.arena[2] + 30, self.target[1] + 10),
                        "stop": (tx, self.target[1] + 10), "stage": "walk"}
         self.r.cam_target = (self.target[0] + (tx - self.target[0]) / 2, self.target[1] - 10, 4.2)
 
@@ -573,18 +597,18 @@ class ShowcaseScene:
             if t > 3.0:
                 k = min(1.0, (t - 3.0) / 0.35)
                 sc = 1.0 + 0.25 * math.sin(k * math.pi) if k < 1 else 1.0
-                gfx.title_text(surf, self.cfg["title"], (W / 2, H * 0.40), 56, scale=sc)
+                gfx.title_text(surf, self.cfg["title"], (self.W / 2, self.H * 0.40), 56, scale=sc)
             if t > 4.0 and self.cfg.get("subtitle"):
-                gfx.title_text(surf, self.cfg["subtitle"], (W / 2, H * 0.40 + 66), 40)
+                gfx.title_text(surf, self.cfg["subtitle"], (self.W / 2, self.H * 0.40 + 66), 40)
             for i, n in enumerate(("3", "2", "1")):
                 start = 5.0 + i * 0.8
                 if start <= t < start + 0.8:
                     k = (t - start) / 0.8
-                    gfx.title_text(surf, n, (W / 2, H * 0.40 + 150), 110, scale=1.4 - 0.4 * k,
+                    gfx.title_text(surf, n, (self.W / 2, self.H * 0.40 + 150), 110, scale=1.4 - 0.4 * k,
                                      alpha=int(255 * (1 - max(0, k - 0.6) / 0.4)))
         if self.phase == "battle" and self.t - self.intro_len < 0.9:
             k = (self.t - self.intro_len) / 0.9
-            gfx.title_text(surf, "FIGHT!", (W / 2, H * 0.47), 100, scale=1 + k * 0.3,
+            gfx.title_text(surf, "FIGHT!", (self.W / 2, self.H * 0.47), 100, scale=1 + k * 0.3,
                              alpha=int(255 * (1 - k)))
         if self.phase in ("battle", "won") and self.cutscene is None:
             self._draw_counts(surf)
@@ -592,22 +616,22 @@ class ShowcaseScene:
             self.cutscene.draw(surf)
         if self.phase in ("won", "outro") or (self.phase == "finale" and self.finale["t"] < 1.2):
             name = self.team_names[self.sim.winner] if self.sim.winner is not None else "Nobody"
-            gfx.title_text(surf, f"{name} WINS!", (W / 2, H * 0.30), 64)
+            gfx.title_text(surf, f"{name} WINS!", (self.W / 2, self.H * 0.30), 64)
             if self.mvp:
-                gfx.text(surf, f"MVP: {self.mvp.mon.name}  ({self.mvp.kills} KOs)", (W / 2, H * 0.30 + 60), 26)
+                gfx.text(surf, f"MVP: {self.mvp.mon.name}  ({self.mvp.kills} KOs)", (self.W / 2, self.H * 0.30 + 60), 26)
         if self.phase == "finale":
             self._draw_finale(surf)
         if self.paused:
-            gfx.text(surf, "PAUSED", (W / 2, H / 2), 48)
+            gfx.text(surf, "PAUSED", (self.W / 2, self.H / 2), 48)
         if self.speed != 1.0 and self.phase == "battle":
-            gfx.text(surf, f"x{self.speed:g}", (W - 50, H - 30), 22)
+            gfx.text(surf, f"x{self.speed:g}", (self.W - 50, self.H - 30), 22)
 
     def _draw_balls(self, surf, t):
         img = gfx.ball_sprite(self.ball_size)
         for uid, (x, y) in self.balls.items():
             if uid in self.popped:
                 continue
-            row_delay = ((y - ARENA[1]) % 400) / 400 * 0.5 if y < H / 2 else ((ARENA[3] - y) % 400) / 400 * 0.5
+            row_delay = ((y - self.arena[1]) % 400) / 400 * 0.5 if y < self.H / 2 else ((self.arena[3] - y) % 400) / 400 * 0.5
             k = max(0.0, min(1.0, (t - row_delay) / 0.6))
             if k <= 0:
                 continue
@@ -619,39 +643,39 @@ class ShowcaseScene:
     def _draw_royale_hud(self, surf):
         left = sum(1 for u in self.sim.units if u.alive)
         ui_w = 190
-        pygame.draw.rect(surf, INK, (W / 2 - ui_w / 2, H - 62, ui_w, 48), border_radius=12)
-        gfx.text(surf, f"{left} LEFT", (W / 2, H - 38), 30, (255, 230, 120) if left <= 10 else (255, 255, 255))
+        pygame.draw.rect(surf, INK, (self.W / 2 - ui_w / 2, self.H - 62, ui_w, 48), border_radius=12)
+        gfx.text(surf, f"{left} LEFT", (self.W / 2, self.H - 38), 30, (255, 230, 120) if left <= 10 else (255, 255, 255))
         now = self.r.t
         for i, (killer, victim, t) in enumerate(reversed(self.r.kills)):
             age = now - t
             if age > 4.0:
                 continue
             a = int(255 * min(1.0, (4.0 - age) / 0.6))
-            gfx.text(surf, f"{killer}  >  {victim}", (W - 16, 170 + i * 26), 17, (255, 255, 255), INK, 2,
+            gfx.text(surf, f"{killer}  >  {victim}", (self.W - 16, 170 + i * 26), 17, (255, 255, 255), INK, 2,
                      anchor="midright", alpha=a)
         if self.storm_msg and self.t - self.storm_msg[1] < 2.5:
             k = self.t - self.storm_msg[1]
             msg = "THE STORM IS FORMING" if self.storm_msg[0] == 1 else "THE STORM CLOSES IN!"
-            gfx.title_text(surf, msg, (W / 2, H * 0.16), 40, scale=1.15 - 0.15 * min(1.0, k / 0.3),
+            gfx.title_text(surf, msg, (self.W / 2, self.H * 0.16), 40, scale=1.15 - 0.15 * min(1.0, k / 0.3),
                            color=(230, 170, 255), alpha=int(255 * min(1.0, (2.5 - k) / 0.5)))
 
     def _draw_counts(self, surf):
         if self.royale:
             self._draw_royale_hud(surf)
             return
-        y = H - 26
+        y = self.H - 26
         if len(self.counts) <= 2:
             for i, (name, c) in enumerate(zip(self.team_names, self.counts)):
-                x = W * (0.25 if i == 0 else 0.75)
+                x = self.W * (0.25 if i == 0 else 0.75)
                 gfx.text(surf, f"{name}: {c}", (x, y), 22, gfx.TEAM_COLORS[i] if c else (150, 150, 150))
             return
         # extra teams joined (event bosses): base teams on the bottom row, event bosses above
         for i, (name, c) in enumerate(zip(self.team_names[:2], self.counts[:2])):
-            gfx.text(surf, f"{name}: {c}", (W * (0.25 if i == 0 else 0.75), y), 22,
+            gfx.text(surf, f"{name}: {c}", (self.W * (0.25 if i == 0 else 0.75), y), 22,
                      gfx.TEAM_COLORS[i] if c else (150, 150, 150))
         extra = list(zip(self.team_names[2:], self.counts[2:]))
         for j, (name, c) in enumerate(extra):
-            x = W * (j + 1) / (len(extra) + 1)
+            x = self.W * (j + 1) / (len(extra) + 1)
             gfx.text(surf, name if c else f"{name} (down)", (x, y - 30), 20,
                      (255, 210, 80) if c else (150, 150, 150))
 
@@ -705,7 +729,7 @@ class ShowcaseScene:
                 surf.blit(img, img.get_rect(midbottom=(msx, msy)))
             surf.blit(red, red.get_rect(midbottom=(msx, msy)))
             bsx, bsy = self.r.world_to_screen(bx, by)
-            beam = pygame.Surface((W, H), pygame.SRCALPHA)
+            beam = pygame.Surface((self.W, self.H), pygame.SRCALPHA)
             for i in range(3):
                 pygame.draw.line(beam, (255, 90, 90, 140 - i * 40), (bsx, bsy), (msx, msy - img.get_height() / 2),
                                  int((12 - i * 4) * z / 2) + 2)
@@ -746,9 +770,10 @@ class ShowcaseScene:
         if t > self.CAUGHT + 0.5:
             p = min(1.0, (t - self.CAUGHT - 0.5) / 0.35)
             ease = 1 - (1 - p) ** 3
-            gfx.title_text(surf, "GOTCHA!", (W / 2, H * 0.20), 80, scale=1.6 - 0.6 * ease)
-            cy = H - 230 + (1 - ease) * 300
-            ui_rect = pygame.Rect(60, cy - 90, W - 120, 180)
+            gfx.title_text(surf, "GOTCHA!", (self.W / 2, self.H * 0.20), 80, scale=1.6 - 0.6 * ease)
+            cy = self.H - 230 + (1 - ease) * 300
+            cw = min(self.W - 120, 640)
+            ui_rect = pygame.Rect((self.W - cw) // 2, cy - 90, cw, 180)
             pygame.draw.rect(surf, INK, ui_rect.move(0, 6), border_radius=18)
             pygame.draw.rect(surf, (248, 246, 236), ui_rect, border_radius=18)
             pygame.draw.rect(surf, (230, 60, 60), (ui_rect.x, ui_rect.y, ui_rect.w, 14), border_top_left_radius=18,

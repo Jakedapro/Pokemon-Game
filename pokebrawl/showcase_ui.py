@@ -175,7 +175,8 @@ class ShowcaseLoad(Scene):
 
     def _build(self):
         try:
-            scene = ShowcaseScene(self.app.dex, self.cfg, self._prog)
+            # big battle royales watched live get the wide full-screen arena (recordings stay vertical)
+            scene = ShowcaseScene(self.app.dex, self.cfg, self._prog, wide="auto" if not self.record else False)
             if self.record and self.cfg.get("video_len"):
                 # identical copy (same seed) for the auto-edit's invisible planning run
                 self.plan_scene = ShowcaseScene(self.app.dex, dict(self.cfg, seed=scene.seed))
@@ -206,6 +207,7 @@ class ShowcasePlay(Scene):
     def __init__(self, app, scene):
         super().__init__(app)
         self.sc = scene
+        self.canvas_size = scene.size  # big battle royales: wide and full screen
 
     def handle(self, ev, pos):
         self.sc.handle(ev, pos)

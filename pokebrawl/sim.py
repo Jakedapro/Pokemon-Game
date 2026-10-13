@@ -149,6 +149,7 @@ class Sim:
         boss_mult = opts.get("boss_hp_mult", 3.0)
         radius = opts.get("radius", 22)
         self.paused = False
+        self.arena = opts.get("arena", ARENA)   # walkable x0, y0, x1, y1 (wide royales use a bigger one)
         uid = 1
         for ti, specs in enumerate(teams):
             for spec in specs:
@@ -173,10 +174,10 @@ class Sim:
     def _default_pos(self, team, i, n):
         cols = 3 if n <= 6 else max(6, int(math.sqrt(n * 2.4)))
         row, col = divmod(i, cols)
-        w = ARENA[2] - ARENA[0] - 60
-        x = ARENA[0] + 30 + (col + 0.5) * w / cols
+        w = self.arena[2] - self.arena[0] - 60
+        x = self.arena[0] + 30 + (col + 0.5) * w / cols
         y_gap = 46 if n > 6 else 110
-        y = (ARENA[1] + 90 + row * y_gap) if team == 0 else (ARENA[3] - 90 - row * y_gap)
+        y = (self.arena[1] + 90 + row * y_gap) if team == 0 else (self.arena[3] - 90 - row * y_gap)
         return x, y
 
     def emit(self, *ev):
@@ -251,11 +252,11 @@ class Sim:
         start, end, rmin = z.get("start", 15), z.get("end", 95), z.get("min", 70)
         if self.t < start:
             return
-        full = math.hypot(ARENA[2] - ARENA[0], ARENA[3] - ARENA[1]) / 2 + 20
+        full = math.hypot(self.arena[2] - self.arena[0], self.arena[3] - self.arena[1]) / 2 + 20
         if self.zone is None:
             # center drifts somewhere inside the middle of the arena, picked once
-            cx = (ARENA[0] + ARENA[2]) / 2 + self.rng.uniform(-90, 90)
-            cy = (ARENA[1] + ARENA[3]) / 2 + self.rng.uniform(-160, 160)
+            cx = (self.arena[0] + self.arena[2]) / 2 + self.rng.uniform(-90, 90)
+            cy = (self.arena[1] + self.arena[3]) / 2 + self.rng.uniform(-160, 160)
             self.zone = [cx, cy, full]
             self._zone_from = full
             self.emit("zone", 1)
@@ -417,8 +418,8 @@ class Sim:
                     o.x += nx * push * wo * 2
                     o.y += ny * push * wo * 2
         for u in alive:
-            u.x = min(max(u.x, ARENA[0] + u.r * 0.6), ARENA[2] - u.r * 0.6)
-            u.y = min(max(u.y, ARENA[1] + u.r * 0.6), ARENA[3] - u.r * 0.4)
+            u.x = min(max(u.x, self.arena[0] + u.r * 0.6), self.arena[2] - u.r * 0.6)
+            u.y = min(max(u.y, self.arena[1] + u.r * 0.6), self.arena[3] - u.r * 0.4)
 
     # ------------------------------------------------------------------ unit AI
     def _ai(self, u):
@@ -741,8 +742,8 @@ class Sim:
     def _pivot(self, u):
         # dash back towards our own side
         back = -1 if u.team == 0 else 1
-        u.goto = (min(max(u.x + self.rng.uniform(-60, 60), ARENA[0] + 20), ARENA[2] - 20),
-                  min(max(u.y + back * 140, ARENA[1] + 20), ARENA[3] - 20))
+        u.goto = (min(max(u.x + self.rng.uniform(-60, 60), self.arena[0] + 20), self.arena[2] - 20),
+                  min(max(u.y + back * 140, self.arena[1] + 20), self.arena[3] - 20))
         u.goto_t = 0.6
 
     def _protected(self, tgt):

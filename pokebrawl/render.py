@@ -49,14 +49,15 @@ class UnitView:
 class ArenaRenderer:
     """mode: 'showcase' (big crowds, no per-unit HP bars) or 'team' (6v6 with HP bars/names)."""
 
-    def __init__(self, dex, roster, mode="team", my_team=None, team_names=None):
+    def __init__(self, dex, roster, mode="team", my_team=None, team_names=None, size=None):
+        self.W, self.H = size or (W, H)   # the world and the screen are the same size (wide royales: landscape)
         self.dex = dex
         self.roster = {int(k): v for k, v in roster.items()}
         self.mode = mode
         self.my_team = my_team
         self.team_names = team_names or ["Team 1", "Team 2"]
-        self.bg = gfx.arena_background()
-        self.world = gfx.new_surface((W, H))
+        self.bg = gfx.arena_background(size=(self.W, self.H))
+        self.world = gfx.new_surface((self.W, self.H))
         self.units = {}
         self.dead = []          # fading corpses
         self.fx = []
@@ -64,7 +65,7 @@ class ArenaRenderer:
         self.projectiles = []
         self.weather = None
         self.t = 0.0
-        self.cam = [W / 2, H / 2, 1.0]
+        self.cam = [self.W / 2, self.H / 2, 1.0]
         self.cam_target = None  # (x, y, zoom) override
         self.auto_zoom = mode == "showcase"
         self.selected = None
@@ -295,7 +296,7 @@ class ArenaRenderer:
                 ps.append(p)
         self.particles = ps[-1500:]
         # camera
-        tx, ty, tz = W / 2, H / 2, 1.0
+        tx, ty, tz = self.W / 2, self.H / 2, 1.0
         if self.cam_target:
             tx, ty, tz = self.cam_target
         elif self.auto_zoom and self.units:
@@ -304,8 +305,8 @@ class ArenaRenderer:
                 xs = [u.x for u in alive]
                 ys = [u.y for u in alive]
                 cx, cy = (min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2
-                span = max(max(xs) - min(xs) + 260, (max(ys) - min(ys) + 360) * W / H)
-                tz = max(1.0, min(1.8, W / span))
+                span = max(max(xs) - min(xs) + 260, (max(ys) - min(ys) + 360) * self.W / self.H)
+                tz = max(1.0, min(1.8, self.W / span))
                 tx, ty = cx, cy
         k = min(1.0, dt * 2.0)
         self.cam[0] += (tx - self.cam[0]) * k
@@ -315,18 +316,18 @@ class ArenaRenderer:
     # ------------------------------------------------------------------ drawing
     def view_rect(self):
         z = self.cam[2]
-        vw, vh = W / z, H / z
-        x = min(max(self.cam[0] - vw / 2, 0), W - vw)
-        y = min(max(self.cam[1] - vh / 2, 0), H - vh)
+        vw, vh = self.W / z, self.H / z
+        x = min(max(self.cam[0] - vw / 2, 0), self.W - vw)
+        y = min(max(self.cam[1] - vh / 2, 0), self.H - vh)
         return pygame.Rect(int(x), int(y), int(vw), int(vh))
 
     def world_to_screen(self, x, y):
         r = self.view_rect()
-        return (x - r.x) * W / r.w, (y - r.y) * H / r.h
+        return (x - r.x) * self.W / r.w, (y - r.y) * self.H / r.h
 
     def screen_to_world(self, x, y):
         r = self.view_rect()
-        return r.x + x * r.w / W, r.y + y * r.h / H
+        return r.x + x * r.w / self.W, r.y + y * r.h / self.H
 
     def unit_at(self, sx, sy):
         wx, wy = self.screen_to_world(sx, sy)
@@ -387,11 +388,11 @@ class ArenaRenderer:
         if self.shake > 0:
             r.x += int(self.rng.uniform(-6, 6) * self.shake * 3)
             r.y += int(self.rng.uniform(-6, 6) * self.shake * 3)
-            r.clamp_ip(pygame.Rect(0, 0, W, H))
-        if r.w >= W - 1:
+            r.clamp_ip(pygame.Rect(0, 0, self.W, self.H))
+        if r.w >= self.W - 1:
             surf.blit(w, (0, 0))
         else:
-            surf.blit(gfx.rescale(w.subsurface(r), (W, H)), (0, 0))
+            surf.blit(gfx.rescale(w.subsurface(r), (self.W, self.H)), (0, 0))
         # screen-space overlays
         for f in self.fx:
             if f.kind in ("label", "pop", "mega", "banner"):
@@ -543,7 +544,7 @@ class ArenaRenderer:
             # portrait card + name
             card = 64
             cx, cy = sx + u.r * z + 20, sy - u.r * z - 40
-            cx = min(max(cx, card), W - card)
+            cx = min(max(cx, card), self.W - card)
             cy = max(cy, 90)
             box = pygame.Rect(0, 0, card, card)
             box.center = (cx, cy)
@@ -555,7 +556,7 @@ class ArenaRenderer:
             gfx.text(surf, d["name"], (sx, sy - u.r * z - 8), 18, (200, 255, 170))
         elif f.kind == "banner":
             a = 255 if p < 0.75 else int(255 * (1 - (p - 0.75) / 0.25))
-            gfx.text(surf, d["text"], (W / 2, H * 0.42), 46, (255, 255, 255), alpha=a, ow=3)
+            gfx.text(surf, d["text"], (self.W / 2, self.H * 0.42), 46, (255, 255, 255), alpha=a, ow=3)
 
     def _draw_boss_bars(self, surf):
         bosses = [u for u in self.units.values() if u.flags & 1 and u.uid not in self.hidden]
@@ -563,8 +564,8 @@ class ArenaRenderer:
             return
         bosses.sort(key=lambda u: (-u.r, u.uid))
         main = bosses[0]
-        x, y, w = 140, 80, W - 280
-        gfx.text(surf, self.unit_name(main.uid).upper(), (W / 2, y - 12), 18, WHITE)
+        x, y, w = 140, 80, self.W - 280
+        gfx.text(surf, self.unit_name(main.uid).upper(), (self.W / 2, y - 12), 18, WHITE)
         pygame.draw.rect(surf, INK, (x - 2, y - 2, w + 4, 16), border_radius=4)
         pygame.draw.rect(surf, (70, 30, 30), (x, y, w, 12), border_radius=3)
         pygame.draw.rect(surf, (225, 60, 50), (x, y, int(w * main.hp), 12), border_radius=3)
@@ -592,7 +593,7 @@ class ArenaRenderer:
             rng = random.Random(11)
             self._cracks = []
             for _ in range(16):
-                x, y = rng.uniform(80, W - 80), rng.uniform(120, H - 120)
+                x, y = rng.uniform(80, self.W - 80), rng.uniform(120, self.H - 120)
                 pts = [(x, y)]
                 for _ in range(rng.randint(4, 8)):
                     x += rng.uniform(-60, 60)
@@ -604,14 +605,14 @@ class ArenaRenderer:
     def _draw_domain_under(self, w):
         d = self.domain
         if d == "sea":
-            tint = pygame.Surface((W, H), pygame.SRCALPHA)
+            tint = pygame.Surface((self.W, self.H), pygame.SRCALPHA)
             tint.fill((40, 110, 220, 95))
             w.blit(tint, (0, 0))
-            for row in range(0, H, 46):  # rolling waves
-                pts = [(x, row + math.sin(x / 40 + self.t * 2 + row) * 6) for x in range(0, W + 20, 20)]
+            for row in range(0, self.H, 46):  # rolling waves
+                pts = [(x, row + math.sin(x / 40 + self.t * 2 + row) * 6) for x in range(0, self.W + 20, 20)]
                 pygame.draw.lines(w, (150, 200, 255), False, pts, 2)
         elif d == "land":
-            tint = pygame.Surface((W, H), pygame.SRCALPHA)
+            tint = pygame.Surface((self.W, self.H), pygame.SRCALPHA)
             tint.fill((200, 70, 20, 80))
             w.blit(tint, (0, 0))
             glow = 160 + int(80 * math.sin(self.t * 3))
@@ -619,7 +620,7 @@ class ArenaRenderer:
                 pygame.draw.lines(w, (90, 20, 10), False, pts, 9)
                 pygame.draw.lines(w, (255, glow, 40), False, pts, 4)
         elif d == "sky":
-            tint = pygame.Surface((W, H), pygame.SRCALPHA)
+            tint = pygame.Surface((self.W, self.H), pygame.SRCALPHA)
             tint.fill((60, 190, 120, 50))
             w.blit(tint, (0, 0))
 
@@ -627,7 +628,7 @@ class ArenaRenderer:
         if not self.zone:
             return
         cx, cy, r = self.zone
-        storm = pygame.Surface((W, H), pygame.SRCALPHA)
+        storm = pygame.Surface((self.W, self.H), pygame.SRCALPHA)
         storm.fill((90, 30, 140, 110))
         pygame.draw.circle(storm, (0, 0, 0, 0), (int(cx), int(cy)), int(r))   # clear inside (no blending)
         w.blit(storm, (0, 0))
@@ -645,39 +646,39 @@ class ArenaRenderer:
         d = self.domain
         if d == "land":
             for i in range(40):  # embers rising
-                x = (i * 97 + math.sin(self.t + i) * 30) % W
-                y = H - (i * 131 + self.t * 90) % H
+                x = (i * 97 + math.sin(self.t + i) * 30) % self.W
+                y = self.H - (i * 131 + self.t * 90) % self.H
                 pygame.draw.circle(w, (255, 150 + (i * 7) % 100, 40), (int(x), int(y)), 2)
         elif d == "sea":
             for i in range(140):  # heavy rain
-                x = (i * 53 + self.t * 260) % W
-                y = (i * 89 + self.t * 1300) % H
+                x = (i * 53 + self.t * 260) % self.W
+                y = (i * 89 + self.t * 1300) % self.H
                 pygame.draw.line(w, (190, 220, 255), (x, y), (x - 6, y + 24), 2)
         elif d == "sky":
             for i in range(30):  # wind streaks
-                x = (i * 151 + self.t * 900) % (W + 300) - 150
-                y = (i * 97) % H
+                x = (i * 151 + self.t * 900) % (self.W + 300) - 150
+                y = (i * 97) % self.H
                 pygame.draw.line(w, (200, 255, 220), (x, y), (x + 120, y - 10), 2)
 
     def _draw_weather_under(self, w):
         if self.weather == "sun":
-            tint = pygame.Surface((W, H), pygame.SRCALPHA)
+            tint = pygame.Surface((self.W, self.H), pygame.SRCALPHA)
             tint.fill((255, 200, 80, 40))
             w.blit(tint, (0, 0))
 
     def _draw_weather_over(self, w):
         if self.weather == "rain":
             for i in range(90):
-                x = (i * 97 + self.t * 220) % W
-                y = (i * 151 + self.t * 900) % H
+                x = (i * 97 + self.t * 220) % self.W
+                y = (i * 151 + self.t * 900) % self.H
                 pygame.draw.line(w, (170, 200, 255), (x, y), (x - 4, y + 16), 1)
         elif self.weather == "sand":
             for i in range(120):
-                x = (i * 83 + self.t * 400) % W
-                y = (i * 131 + math.sin(self.t + i) * 20) % H
+                x = (i * 83 + self.t * 400) % self.W
+                y = (i * 131 + math.sin(self.t + i) * 20) % self.H
                 pygame.draw.rect(w, (220, 190, 130), (x, y, 3, 2))
         elif self.weather == "snow":
             for i in range(100):
-                x = (i * 71 + math.sin(self.t * 2 + i) * 15) % W
-                y = (i * 113 + self.t * 80) % H
+                x = (i * 71 + math.sin(self.t * 2 + i) * 15) % self.W
+                y = (i * 113 + self.t * 80) % self.H
                 pygame.draw.circle(w, (250, 250, 255), (x, y), 2)

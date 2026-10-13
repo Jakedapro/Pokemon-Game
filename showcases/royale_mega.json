@@ -1,0 +1,3 @@
+{"title": "250 Pokemon Battle Royale!", "subtitle": "THE BIGGEST FIGHT EVER",
+ "mode": "royale",
+ "teams": [{"name": "Everyone", "filter": {"fully_evolved": true}, "count": 250}]}

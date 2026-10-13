@@ -37,14 +37,12 @@ def new_surface(size, alpha=False):
 
 # ---------------------------------------------------------------------------- display
 class Display:
-    """Renders to a fixed 720x1280 canvas and scales it into the window or full screen. The game keeps its
-    9:16 shape in the middle; the space around it shows a blurred, dimmed copy of the game."""
+    """Renders to a fixed-size canvas (720x1280 portrait) and scales it into a resizable window. A scene can ask
+    for a different canvas (big battle royales use a wide 1600x900 one) and the window goes full screen for it."""
 
-    def __init__(self, headless=False, title="PokeBrawl", fullscreen=False):
+    def __init__(self, headless=False, title="PokeBrawl"):
         self.headless = headless
         self.fullscreen = False
-        self._backdrop = None
-        self._frame = 0
         if headless:
             os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
         pygame.init()
@@ -52,21 +50,11 @@ class Display:
         if headless:
             self.window = pygame.display.set_mode((W, H))
         else:
-            self.set_fullscreen(fullscreen)
+            self._windowed()
         self.canvas = new_surface((W, H))
         self._rect = pygame.Rect(0, 0, W, H)
 
-    def set_fullscreen(self, on):
-        if self.headless:
-            return
-        self._backdrop = None
-        if on:
-            try:
-                self.window = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
-                self.fullscreen = True
-                return
-            except pygame.error:
-                pass
+    def _windowed(self):
         try:
             dw, dh = pygame.display.get_desktop_sizes()[0]
         except Exception:
@@ -75,34 +63,31 @@ class Display:
         self.window = pygame.display.set_mode((int(W * scale), int(H * scale)), pygame.RESIZABLE)
         self.fullscreen = False
 
-    def toggle_fullscreen(self):
-        self.set_fullscreen(not self.fullscreen)
-        return self.fullscreen
+    def set_canvas(self, size):
+        """Switch canvas size: the normal portrait one in a window, anything else full screen."""
+        if self.canvas.get_size() == tuple(size):
+            return
+        self.canvas = new_surface(size)
+        if self.headless:
+            return
+        if tuple(size) != (W, H):
+            try:
+                self.window = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+                self.fullscreen = True
+            except pygame.error:
+                pass
+        elif self.fullscreen:
+            self._windowed()
 
     def present(self):
         if self.headless:
             return
+        cw, ch = self.canvas.get_size()
         ww, wh = self.window.get_size()
-        s = min(ww / W, wh / H)
-        size = (max(1, int(W * s)), max(1, int(H * s)))
+        s = min(ww / cw, wh / ch)
+        size = (max(1, int(cw * s)), max(1, int(ch * s)))
         self._rect = pygame.Rect((ww - size[0]) // 2, (wh - size[1]) // 2, *size)
-        if size[0] < ww - 4 or size[1] < wh - 4:
-            # side space: a blurred, darkened copy of the game (refreshed a few times a second - cheap)
-            self._frame += 1
-            if self._backdrop is None or self._backdrop.get_size() != (ww, wh) or self._frame % 8 == 0:
-                tiny = pygame.transform.smoothscale(self.canvas, (9, 16))
-                cover = max(ww / 9, wh / 16)
-                bd = pygame.transform.smoothscale(tiny, (int(9 * cover) + 1, int(16 * cover) + 1))
-                dim = pygame.Surface(bd.get_size())
-                dim.fill((95, 95, 110))
-                bd.blit(dim, (0, 0), special_flags=pygame.BLEND_MULT)
-                self._backdrop = pygame.Surface((ww, wh))
-                self._backdrop.blit(bd, bd.get_rect(center=(ww // 2, wh // 2)))
-            self.window.blit(self._backdrop, (0, 0))
-            shadow = self._rect.inflate(24, 24)
-            pygame.draw.rect(self.window, (0, 0, 0), shadow, border_radius=14)
-        else:
-            self.window.fill((12, 12, 16))
+        self.window.fill((0, 0, 0))
         self.window.blit(pygame.transform.smoothscale(self.canvas, size), self._rect)
         pygame.display.flip()
 
@@ -110,7 +95,8 @@ class Display:
         if self.headless:
             return pos
         r = self._rect
-        return ((pos[0] - r.x) * W / max(1, r.w), (pos[1] - r.y) * H / max(1, r.h))
+        cw, ch = self.canvas.get_size()
+        return ((pos[0] - r.x) * cw / max(1, r.w), (pos[1] - r.y) * ch / max(1, r.h))
 
 
 # ---------------------------------------------------------------------------- fonts
@@ -298,12 +284,19 @@ def _plain_rgba(img):
 
 
 # ---------------------------------------------------------------------------- arena
-def arena_background(seed=7):
+def arena_rect(size=None):
+    """Walkable area for an arena of this canvas size (portrait 720x1280 by default)."""
+    w, h = size or (W, H)
+    return (44, 66, w - 44, h - 46)
+
+
+def arena_background(seed=7, size=None):
     """Grass border, dirt floor with pebble pattern and a stepped rock wall, like the videos."""
     rng = random.Random(seed)
+    W, H = size or (globals()["W"], globals()["H"])  # noqa: N806 - local canvas size
     bg = new_surface((W, H))
     bg.fill((92, 180, 70))
-    for _ in range(5000):  # grass texture
+    for _ in range(int(5000 * W * H / (720 * 1280))):  # grass texture
         x, y = rng.randrange(W), rng.randrange(H)
         c = rng.choice([(80, 165, 60), (108, 196, 82), (70, 150, 55)])
         pygame.draw.rect(bg, c, (x, y, 3, 2))
@@ -315,7 +308,7 @@ def arena_background(seed=7):
             for _ in range(3):
                 ox, oy = rng.randint(-6, 6), rng.randint(-5, 5)
                 pygame.draw.ellipse(bg, (148, 108, 80), (gx + ox, gy + oy, rng.randint(4, 8), rng.randint(3, 6)))
-    for _ in range(600):
+    for _ in range(int(600 * W * H / (720 * 1280))):
         x, y = rng.randint(floor.left + 6, floor.right - 8), rng.randint(floor.top + 6, floor.bottom - 8)
         pygame.draw.rect(bg, (176, 134, 100), (x, y, 2, 2))
     # stepped wall on the top corners

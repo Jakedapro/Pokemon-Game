@@ -13,24 +13,24 @@ from .audio import AUDIO
 from .gfx import H, INK, SPRITES, W, WHITE
 
 
-_VIGNETTE = None
+_VIGNETTE = {}
 
 
-def _vignette():
-    """Dark edges fading smoothly to a clear middle (built once). Filled ellipses written outside-in: each one
-    replaces the pixels inside it, so the alpha steps down smoothly toward the center."""
-    global _VIGNETTE
-    if _VIGNETTE is None:
-        v = pygame.Surface((W, H), pygame.SRCALPHA)
+def _vignette(size=None):
+    """Dark edges fading smoothly to a clear middle (built once per size). Filled ellipses written outside-in:
+    each one replaces the pixels inside it, so the alpha steps down smoothly toward the center."""
+    w, h = size or (W, H)
+    if (w, h) not in _VIGNETTE:
+        v = pygame.Surface((w, h), pygame.SRCALPHA)
         v.fill((0, 0, 0, 210))
         steps = 64
         for i in range(steps):
             k = i / (steps - 1)                      # 0 = outer edge, 1 = center
             a = int(210 * (1 - k) ** 1.8)
-            rw, rh = W * (1.5 - 1.0 * k), H * (1.2 - 0.8 * k)
-            pygame.draw.ellipse(v, (0, 0, 0, a), (W / 2 - rw / 2, H / 2 - rh / 2, rw, rh))
-        _VIGNETTE = v
-    return _VIGNETTE
+            rw, rh = w * (1.5 - 1.0 * k), h * (1.2 - 0.8 * k)
+            pygame.draw.ellipse(v, (0, 0, 0, a), (w / 2 - rw / 2, h / 2 - rh / 2, rw, rh))
+        _VIGNETTE[(w, h)] = v
+    return _VIGNETTE[(w, h)]
 
 
 def _lighter(c, k=0.55):
@@ -47,7 +47,8 @@ class Cutscene:
     action() runs once at `action_at` (fraction of the duration) - e.g. spawning Arceus."""
 
     def __init__(self, kind, duration, focus=None, zoom=1.7, title="", subtitle="", color=(255, 255, 255),
-                 portrait=None, portrait2=None, action=None, action_at=0.55, cry=None, sound="select"):
+                 portrait=None, portrait2=None, action=None, action_at=0.55, cry=None, sound="select", size=None):
+        self.W, self.H = size or (W, H)   # screen size (wide battle royales are landscape)
         self.kind = kind
         self.duration = duration
         self.focus = focus
@@ -172,7 +173,7 @@ class Cutscene:
     def _draw_aura_fx(self, surf, k):
         if k <= 0:
             return
-        layer = pygame.Surface((W, H), pygame.SRCALPHA)
+        layer = pygame.Surface((self.W, self.H), pygame.SRCALPHA)
         for x, y, r, life, col in self.rings:
             a = int(220 * min(1.0, life / 0.5) * k)
             pygame.draw.circle(layer, (*_lighter(col, 0.5), a), (int(x), int(y)), int(r),
@@ -208,14 +209,14 @@ class Cutscene:
         k = _ease(t / 0.35) * _ease((d - t) / 0.35)
         self.anchors = []
         # darken + color wash + vignette, then speed lines
-        wash = pygame.Surface((W, H), pygame.SRCALPHA)
+        wash = pygame.Surface((self.W, self.H), pygame.SRCALPHA)
         wash.fill((*(int(c * 0.25) for c in self.color), int(150 * k)))
         surf.blit(wash, (0, 0))
-        vig = _vignette()
+        vig = _vignette((self.W, self.H))
         vig.set_alpha(int(255 * k))
         surf.blit(vig, (0, 0))
         if k > 0.2:
-            cx, cy = W / 2, H / 2
+            cx, cy = self.W / 2, self.H / 2
             for i in range(28):
                 a = self.rng.random() * math.tau
                 r0 = 260 + self.rng.random() * 120
@@ -224,70 +225,70 @@ class Cutscene:
                                  (cx + math.cos(a) * r1, cy + math.sin(a) * r1), 2)
         # letterbox
         bar = int(130 * k)
-        pygame.draw.rect(surf, (0, 0, 0), (0, 0, W, bar))
-        pygame.draw.rect(surf, (0, 0, 0), (0, H - bar, W, bar))
+        pygame.draw.rect(surf, (0, 0, 0), (0, 0, self.W, bar))
+        pygame.draw.rect(surf, (0, 0, 0), (0, self.H - bar, self.W, bar))
         if self.kind == "vs":
             self._draw_vs(surf, t, k)
         elif self.kind == "card":
             self._draw_card(surf, t, k)
         else:
-            self._draw_titles(surf, t, k, H * 0.45)
+            self._draw_titles(surf, t, k, self.H * 0.45)
         if self.flash > 0:
-            f = pygame.Surface((W, H), pygame.SRCALPHA)
+            f = pygame.Surface((self.W, self.H), pygame.SRCALPHA)
             f.fill((255, 255, 255, int(255 * self.flash / 0.35)))
             surf.blit(f, (0, 0))
 
     def _draw_titles(self, surf, t, k, y):
         if t > 0.25:
             pop = _ease((t - 0.25) / 0.25)
-            self._glow_title(surf, self.title, (W / 2, y), 64, 0.6 + 0.4 * pop, int(255 * k))
+            self._glow_title(surf, self.title, (self.W / 2, y), 64, 0.6 + 0.4 * pop, int(255 * k))
         if self.subtitle and t > 0.6:
             n = int(len(self.subtitle) * min(1.0, (t - 0.6) / 0.6))
-            gfx.text(surf, self.subtitle[:n], (W / 2, y + 62), 26, self.color, INK, 3, alpha=int(255 * k))
+            gfx.text(surf, self.subtitle[:n], (self.W / 2, y + 62), 26, self.color, INK, 3, alpha=int(255 * k))
 
     def _band(self, surf, y, h, offset, color):
-        pts = [(offset - 80, y + h), (offset + W + 80, y + h), (offset + W + 160, y), (offset, y)]
+        pts = [(offset - 80, y + h), (offset + self.W + 80, y + h), (offset + self.W + 160, y), (offset, y)]
         pygame.draw.polygon(surf, INK, [(px, py + 6) for px, py in pts])
         pygame.draw.polygon(surf, (18, 14, 26), pts)
         # energy streaks across the band in the event color
         for i in range(5):
             yy = y + 30 + i * (h - 60) / 4
-            off = (self.t * (500 + i * 90) + i * 170) % (W + 300) - 150
+            off = (self.t * (500 + i * 90) + i * 170) % (self.W + 300) - 150
             pygame.draw.line(surf, tuple(int(c * 0.6) for c in color), (offset + off - 120, yy), (offset + off, yy), 3)
         pygame.draw.polygon(surf, _lighter(color, 0.3), pts, 5)
         pygame.draw.polygon(surf, WHITE, pts, 2)
 
     def _draw_card(self, surf, t, k):
-        slide = (1 - _ease(t / 0.45)) * -W
+        slide = (1 - _ease(t / 0.45)) * -self.W
         y, h = 470, 300
         self._band(surf, y, h, slide, self.color)
         if self.portrait:
-            self._draw_glowing(surf, self.portrait, 300, (W * 0.3 + slide, y + h + 20))
+            self._draw_glowing(surf, self.portrait, 300, (self.W * 0.3 + slide, y + h + 20))
         self._draw_aura_fx(surf, k)
         if t > 0.3:
             pop = _ease((t - 0.3) / 0.3)
             size = min(46, int(46 * 16 / max(16, len(self.title))))
-            self._glow_title(surf, self.title, (W * 0.62 - slide * 0.2, y + 110), size, 0.5 + 0.5 * pop,
+            self._glow_title(surf, self.title, (self.W * 0.62 - slide * 0.2, y + 110), size, 0.5 + 0.5 * pop,
                              int(255 * k))
         if self.subtitle and t > 0.7:
             n = int(len(self.subtitle) * min(1.0, (t - 0.7) / 0.5))
-            gfx.text(surf, self.subtitle[:n], (W * 0.62, y + 180), 22, WHITE, INK, 3, alpha=int(255 * k))
+            gfx.text(surf, self.subtitle[:n], (self.W * 0.62, y + 180), 22, WHITE, INK, 3, alpha=int(255 * k))
 
     def _draw_vs(self, surf, t, k):
         a = _ease(t / 0.45)
         for i, pid in enumerate((self.portrait, self.portrait2)):
             if not pid:
                 continue
-            x = (W * 0.27 - (1 - a) * W) if i == 0 else (W * 0.73 + (1 - a) * W)
+            x = (self.W * 0.27 - (1 - a) * self.W) if i == 0 else (self.W * 0.73 + (1 - a) * self.W)
             y = 520 if i == 0 else 800
             band_col = gfx.TEAM_COLORS[i]
-            self._band(surf, y - 120, 200, (-(1 - a) * W) if i == 0 else ((1 - a) * W), band_col)
+            self._band(surf, y - 120, 200, (-(1 - a) * self.W) if i == 0 else ((1 - a) * self.W), band_col)
             self._draw_glowing(surf, pid, 260, (x, y + 90), flip=i == 0, color=band_col)
         self._draw_aura_fx(surf, k)
         if t > 0.45:
             pop = _ease((t - 0.45) / 0.25)
-            self._glow_title(surf, "VS", (W / 2, 640), 130, 2.2 - 1.2 * pop, int(255 * k))
-        self._glow_title(surf, self.title, (W / 2, 250), 54, 1.0, int(255 * k))
+            self._glow_title(surf, "VS", (self.W / 2, 640), 130, 2.2 - 1.2 * pop, int(255 * k))
+        self._glow_title(surf, self.title, (self.W / 2, 250), 54, 1.0, int(255 * k))
 
 
 # the 18 plate colors around Arceus' Judgment wheel
@@ -305,13 +306,13 @@ class Descent(Cutscene):
 
     SLAM = 3.6  # rare variant: Arceus crashes into the arena itself
 
-    def __init__(self, arceus_id, drops, group_title, center, on_drop, lands=False):
+    def __init__(self, arceus_id, drops, group_title, center, on_drop, lands=False, size=None):
         self.lands = lands
         self.leave = 99.0 if lands else self.FIRST + len(drops) * self.GAP + 0.6
         super().__init__("descent", self.SLAM + 2.2 if lands else self.leave + 1.8, focus=center, zoom=1.12,
                          title="ARCEUS DESCENDS",
                          subtitle="...AND JOINS THE FIGHT ITSELF!" if lands else f"AND BRINGS {group_title}!",
-                         color=(255, 205, 90), sound=None)
+                         color=(255, 205, 90), sound=None, size=size)
         self.arceus = arceus_id
         self.drops = drops
         self.on_drop = on_drop
@@ -366,7 +367,7 @@ class Descent(Cutscene):
 
     def _arceus_y(self):
         t = self.t
-        top, rest = -260, H * 0.37
+        top, rest = -260, self.H * 0.37
         if t < self.DOWN:
             return top + (rest - top) * _ease(t / self.DOWN)
         if self.lands:
@@ -383,20 +384,20 @@ class Descent(Cutscene):
         k = _ease(t / 0.5) * _ease((d - t) / 0.5)
         self.anchors = []
         # the sky darkens
-        shade = pygame.Surface((W, H), pygame.SRCALPHA)
+        shade = pygame.Surface((self.W, self.H), pygame.SRCALPHA)
         shade.fill((14, 10, 30, int(150 * k)))
         surf.blit(shade, (0, 0))
-        vig = _vignette()
+        vig = _vignette((self.W, self.H))
         vig.set_alpha(int(200 * k))
         surf.blit(vig, (0, 0))
         # god rays fanning down from above
         ay = self._arceus_y()
-        rays = pygame.Surface((W, H), pygame.SRCALPHA)
+        rays = pygame.Surface((self.W, self.H), pygame.SRCALPHA)
         for i in range(9):
             a = -0.9 + i * 0.225 + math.sin(t * 0.7 + i) * 0.05
             spread = 0.05 + 0.02 * math.sin(t * 2 + i * 1.7)
-            pts = [(W / 2, -80), (W / 2 + math.sin(a - spread) * 1800, -80 + math.cos(a - spread) * 1800),
-                   (W / 2 + math.sin(a + spread) * 1800, -80 + math.cos(a + spread) * 1800)]
+            pts = [(self.W / 2, -80), (self.W / 2 + math.sin(a - spread) * 1800, -80 + math.cos(a - spread) * 1800),
+                   (self.W / 2 + math.sin(a + spread) * 1800, -80 + math.cos(a + spread) * 1800)]
             pygame.draw.polygon(rays, (255, 230, 150, int(38 * k)), pts)
         surf.blit(rays, (0, 0))
         # pillars of light where the legendaries land
@@ -406,7 +407,7 @@ class Descent(Cutscene):
             if 0 <= p <= 1:
                 sx, sy = self._screen(i)
                 wdt = 90 * (1 - p) ** 0.5 if p > 0.32 else 90 * (p / 0.32)
-                beam = pygame.Surface((W, H), pygame.SRCALPHA)
+                beam = pygame.Surface((self.W, self.H), pygame.SRCALPHA)
                 pygame.draw.rect(beam, (255, 235, 170, int(120 * k)), (sx - wdt / 2, 0, wdt, sy))
                 pygame.draw.rect(beam, (255, 255, 255, int(220 * k)), (sx - wdt / 6, 0, wdt / 3, sy))
                 pygame.draw.ellipse(beam, (255, 240, 190, int(160 * k)), (sx - wdt, sy - wdt / 4, wdt * 2, wdt / 2))
@@ -422,9 +423,9 @@ class Descent(Cutscene):
             sx, sy = self._screen(0)
             self._draw_glowing(surf, self.arceus, 170, (sx, sy + 30))
         elif ay > -200:
-            cx, cy = W / 2, ay - 120
+            cx, cy = self.W / 2, ay - 120
             rad = 170
-            ring = pygame.Surface((W, H), pygame.SRCALPHA)
+            ring = pygame.Surface((self.W, self.H), pygame.SRCALPHA)
             pygame.draw.circle(ring, (255, 220, 120, int(150 * k)), (int(cx), int(cy)), rad, 6)
             pygame.draw.circle(ring, (255, 245, 210, int(90 * k)), (int(cx), int(cy)), rad - 18, 2)
             for j, typ in enumerate(PLATE_TYPES):
@@ -433,7 +434,7 @@ class Descent(Cutscene):
                 pygame.draw.circle(ring, (*gfx.type_color(typ, 0), int(255 * k)), (int(px), int(py)), 11)
                 pygame.draw.circle(ring, (255, 255, 255, int(255 * k)), (int(px), int(py)), 11, 2)
             surf.blit(ring, (0, 0))
-            self._draw_glowing(surf, self.arceus, 290, (W / 2, ay + 30))
+            self._draw_glowing(surf, self.arceus, 290, (self.W / 2, ay + 30))
         # the new arrivals stand in the light, glowing, until the scene ends
         for i, (pid, _name, _pos) in enumerate(self.drops):
             if not self.lands and t >= self.FIRST + i * self.GAP:
@@ -442,19 +443,19 @@ class Descent(Cutscene):
         self._draw_aura_fx(surf, k)
         # letterbox + titles
         bar = int(110 * k)
-        pygame.draw.rect(surf, (0, 0, 0), (0, 0, W, bar))
-        pygame.draw.rect(surf, (0, 0, 0), (0, H - bar, W, bar))
+        pygame.draw.rect(surf, (0, 0, 0), (0, 0, self.W, bar))
+        pygame.draw.rect(surf, (0, 0, 0), (0, self.H - bar, self.W, bar))
         if 0.8 < t < self.leave + 0.8:
             pop = _ease((t - 0.8) / 0.3)
-            self._glow_title(surf, self.title, (W / 2, 62), 50, 0.6 + 0.4 * pop, int(255 * k))
+            self._glow_title(surf, self.title, (self.W / 2, 62), 50, 0.6 + 0.4 * pop, int(255 * k))
         if self.subtitle and t > self.CRY:
             n = int(len(self.subtitle) * min(1.0, (t - self.CRY) / 0.8))
             size = 28
-            while size > 16 and gfx.font(size, True).size(self.subtitle)[0] > W - 40:
+            while size > 16 and gfx.font(size, True).size(self.subtitle)[0] > self.W - 40:
                 size -= 2
-            gfx.text(surf, self.subtitle[:n], (W / 2, H - 56), size, (255, 225, 140), INK, 3, alpha=int(255 * k))
+            gfx.text(surf, self.subtitle[:n], (self.W / 2, self.H - 56), size, (255, 225, 140), INK, 3, alpha=int(255 * k))
         if self.flash > 0:
-            f = pygame.Surface((W, H), pygame.SRCALPHA)
+            f = pygame.Surface((self.W, self.H), pygame.SRCALPHA)
             f.fill((255, 250, 230, int(255 * min(1.0, self.flash / 0.35))))
             surf.blit(f, (0, 0))
 
@@ -477,9 +478,10 @@ class Finisher(Cutscene):
 
     CHARGE, RELEASE, IMPACT, AFTER = 0.25, 1.05, 1.55, 1.8
 
-    def __init__(self, attacker_id, defender_id, move_name, mtype, cls, mine, final=False):
+    def __init__(self, attacker_id, defender_id, move_name, mtype, cls, mine, final=False, size=None):
         color = gfx.type_color(mtype, 0)
-        super().__init__("finisher", 3.6 if final else 3.0, title=move_name.upper(), color=color, sound=None)
+        super().__init__("finisher", 3.6 if final else 3.0, title=move_name.upper(), color=color, sound=None,
+                         size=size)
         self.attacker, self.defender = attacker_id, defender_id
         self.mtype, self.cls, self.mine, self.final = mtype, cls, mine, final
         self.style, self.shape = FINISH_STYLE.get(mtype, ("slash", "spark"))
@@ -488,8 +490,8 @@ class Finisher(Cutscene):
         self.shards = []
         self.skipped = False
         # attacker on the left when it's yours, on the right when it's theirs
-        self.ax, self.dx = (W * 0.28, W * 0.72) if mine else (W * 0.72, W * 0.28)
-        self.ay, self.dy = H * 0.58, H * 0.42
+        self.ax, self.dx = (self.W * 0.28, self.W * 0.72) if mine else (self.W * 0.72, self.W * 0.28)
+        self.ay, self.dy = self.H * 0.58, self.H * 0.42
 
     def skip(self):
         self.t = self.duration
@@ -560,7 +562,7 @@ class Finisher(Cutscene):
         col, light = self.color, _lighter(self.color, 0.5)
         sx, sy, ex, ey = self.ax, self.ay - 80, self.dx, self.dy - 60
         hx, hy = sx + (ex - sx) * p, sy + (ey - sy) * p
-        layer = pygame.Surface((W, H), pygame.SRCALPHA)
+        layer = pygame.Surface((self.W, self.H), pygame.SRCALPHA)
         if self.style == "beam":
             for wdt, a in ((70, 90), (40, 170), (14, 255)):
                 pygame.draw.line(layer, (*(light if wdt < 30 else col), a), (sx, sy), (hx, hy), wdt)
@@ -631,14 +633,14 @@ class Finisher(Cutscene):
                                  (self.dx + math.cos(a) * 900, self.dy + math.sin(a) * 900), 3)
             return
         # its own stage: the battle fades out behind a dark backdrop in the move's color
-        wash = pygame.Surface((W, H), pygame.SRCALPHA)
+        wash = pygame.Surface((self.W, self.H), pygame.SRCALPHA)
         wash.fill((*(int(c * 0.16) for c in self.color), int(255 * k)))
         surf.blit(wash, (0, 0))
-        glow = pygame.Surface((W, H), pygame.SRCALPHA)
+        glow = pygame.Surface((self.W, self.H), pygame.SRCALPHA)
         for i in range(6):
-            pygame.draw.circle(glow, (*self.color, int(14 * k)), (int(W / 2), int(H / 2)), 520 - i * 70)
+            pygame.draw.circle(glow, (*self.color, int(14 * k)), (int(self.W / 2), int(self.H / 2)), 520 - i * 70)
         surf.blit(glow, (0, 0))
-        vig = _vignette()
+        vig = _vignette((self.W, self.H))
         vig.set_alpha(int(255 * k))
         surf.blit(vig, (0, 0))
         if k > 0.2:
@@ -646,10 +648,10 @@ class Finisher(Cutscene):
                 a = self.rng.random() * math.tau
                 r0 = 300 + self.rng.random() * 100
                 r1 = r0 + 400 + self.rng.random() * 400
-                pygame.draw.line(surf, _lighter(self.color, 0.6), (W / 2 + math.cos(a) * r0, H / 2 + math.sin(a) * r0),
-                                 (W / 2 + math.cos(a) * r1, H / 2 + math.sin(a) * r1), 2)
+                pygame.draw.line(surf, _lighter(self.color, 0.6), (self.W / 2 + math.cos(a) * r0, self.H / 2 + math.sin(a) * r0),
+                                 (self.W / 2 + math.cos(a) * r1, self.H / 2 + math.sin(a) * r1), 2)
         # attacker slams in, glowing in the move's color
-        slide = (1 - _ease((t - 0.05) / 0.3)) * (-W if self.mine else W)
+        slide = (1 - _ease((t - 0.05) / 0.3)) * (-self.W if self.mine else self.W)
         self._draw_glowing(surf, self.attacker, 300, (self.ax + slide, self.ay + 140), flip=self.mine)
         # defender: shakes after the hit, then is gone (shattered)
         if t < self.IMPACT:
@@ -667,21 +669,21 @@ class Finisher(Cutscene):
         self._draw_aura_fx(surf, k)
         # letterbox
         bar = int(120 * k)
-        pygame.draw.rect(surf, (0, 0, 0), (0, 0, W, bar))
-        pygame.draw.rect(surf, (0, 0, 0), (0, H - bar, W, bar))
+        pygame.draw.rect(surf, (0, 0, 0), (0, 0, self.W, bar))
+        pygame.draw.rect(surf, (0, 0, 0), (0, self.H - bar, self.W, bar))
         # move name slams in
         if self.CHARGE <= t < self.IMPACT + 0.2:
             pop = _ease((t - self.CHARGE) / 0.2)
             size = min(70, int(70 * 12 / max(12, len(self.title))))
-            self._glow_title(surf, self.title, (W / 2, 210), size, 1.8 - 0.8 * pop, int(255 * k))
-            gfx.pill(surf, self.mtype.upper(), (W / 2, 270), self.color, 18)
+            self._glow_title(surf, self.title, (self.W / 2, 210), size, 1.8 - 0.8 * pop, int(255 * k))
+            gfx.pill(surf, self.mtype.upper(), (self.W / 2, 270), self.color, 18)
         # K.O.!
         if t >= self.IMPACT + 0.2:
             q = t - self.IMPACT - 0.2
             pop = _ease(q / 0.25)
             word = "FINISH!" if self.final else "K.O.!"
-            self._glow_title(surf, word, (W / 2, H * 0.5), 150 if self.final else 130, 2.0 - pop, int(255 * k))
+            self._glow_title(surf, word, (self.W / 2, self.H * 0.5), 150 if self.final else 130, 2.0 - pop, int(255 * k))
         if self.flash > 0:
-            f = pygame.Surface((W, H), pygame.SRCALPHA)
+            f = pygame.Surface((self.W, self.H), pygame.SRCALPHA)
             f.fill((255, 255, 255, int(255 * min(1.0, self.flash / 0.25))))
             surf.blit(f, (0, 0))

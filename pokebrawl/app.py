@@ -53,8 +53,7 @@ class Scene:
 class App:
     def __init__(self, headless=False):
         self.settings = load_settings()
-        self.display = gfx.Display(headless=headless, title="PokeBrawl",
-                                   fullscreen=self.settings.get("fullscreen", "On") == "On")
+        self.display = gfx.Display(headless=headless, title="PokeBrawl")
         self.clock = pygame.time.Clock()
         self.stack = []
         self.dex = None
@@ -89,13 +88,6 @@ class App:
             for ev in pygame.event.get():
                 if ev.type == pygame.QUIT:
                     self.running = False
-                if ev.type == pygame.KEYDOWN and (ev.key == pygame.K_F11 or (
-                        ev.key == pygame.K_f and ev.mod & (pygame.KMOD_META | pygame.KMOD_CTRL)) or (
-                        ev.key == pygame.K_RETURN and ev.mod & pygame.KMOD_ALT)):
-                    on = self.display.toggle_fullscreen()
-                    self.settings["fullscreen"] = "On" if on else "Off"
-                    save_settings(self.settings)
-                    continue
                 pos = None
                 if hasattr(ev, "pos"):
                     pos = self.display.to_canvas(ev.pos)
@@ -109,6 +101,9 @@ class App:
             if scene is None:
                 break
             scene.update(dt)
+            scene = self.stack[-1] if self.stack else scene
+            # most screens are portrait in a window; big battle royales ask for a wide full-screen canvas
+            self.display.set_canvas(getattr(scene, "canvas_size", (gfx.W, gfx.H)))
             mp = self.display.to_canvas(pygame.mouse.get_pos())
             for b in getattr(scene, "buttons", []):
                 b.hover = b.rect.collidepoint(mp)
