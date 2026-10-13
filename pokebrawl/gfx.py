@@ -210,11 +210,13 @@ class Sprites:
             self.missing = s
         return self.missing
 
-    def base(self, pid, back=False):
-        key = (pid, back)
+    def base(self, pid, back=False, shiny=False):
+        key = (pid, back, shiny)
         if key not in self.raw:
             img = None
-            if back:
+            if shiny:
+                path = pokedex.ensure_sprite(pid, shiny=True)
+            elif back:
                 path = os.path.join(pokedex.SPRITE_DIR, f"back-{pid}.png")
                 if not os.path.exists(path):
                     try:
@@ -234,16 +236,16 @@ class Sprites:
                         img = _plain_rgba(img.subsurface(r))
                 except Exception:
                     img = None
-            if img is None and back:
+            if img is None and (back or shiny):
                 return self.base(pid, False)
             self.raw[key] = img or self._missing()
         return self.raw[key]
 
-    def get(self, pid, height, flip=False, outline=None, back=False, white=0.0, ow=2):
-        key = (pid, int(height), flip, outline, back, round(white, 1), ow)
+    def get(self, pid, height, flip=False, outline=None, back=False, white=0.0, ow=2, shiny=False):
+        key = (pid, int(height), flip, outline, back, round(white, 1), ow, shiny)
         if key in self.cache:
             return self.cache[key]
-        img = self.base(pid, back)
+        img = self.base(pid, back and not shiny, shiny)
         s = height / max(1, img.get_height())
         size = (max(1, int(img.get_width() * s)), max(1, int(height)))
         img = rescale(img, size)

@@ -133,3 +133,22 @@ def test_autoedit_plan_is_deterministic_and_shortens(dex):
     assert len(draw) == len(a.flags) and length < len(a.flags) / 30 / 2  # much shorter than the battle
     # short battles are left alone
     assert schedule([2] * 300, 30, 60)[3] == 10.0
+
+
+def test_ranks_and_legend_collection(dex, tmp_path, monkeypatch):
+    from pokebrawl import profile
+    monkeypatch.setattr(profile, "PROFILE_FILE", str(tmp_path / "profile.json"))
+    monkeypatch.setattr(profile, "HOME", str(tmp_path))
+    assert profile.rank_of(0)["label"] == "Poke Ball III"
+    assert profile.rank_of(2500)["label"] == "Champion"
+    rng = random.Random(3)
+    out = None
+    for _ in range(30):
+        out = profile.record("bots", "insane", True, dex, rng)
+        if out["encounter"]:
+            profile.add_legend(dex.get(out["encounter"][0]), out["encounter"][1])
+    data = profile.load()
+    assert data["rp"] > 650 and data["best_streak"] == 30 and data["legends"]
+    assert all(dex.get(k)["legendary"] or dex.get(k)["mythical"] for k in data["legends"])
+    lost = profile.record("bots", "insane", False, dex, rng)
+    assert lost["delta"] < 0 and lost["encounter"] is None and lost["streak"] == -1

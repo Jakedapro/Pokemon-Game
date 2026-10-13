@@ -267,3 +267,48 @@ def menu_background(surf, t=0.0):
             for x in range(24, size[0], 48):
                 _BG.set_at((x, y), (40, 54, 72))
     surf.blit(_BG, (0, 0))
+
+
+def rank_badge(surf, center, r, rank, t=0.0):
+    """A rank's ball: Poke / Great / Ultra / Master Ball, or the Champion's gold ball with a crown.
+    rank: a profile.rank_of() dict. Divisions show as pips under the ball."""
+    import math
+    x, y = int(center[0]), int(center[1])
+    tier = rank["tier"]
+    tops = [(225, 50, 55), (55, 115, 225), (40, 40, 48), (130, 60, 200), (250, 200, 70)]
+    top = tops[tier]
+    glow = pygame.Surface((r * 4, r * 4), pygame.SRCALPHA)
+    pulse = 0.6 + 0.4 * (0.5 + 0.5 * math.sin(t * 3))
+    for k in range(6, 0, -1):   # soft halo: faint at the edge, stronger near the ball
+        pygame.draw.circle(glow, (*rank["color"], int(9 * pulse * (7 - k))), (r * 2, r * 2), int(r * (1 + k * 0.09)))
+    surf.blit(glow, (x - r * 2, y - r * 2))
+    pygame.draw.circle(surf, (16, 18, 24), (x, y), r + 3)
+    pygame.draw.circle(surf, (240, 242, 246), (x, y), r)
+    pygame.draw.rect(surf, top, (x - r, y - r, r * 2, r), border_top_left_radius=r, border_top_right_radius=r)
+    if tier == 1:      # Great Ball: red wings
+        for d in (-1, 1):
+            pygame.draw.ellipse(surf, (220, 50, 60), (x + d * r * 0.55 - r * 0.28, y - r * 0.85, r * 0.56, r * 0.6))
+    elif tier == 2:    # Ultra Ball: the yellow H
+        for d in (-1, 1):
+            pygame.draw.rect(surf, (250, 205, 50), (x + d * r * 0.45 - r * 0.14, y - r * 0.95, r * 0.28, r * 0.9))
+    elif tier == 3:    # Master Ball: pink bumps and the M
+        for d in (-1, 1):
+            pygame.draw.circle(surf, (235, 90, 170), (int(x + d * r * 0.55), int(y - r * 0.55)), max(2, r // 5))
+        gfx.text(surf, "M", (x, y - r * 0.5), max(10, int(r * 0.55)), (255, 255, 255), None, 0)
+    pygame.draw.line(surf, (16, 18, 24), (x - r, y), (x + r, y), max(2, r // 7))
+    pygame.draw.circle(surf, (16, 18, 24), (x, y), max(4, r // 3))
+    pygame.draw.circle(surf, (250, 250, 252), (x, y), max(2, r // 3 - max(2, r // 10)))
+    pygame.draw.circle(surf, (255, 255, 255), (int(x - r * 0.45), int(y - r * 0.55)), max(2, r // 7))
+    if tier == 4:      # Champion: crown
+        cx, cy, w = x, y - r - 2, r * 1.1
+        pts = [(cx - w / 2, cy), (cx - w / 2, cy - w * 0.45), (cx - w / 4, cy - w * 0.2), (cx, cy - w * 0.55),
+               (cx + w / 4, cy - w * 0.2), (cx + w / 2, cy - w * 0.45), (cx + w / 2, cy)]
+        pygame.draw.polygon(surf, (16, 18, 24), [(px, py + 2) for px, py in pts])
+        pygame.draw.polygon(surf, (255, 215, 70), pts)
+    if rank["div"]:
+        n = 3 - ["III", "II", "I"].index(rank["div"])
+        for i in range(3):
+            px = x + (i - 1) * max(8, r * 0.38)
+            col = rank["color"] if i < n else (60, 66, 80)
+            pygame.draw.circle(surf, (16, 18, 24), (int(px), int(y + r + max(8, r * 0.3))), max(4, r // 7) + 2)
+            pygame.draw.circle(surf, col, (int(px), int(y + r + max(8, r * 0.3))), max(4, r // 7))

@@ -6,7 +6,7 @@ import pygame
 from . import gfx, ui
 from .app import Scene
 from .audio import AUDIO
-from .battle_common import BattleExtras
+from .battle_common import BattleExtras, draw_rank_change
 from .battlecore import STATUS_NAMES
 from .cinematics import ARCEUS_JUDGMENT, AttackFX, Finisher, Gigantamax, Judgment, MegaEvolution
 from .gfx import H, INK, SPRITES, W, WHITE
@@ -410,6 +410,12 @@ class TurnBattleScene(Scene):
         return c
 
     def _end_action(self, tag):
+        if tag == "catch":
+            from .trainer_ui import LegendEncounter
+            self.x.caught = True
+            pid, shiny = self.x.outcome["encounter"]
+            self.app.push(LegendEncounter(self.app, pid, shiny))
+            return
         if tag == "menu":
             self.app.home()
         elif self.s.online:
@@ -482,11 +488,12 @@ class TurnBattleScene(Scene):
                 gfx.text(surf, self.s.error, (W / 2, 520), 22, chunky=False)
             else:
                 won = self.state["winner"] == self.me
-                gfx.title_text(surf, "VICTORY!" if won else "DEFEAT", (W / 2, 470), 90,
+                gfx.title_text(surf, "VICTORY!" if won else "DEFEAT", (W / 2, 290), 90,
                                color=(255, 230, 110) if won else WHITE)
-                gfx.text(surf, self.x.result_text, (W / 2, 545), 22)
+                gfx.text(surf, self.x.result_text, (W / 2, 360), 22)
                 if self.s.online and self.s.rematch_them and not self.s.rematch_me:
-                    gfx.text(surf, f"{self.s.names[self.foe]} wants a rematch!", (W / 2, 590), 22, (255, 230, 120))
+                    gfx.text(surf, f"{self.s.names[self.foe]} wants a rematch!", (W / 2, 396), 22, (255, 230, 120))
+                draw_rank_change(surf, self.x.outcome, (W / 2, 466), self.x.outcome_t)
             for b in self.end_btns:
                 b.draw(surf)
         self.x.draw(surf, lambda i: (200, 640) if i == self.me else (520, 300))

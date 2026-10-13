@@ -1,11 +1,12 @@
 """The game window: scene stack, main menu, practice setup, PvP lobby."""
+import math
 import os
 import random
 import threading
 
 import pygame
 
-from . import gfx, pokedex, ui
+from . import gfx, pokedex, profile, ui
 from .audio import AUDIO
 from .bot import DIFF_INFO, DIFFICULTIES, bot_team
 from .gfx import H, W
@@ -192,8 +193,9 @@ class MainMenu(Scene):
                       tag="pvp", icon=25),
             ui.Button((x, 860, 290, 100), "Teams", ui.SCREEN2, 30, tag="teams"),
             ui.Button((x + 310, 860, 290, 100), "Replays", ui.SCREEN2, 30, tag="replays"),
-            ui.Button((x, 984, 290, 84), "Settings", ui.SCREEN2, 24, tag="settings"),
-            ui.Button((x + 310, 984, 290, 84), "Quit", ui.SCREEN2, 24, tag="quit"),
+            ui.Button((x, 984, 190, 84), "Trainer", (130, 60, 200), 24, tag="trainer"),
+            ui.Button((x + 205, 984, 190, 84), "Settings", ui.SCREEN2, 24, tag="settings"),
+            ui.Button((x + 410, 984, 190, 84), "Quit", ui.SCREEN2, 24, tag="quit"),
         ]
         from .updater import AutoUpdater
         from .version import current
@@ -205,6 +207,12 @@ class MainMenu(Scene):
     def update(self, dt):
         AUDIO.music("menu")
 
+    def _rp(self):
+        now = self.app.t
+        if now - getattr(self, "_rp_t", -9) > 1.0:   # re-read now and then (battles change it)
+            self._rp_t, self._rp_v = now, profile.load()["rp"]
+        return self._rp_v
+
     def handle(self, ev, pos):
         if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
             if self.updater.state == "ready" and self.restart_btn.hit(pos):
@@ -213,6 +221,8 @@ class MainMenu(Scene):
             for b in self.buttons:
                 if b.hit(pos):
                     self.go(b.tag)
+            if math.hypot(pos[0] - 650, pos[1] - 62) < 46:   # the rank badge in the corner
+                self.go("trainer")
         if ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE:
             self.app.running = False
 
@@ -231,6 +241,9 @@ class MainMenu(Scene):
         elif tag == "replays":
             from .replays_ui import ReplayList
             self.app.push(ReplayList(self.app))
+        elif tag == "trainer":
+            from .trainer_ui import TrainerCard
+            self.app.push(TrainerCard(self.app))
         elif tag == "settings":
             from .settings_ui import SettingsScene
             self.app.push(SettingsScene(self.app))
@@ -240,6 +253,9 @@ class MainMenu(Scene):
     def draw(self, surf):
         ui.menu_background(surf, self.app.t)
         ui.header(surf, "PokeBrawl", f"{len(self.app.dex.selectable())} Pokemon and {len(self.app.dex.moves)} moves")
+        rk = profile.rank_of(self._rp())
+        ui.rank_badge(surf, (650, 58), 34, rk, self.app.t)
+        gfx.text(surf, rk["label"], (650, 118), 13, (255, 230, 235), ui.SHELL_DARK, 2)
         for b in self.buttons:
             b.draw(surf)
         h, d = self.version

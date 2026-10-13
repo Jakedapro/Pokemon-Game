@@ -1,4 +1,5 @@
 """Things both battle screens share: ping, emotes, rematch, saving replays and your record."""
+import math
 import time
 
 import pygame
@@ -17,6 +18,9 @@ class BattleExtras:
         self.done = False
         self.saved_path = None
         self.result_text = ""
+        self.outcome = None      # rank points / rank change / legendary encounter (profile.record)
+        self.outcome_t = 0.0
+        self.caught = False
         self.emote_btns = []
         if session.online:
             w = (W - 40 - 8 * (len(EMOTES) - 1)) // len(EMOTES)
@@ -33,14 +37,17 @@ class BattleExtras:
         if not self.done:
             self.done = True
             won = winner == self.me
+            dex = getattr(self.app, "dex", None)
             if self.s.online:
                 opp = self.s.names[1 - self.me]
-                row = profile.record("vs", opp, won)
-                self.result_text = f"You vs {opp}: {row[0]}-{row[1]}"
+                out = profile.record("vs", opp, won, dex)
+                self.result_text = f"You vs {opp}: {out['row'][0]}-{out['row'][1]}"
             else:
                 diff = getattr(getattr(self.s, "bot", None), "level", "bot")
-                row = profile.record("bots", diff, won)
-                self.result_text = f"vs {diff.upper()} bots: {row[0]}-{row[1]}"
+                out = profile.record("bots", diff, won, dex)
+                self.result_text = f"vs {diff.upper()} bots: {out['row'][0]}-{out['row'][1]}"
+            self.outcome = out
+            self.outcome_t = time.time()
         if self.saved_path is None:
             r = self.s.replay()
             if r:
@@ -48,6 +55,9 @@ class BattleExtras:
 
     def end_buttons(self, y):
         btns = []
+        if self.outcome and self.outcome["encounter"] and not self.caught:
+            btns.append(ui.Button((110, y - 118, 500, 96), "A legendary appeared!", (130, 60, 200), 32,
+                                  "tap to catch it", tag="catch"))
         if self.s.online:
             label = "REMATCH?"
             if self.s.rematch_me:
@@ -102,3 +112,25 @@ class BattleExtras:
                 x, y = bubble_pos(who)
                 ui.panel(surf, pygame.Rect(0, 0, 130, 46).move(x - 65, y - 23 - age * 12), (255, 255, 255), 14)
                 gfx.text(surf, text, (x, y - age * 12), 22, gfx.INK, None)
+
+
+def draw_rank_change(surf, outcome, center, t):
+    """Under VICTORY / DEFEAT: the rank badge, +RP counting up and RANK UP! when it happens."""
+    if not outcome:
+        return
+    x, y = center
+    k = min(1.0, max(0.0, (time.time() - t) / 1.0))
+    rk = outcome["rank"]
+    ui.rank_badge(surf, (x - 150, y), 34, rk, time.time())
+    d = outcome["delta"]
+    shown = int(round(d * k))
+    gfx.text(surf, rk["label"], (x - 100, y - 14), 24, rk["color"], gfx.INK, 2, anchor="midleft")
+    gfx.text(surf, f"{'+' if d >= 0 else ''}{shown} RP   ({outcome['rp']} total)", (x - 100, y + 16), 18,
+             (150, 240, 150) if d > 0 else (240, 150, 150) if d < 0 else ui.MUTED, gfx.INK, 1, anchor="midleft")
+    if outcome["streak"] >= 3:
+        gfx.pill(surf, f"{outcome['streak']} WIN STREAK", (x, y + 52), (200, 110, 30), 14)
+    if outcome["rank_up"] and k >= 1:
+        pulse = 1 + 0.06 * math.sin(time.time() * 6)
+        gfx.title_text(surf, "RANK UP!", (x + 210, y), 34, scale=pulse, color=rk["color"])
+    elif outcome["rank_down"] and k >= 1:
+        gfx.text(surf, "Rank down", (x + 210, y), 20, (240, 150, 150), gfx.INK, 2)

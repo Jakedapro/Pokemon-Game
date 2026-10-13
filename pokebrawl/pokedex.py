@@ -434,14 +434,17 @@ def item_path(name):
     return os.path.join(SPRITE_DIR, f"item-{name}.png")
 
 
-def ensure_sprite(pid):
+SHINY_URL = "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/shiny/{}.png"
+
+
+def ensure_sprite(pid, shiny=False):
     """Download one sprite if it is not cached. Returns the path, or None if unavailable."""
-    path = sprite_path(pid)
+    path = os.path.join(SPRITE_DIR, f"shiny-{pid}.png") if shiny else sprite_path(pid)
     if os.path.exists(path):
         return path if os.path.getsize(path) > 0 else None
     os.makedirs(SPRITE_DIR, exist_ok=True)
     try:
-        data = fetch(SPRITE_URL.format(pid), timeout=20)
+        data = fetch((SHINY_URL if shiny else SPRITE_URL).format(pid), timeout=20)
     except Exception:
         return None
     with open(path, "wb") as f:

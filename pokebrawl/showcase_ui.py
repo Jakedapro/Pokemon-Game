@@ -56,7 +56,10 @@ class ShowcaseMenu(Scene):
         self.presets = list_presets()
         self.list = ui.ListView((40, 190, 640, 300), 54)
         self.list.set_rows([(p, self._row(t)) for p, t in self.presets])
-        names = [g[0] for g in GROUPS]
+        from . import profile
+        mine = sorted(profile.load()["legends"])
+        self.groups = GROUPS + ([("My legends", {"pokemon": mine})] if len(mine) >= 2 else [])
+        names = [g[0] for g in self.groups]
         self.a = ui.Cycle((40, 560, 640, 62), "Team A", names)
         self.a.set(s.get("sc_a", "Gen 1"))
         self.b = ui.Cycle((40, 636, 640, 62), "Team B", names)
@@ -92,7 +95,7 @@ class ShowcaseMenu(Scene):
         if not self.custom and self.list.selected:
             cfg = load_config(self.list.selected)
         else:
-            ga, gb = dict(GROUPS)[self.a.value], dict(GROUPS)[self.b.value]
+            ga, gb = dict(self.groups)[self.a.value], dict(self.groups)[self.b.value]
             ta, tb = {"name": self.a.value, "filter": ga}, {"name": self.b.value, "filter": gb}
             if self.size.value != "All":
                 ta["count"] = tb["count"] = int(self.size.value)
