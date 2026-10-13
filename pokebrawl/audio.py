@@ -3,6 +3,7 @@ PokeAPI, and an offline mixer that bakes all of it into recorded showcase MP4s."
 import array
 import math
 import os
+import threading
 import random
 import subprocess
 import time
@@ -294,6 +295,7 @@ class Audio:
         self.enabled = False
         self.sfx = {}
         self.cries = {}
+        self._fetching = set()
         self.sfx_vol = 0.7
         self.music_vol = 0.45
         self.cry_vol = 0.6
@@ -381,6 +383,12 @@ class Audio:
             return
         import pygame
         if pid not in self.cries:
+            if not os.path.exists(cry_path(pid)):
+                # not downloaded yet: fetch it in the background and skip this one (never freeze the game)
+                if pid not in self._fetching:
+                    self._fetching.add(pid)
+                    threading.Thread(target=ensure_cry, args=(pid,), daemon=True).start()
+                return
             path = ensure_cry(pid)
             try:
                 self.cries[pid] = pygame.mixer.Sound(path) if path else None

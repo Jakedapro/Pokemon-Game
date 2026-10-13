@@ -86,6 +86,26 @@ class TurnBattleScene(Scene):
     def close(self):
         self.s.close()
 
+    def _preload(self, state):
+        """Fetch both teams' sprites (and Mega forms) and cries in the background as the battle starts, so
+        nothing has to download when a Pokemon first comes out."""
+        import threading
+        from . import pokedex
+        from .audio import ensure_cry
+        dex = self.app.dex
+        mine = [m["id"] for m in state["sides"][self.me]["mons"]]
+        theirs = [m["id"] for m in state["sides"][self.foe]["mons"]]
+
+        def work():
+            for pid in mine + theirs:
+                ids = [pid] + list(dex.all.get(pid, {}).get("megas", []))
+                for i in ids:
+                    pokedex.ensure_sprite(i)
+                    if pid in mine:
+                        pokedex.ensure_back_sprite(i)
+                ensure_cry(pid)
+        threading.Thread(target=work, daemon=True).start()
+
     # ------------------------------------------------------------------ state flow
     def _sync_vis(self):
         if not self.state:
@@ -164,6 +184,7 @@ class TurnBattleScene(Scene):
             if self.state is None:
                 self.state = u["state"]
                 self._sync_vis()
+                self._preload(u["state"])
         if self.cur is None and self.queue:
             self.cur = self.queue.pop(0)
             self.cur_t = 0.0

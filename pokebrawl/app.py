@@ -62,6 +62,7 @@ class App:
         self.t = 0.0
         pygame.key.set_repeat(350, 35)
         AUDIO.init(self.settings, headless=headless)
+        gfx.SPRITES.async_load = not headless   # downloads never freeze the screen
         self._shown = None        # the scene drawn last frame (to notice screen changes)
         self._trans = None        # [old frame, time, direction] while a screen transition plays
 

@@ -174,36 +174,37 @@ class RoomHost:
         return {"name": self.name, "style": self.style, "code": self.code, "v": PROTO, "ts": time.time()}
 
     def _run(self):
-        from . import ntfy
-        if not os.environ.get("POKEBRAWL_BROKERS") or os.environ.get("POKEBRAWL_NTFY"):
-            self.status = "Opening room..."
-            if ntfy.reachable():
-                try:
-                    room = ntfy.NtfyRoom(self.code, self.name, self.style, self.public,
-                                         lambda m: setattr(self, "status", m))
-                    self.broker = "https"
-                    conn = room.run(lambda: self._stop)
-                    if conn:
-                        self.conn = conn
-                    return
-                except Exception as e:  # noqa: BLE001 - fall back to the MQTT servers
-                    self.status = f"HTTPS rooms failed ({e}), trying other servers..."
+        # the real-time MQTT servers first (fast, no rate limits); the HTTPS relay only if they're all blocked
         errors = []
-        for host, port in brokers():
-            if self._stop:
-                return
-            self.status = f"Opening room on {host}..."
+        if not os.environ.get("POKEBRAWL_NTFY"):
+            for host, port in brokers():
+                if self._stop:
+                    return
+                self.status = f"Opening room on {host}..."
+                try:
+                    lobby_topic = f"{PREFIX}/lobby/{self.code}"
+                    c = _connect(host, port, timeout=4.0,
+                                 will=(lobby_topic, b"", 1, True) if self.public else None)
+                except Exception as e:  # noqa: BLE001
+                    errors.append(str(e))
+                    continue
+                self._client = c
+                self.broker = host
+                break
+        if self._client is None:
+            from . import ntfy
+            self.status = "Opening room (HTTPS)..."
             try:
-                lobby_topic = f"{PREFIX}/lobby/{self.code}"
-                c = _connect(host, port, will=(lobby_topic, b"", 1, True) if self.public else None)
+                if not ntfy.reachable():
+                    raise ConnectionError("no route")
+                room = ntfy.NtfyRoom(self.code, self.name, self.style, self.public,
+                                     lambda m: setattr(self, "status", m))
+                self.broker = "https"
+                conn = room.run(lambda: self._stop)
+                if conn:
+                    self.conn = conn
             except Exception as e:  # noqa: BLE001
-                errors.append(str(e))
-                continue
-            self._client = c
-            self.broker = host
-            break
-        else:
-            self.error = "Couldn't reach any online server (" + "; ".join(errors[:2]) + ")"
+                self.error = "Couldn't reach any online server (" + "; ".join((errors + [str(e)])[:2]) + ")"
             return
         c = self._client
         joined = threading.Event()
@@ -252,17 +253,15 @@ def join_room(code, name, timeout=10.0, broker=None):
     """Find the room on the brokers and join it. Returns a MqttConn (blocking - run in a thread)."""
     code = code.strip().upper()
     from . import ntfy
-    if (broker in (None, "https")) and (not os.environ.get("POKEBRAWL_BROKERS") or os.environ.get("POKEBRAWL_NTFY")):
-        if ntfy.reachable():
-            conn = ntfy.join(code, name)
-            if conn:
-                return conn
-        if broker == "https":
-            raise ConnectionError(f"No room {code} found")
+    if broker == "https" or os.environ.get("POKEBRAWL_NTFY"):
+        conn = ntfy.join(code, name) if ntfy.reachable() else None
+        if conn:
+            return conn
+        raise ConnectionError(f"No room {code} found")
     tried = []
     for host, port in ([broker] if broker else brokers()):
         try:
-            c = _connect(host, port)
+            c = _connect(host, port, timeout=4.0)
         except Exception:  # noqa: BLE001
             tried.append(f"{host} (offline)")
             continue
@@ -307,6 +306,10 @@ def join_room(code, name, timeout=10.0, broker=None):
         for msg in list(early):
             conn._on_message(c, None, msg)
         return conn
+    if broker is None and ntfy.reachable():   # the host may be on the HTTPS relay (blocked network / older version)
+        conn = ntfy.join(code, name)
+        if conn:
+            return conn
     raise ConnectionError(f"No room {code} found. Check the code (tried {', '.join(tried) or 'no servers'})")
 
 

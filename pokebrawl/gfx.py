@@ -3,6 +3,7 @@ import colorsys
 import math
 import os
 import random
+import threading
 
 import pygame
 
@@ -223,6 +224,9 @@ class Sprites:
         self.cache = {}
         self.missing = None
         self.shiny_forms = set()   # forms drawn shiny by default in the current battle (showcases)
+        self.async_load = False    # interactive game: download missing sprites in the background
+        self._loading = set()
+        self._ready = []           # pids whose download finished (drop their placeholders)
 
     def _missing(self):
         if self.missing is None:
@@ -232,8 +236,51 @@ class Sprites:
             self.missing = s
         return self.missing
 
+    def _fetch_later(self, pid, back, shiny):
+        """Download a sprite on a worker thread; until then a stand-in is shown (the game never freezes)."""
+        key = (pid, back, shiny)
+        if key in self._loading:
+            return
+        self._loading.add(key)
+
+        def work():
+            try:
+                if shiny:
+                    pokedex.ensure_sprite(pid, shiny=True)
+                elif back:
+                    pokedex.ensure_back_sprite(pid)
+                else:
+                    pokedex.ensure_sprite(pid)
+            finally:
+                self._ready.append(pid)
+        threading.Thread(target=work, daemon=True).start()
+
+    def _missing_file(self, pid, back, shiny):
+        if shiny:
+            return not os.path.exists(os.path.join(pokedex.SPRITE_DIR, f"shiny-{pid}.png"))
+        if back:
+            return not os.path.exists(os.path.join(pokedex.SPRITE_DIR, f"back-{pid}.png"))
+        return not os.path.exists(pokedex.sprite_path(pid))
+
+    def _drop_ready(self):
+        while self._ready:
+            pid = self._ready.pop()
+            for k in [k for k in self.raw if k[0] == pid]:
+                del self.raw[k]
+            for k in [k for k in self.cache if k[0] == pid]:
+                del self.cache[k]
+
     def base(self, pid, back=False, shiny=False):
         key = (pid, back, shiny)
+        if self._ready:
+            self._drop_ready()
+        if key not in self.raw and self.async_load and self._missing_file(pid, back, shiny) and \
+                key not in self._loading:
+            self._fetch_later(pid, back, shiny)
+        if key in self._loading and key not in self.raw and self._missing_file(pid, back, shiny):
+            if back or shiny:
+                return self.base(pid, False, False)
+            return self._missing()
         if key not in self.raw:
             img = None
             if shiny:
@@ -267,6 +314,8 @@ class Sprites:
         if shiny is None:
             shiny = pid in self.shiny_forms
         key = (pid, int(height), flip, outline, back, round(white, 1), ow, shiny)
+        if self._ready:
+            self._drop_ready()
         if key in self.cache:
             return self.cache[key]
         img = self.base(pid, back and not shiny, shiny)
