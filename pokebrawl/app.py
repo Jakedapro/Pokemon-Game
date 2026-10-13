@@ -136,7 +136,7 @@ class LoadingScene(Scene):
 
     def draw(self, surf):
         ui.menu_background(surf, self.app.t)
-        gfx.title_text(surf, "POKEBRAWL", (W / 2, H * 0.4), 80)
+        ui.header(surf, "PokeBrawl")
         gfx.text(surf, self.error or self.msg, (W / 2, H * 0.5), 22, (220, 220, 230), chunky=False)
         if self.error:
             gfx.text(surf, "Check your internet connection and restart.", (W / 2, H * 0.54), 18, ui.MUTED,
@@ -180,23 +180,24 @@ class PrefetchScene(Scene):
 class MainMenu(Scene):
     def __init__(self, app):
         super().__init__(app)
-        x, w = 110, 500
+        x, w = 60, 600
         self.buttons = [
-            ui.Button((x, 340, w, 120), "PRACTICE", (196, 60, 60), 40, "Turn-based vs a bot - easy to insane", tag="practice"),
-            ui.Button((x, 480, w, 120), "SHOWCASE", (70, 120, 220), 40, "Mass battles, legendary events + cutscenes",
-                      tag="showcase"),
-            ui.Button((x, 620, w, 120), "PVP", (60, 160, 90), 40, "Play your friends online - just a room code",
-                      tag="pvp"),
-            ui.Button((x, 760, 245, 84), "TEAMS", ui.PANEL2, 28, tag="teams"),
-            ui.Button((x + 255, 760, 245, 84), "REPLAYS", ui.PANEL2, 28, tag="replays"),
-            ui.Button((x, 860, 245, 70), "SETTINGS", (60, 58, 70), 24, tag="settings"),
-            ui.Button((x + 255, 860, 245, 70), "QUIT", (60, 58, 70), 24, tag="quit"),
+            ui.Button((x, 236, w, 176), "Practice", ui.SHELL, 46, "Turn-based battles against a bot",
+                      tag="practice", icon=6),
+            ui.Button((x, 440, w, 176), "Showcase", (38, 104, 188), 46, "Mass battles and royales for your videos",
+                      tag="showcase", icon=384),
+            ui.Button((x, 644, w, 176), "PvP", (34, 140, 88), 46, "Battle your friends with a room code",
+                      tag="pvp", icon=25),
+            ui.Button((x, 860, 290, 100), "Teams", ui.SCREEN2, 30, tag="teams"),
+            ui.Button((x + 310, 860, 290, 100), "Replays", ui.SCREEN2, 30, tag="replays"),
+            ui.Button((x, 984, 290, 84), "Settings", ui.SCREEN2, 24, tag="settings"),
+            ui.Button((x + 310, 984, 290, 84), "Quit", ui.SCREEN2, 24, tag="quit"),
         ]
         from .updater import AutoUpdater
         from .version import current
         self.version = current()
         self.updater = AutoUpdater(auto=app.settings.get("auto_update", "On") == "On")
-        self.restart_btn = ui.Button((110, 946, 500, 64), "UPDATE READY - RESTART", (60, 150, 80), 26,
+        self.restart_btn = ui.Button((60, 1100, 600, 72), "Restart to update", (34, 140, 88), 26,
                                      "or it installs next time you open the game")
 
     def update(self, dt):
@@ -236,27 +237,23 @@ class MainMenu(Scene):
 
     def draw(self, surf):
         ui.menu_background(surf, self.app.t)
-        gfx.title_text(surf, "POKEBRAWL", (W / 2, 170), 96)
-        gfx.text(surf, f"{len(self.app.dex.selectable())} Pokemon  -  {len(self.app.dex.moves)} moves",
-                 (W / 2, 250), 20, ui.MUTED, ow=1, chunky=False)
-        # a few random mascots
-        for i, pid in enumerate((6, 150, 384)):
-            img = gfx.SPRITES.get(pid, 90, flip=i == 0)
-            surf.blit(img, img.get_rect(center=(W / 2 + (i - 1) * 200, 1110)))
+        ui.header(surf, "PokeBrawl", f"{len(self.app.dex.selectable())} Pokemon and {len(self.app.dex.moves)} moves")
         for b in self.buttons:
             b.draw(surf)
-        gfx.text(surf, "Fan-made, not affiliated with Nintendo / Game Freak / The Pokemon Company", (W / 2, H - 30),
-                 13, (110, 110, 125), ow=1, chunky=False)
         h, d = self.version
-        gfx.text(surf, f"version {h}  {d}", (W / 2, H - 52), 14, (130, 130, 150), ow=1, chunky=False)
+        gfx.text(surf, f"Version {h}, {d}" if d else f"Version {h}", (W / 2, H - 52), 14, ui.MUTED, None, 0,
+                 chunky=False)
+        gfx.text(surf, "Fan-made, not affiliated with Nintendo, Game Freak or The Pokemon Company", (W / 2, H - 30),
+                 13, (96, 110, 128), None, 0, chunky=False)
         st = self.updater.state
         if st == "ready":
             self.restart_btn.draw(surf)
         elif st == "downloading":
-            gfx.text(surf, "Downloading update...", (W / 2, 978), 18, ui.MUTED, ow=1, chunky=False)
+            gfx.text(surf, "Downloading an update...", (W / 2, 1130), 18, ui.MUTED, None, 0, chunky=False)
         elif st in ("available", "error"):
-            ui.panel(surf, (110, 950, 500, 56), (60, 140, 80), 12)
-            gfx.text(surf, "Update available!  Run:  pokebrawl update", (W / 2, 978), 20)
+            ui.panel(surf, (60, 1100, 600, 60), ui.SCREEN2, 12)
+            gfx.text(surf, "An update is available. Run pokebrawl update in Terminal.", (W / 2, 1130), 17,
+                     ui.SIGNAL, None, 0, chunky=False)
 
 
 def team_options(app):
@@ -280,8 +277,8 @@ class PracticeSetup(Scene):
         self.diff.set(s.get("practice_diff", "normal"))
         self.team = ui.Cycle((60, 400, 600, 70), "Your team", opts)
         self.team.set(s.get("practice_team", "Random"))
-        self.buttons = [ui.Button((60, 640, 600, 110), "START BATTLE", (196, 60, 60), 38),
-                        ui.Button((60, 1150, 200, 70), "BACK", ui.PANEL2, 24, tag="back")]
+        self.buttons = [ui.Button((60, 640, 600, 110), "Start battle", ui.SHELL, 38),
+                        ui.Button((60, 1150, 200, 70), "Back", ui.PANEL2, 24, tag="back")]
         self.error = None
 
     def handle(self, ev, pos):
@@ -315,7 +312,7 @@ class PracticeSetup(Scene):
 
     def draw(self, surf):
         ui.menu_background(surf, self.app.t)
-        ui.header(surf, "PRACTICE", "Train against a bot before you fight your friends")
+        ui.header(surf, "Practice", "Train against a bot")
         for c in (self.diff, self.team):
             c.draw(surf)
         gfx.text(surf, DIFF_INFO[self.diff.value], (W / 2, 500), 20, ui.MUTED, ow=1, chunky=False)

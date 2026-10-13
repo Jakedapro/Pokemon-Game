@@ -46,13 +46,13 @@ class PvPSetup(Scene):
 
     def _layout(self):
         y = 720
-        self.buttons = [ui.Button((60, y, 290, 110), "HOST", (60, 160, 90), 38, "start a battle"),
-                        ui.Button((370, y, 290, 110), "JOIN", (70, 120, 220), 38,
+        self.buttons = [ui.Button((60, y, 290, 110), "Host", (34, 140, 88), 38, "start a battle"),
+                        ui.Button((370, y, 290, 110), "Join", (38, 104, 188), 38,
                                   {"room": "enter the code", "lan": "find games nearby", "direct": "connect to IP",
                                    "relay": "enter the room"}[self.conn.value]),
-                        ui.Button((60, 1150, 200, 70), "BACK", ui.PANEL2, 24)]
+                        ui.Button((60, 1150, 200, 70), "Back", ui.PANEL2, 24)]
         if self.conn.value == "room":
-            self.buttons.append(ui.Button((60, 850, 600, 70), "BROWSE OPEN ROOMS", (150, 80, 200), 26))
+            self.buttons.append(ui.Button((60, 850, 600, 70), "Browse open rooms", (150, 80, 200), 26))
 
     def inputs(self):
         c = self.conn.value
@@ -120,7 +120,7 @@ class PvPSetup(Scene):
 
     def draw(self, surf):
         ui.menu_background(surf, self.app.t)
-        ui.header(surf, "PVP", "Battle your friends with your comp teams")
+        ui.header(surf, "PvP", "Battle your friends online")
         for c in (self.team, self.conn):
             c.draw(surf)
         if self.conn.value == "room":
@@ -145,8 +145,8 @@ class RoomBrowser(Scene):
         self.list = ui.ListView((40, 170, 640, 860), 84)
         self.rooms = []
         self.loading = True
-        self.buttons = [ui.Button((40, 1150, 200, 70), "BACK", ui.PANEL2, 24),
-                        ui.Button((480, 1150, 200, 70), "REFRESH", (70, 120, 220), 24)]
+        self.buttons = [ui.Button((40, 1150, 200, 70), "Back", ui.PANEL2, 24),
+                        ui.Button((480, 1150, 200, 70), "Refresh", (38, 104, 188), 24)]
         self.refresh()
 
     def refresh(self):
@@ -186,7 +186,7 @@ class RoomBrowser(Scene):
 
     def draw(self, surf):
         ui.menu_background(surf, self.app.t)
-        ui.header(surf, "OPEN ROOMS", "Public rooms people are hosting right now")
+        ui.header(surf, "Open rooms", "Public rooms open right now")
         self.list.draw(surf)
         if self.loading:
             gfx.text(surf, "Looking for rooms...", (W / 2, 500), 26)
@@ -207,8 +207,8 @@ class LanBrowser(Scene):
         self.list = ui.ListView((40, 170, 640, 700), 84)
         self.addr = ui.TextInput((40, 950, 440, 56), "Or type an address", app.settings.get("join_addr", ""),
                                  "192.168.1.20")
-        self.buttons = [ui.Button((40, 1150, 200, 70), "BACK", ui.PANEL2, 24),
-                        ui.Button((500, 950, 180, 56), "JOIN", (70, 120, 220), 24)]
+        self.buttons = [ui.Button((40, 1150, 200, 70), "Back", ui.PANEL2, 24),
+                        ui.Button((500, 950, 180, 56), "Join", (38, 104, 188), 24)]
 
     def close(self):
         self.scanner.close()
@@ -245,7 +245,7 @@ class LanBrowser(Scene):
 
     def draw(self, surf):
         ui.menu_background(surf, self.app.t)
-        ui.header(surf, "NEARBY GAMES", "Games hosted on your Wi-Fi show up here")
+        ui.header(surf, "Nearby games", "Games on your Wi-Fi")
         self.list.draw(surf)
         if not self.list.rows:
             gfx.text(surf, "Searching" + "." * (int(self.app.t * 2) % 4), (W / 2, 480), 26, ui.MUTED)
@@ -269,7 +269,7 @@ class LobbyScene(Scene):
         self.error = None
         self.status = "Starting..."
         self.code = ""
-        self.buttons = [ui.Button((260, 1100, 200, 70), "CANCEL", ui.PANEL2, 24)]
+        self.buttons = [ui.Button((260, 1100, 200, 70), "Cancel", ui.PANEL2, 24)]
         self.ips = net.local_ips()
         if role == "host":
             try:
@@ -342,7 +342,7 @@ class LobbyScene(Scene):
 
     def draw(self, surf):
         ui.menu_background(surf, self.app.t)
-        ui.header(surf, "HOSTING" if self.role == "host" else "JOINING",
+        ui.header(surf, "Hosting" if self.role == "host" else "Joining",
                   f"{STYLE_NAMES[self.style]}  -  {CONN_NAMES.get(self.conn_type, '')}" if self.role == "host" else None)
         ui.panel(surf, (60, 240, 600, 520))
         if self.error:
@@ -351,7 +351,7 @@ class LobbyScene(Scene):
             gfx.text(surf, self.status, (W / 2, 300), 24)
             gfx.text(surf, "." * (int(self.app.t * 2) % 4), (W / 2, 335), 30)
             if self.code:
-                gfx.text(surf, "ROOM CODE", (W / 2, 420), 22, ui.MUTED)
+                gfx.text(surf, "Room code", (W / 2, 420), 22, ui.MUTED)
                 gfx.title_text(surf, " ".join(self.code), (W / 2, 500), 84, color=(255, 240, 150))
                 if self.role == "host":
                     gfx.text(surf, "Your friend: PVP > Online room code > type it > JOIN", (W / 2, 590), 17,

@@ -23,7 +23,7 @@ class SettingsScene(Scene):
         self.auto = ui.Cycle((60, 418, 600, 62), "Auto-update", ["On", "Off"])
         self.auto.set(s.get("auto_update", "On"))
         self.name = ui.TextInput((60, 514, 600, 56), "Your name (shown to friends)", s.get("name", "Trainer"))
-        self.buttons = [ui.Button((40, 1160, 200, 70), "BACK", ui.PANEL2, 24)]
+        self.buttons = [ui.Button((40, 1160, 200, 70), "Back", ui.PANEL2, 24)]
         self.record = profile.load()
 
     def _save(self):
@@ -53,14 +53,14 @@ class SettingsScene(Scene):
 
     def draw(self, surf):
         ui.menu_background(surf, self.app.t)
-        ui.header(surf, "SETTINGS")
+        ui.header(surf, "Settings")
         for c in (self.music, self.sfx, self.cry, self.auto):
             c.draw(surf)
         self.name.draw(surf)
         ui.panel(surf, (60, 590, 600, 530))
-        gfx.text(surf, "YOUR RECORD", (W / 2, 622), 26)
+        gfx.text(surf, "Your record", (W / 2, 622), 26)
         rows = [("vs " + k, v) for k, v in sorted(self.record.get("vs", {}).items(), key=lambda kv: -sum(kv[1]))]
-        rows += [(f"vs {k.upper()} bots", v) for k, v in self.record.get("bots", {}).items()]
+        rows += [(f"vs {k} bots", v) for k, v in self.record.get("bots", {}).items()]
         if not rows:
             gfx.text(surf, "No battles yet", (W / 2, 680), 20, ui.MUTED)
         for i, (label, (w, l_)) in enumerate(rows[:12]):

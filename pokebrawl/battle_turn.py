@@ -254,12 +254,12 @@ class TurnBattleScene(Scene):
                 self.move_btns.append(b)
             if req["can_mega"]:
                 self.gimmick = "mega"
-                self.mega_btn = ui.Button((20, 1150, 160, 100), "MEGA", (150, 70, 210) if self.mega_on else ui.PANEL2,
+                self.mega_btn = ui.Button((20, 1150, 160, 100), "Mega", (150, 70, 210) if self.mega_on else ui.PANEL2,
                                           28, "ON" if self.mega_on else "off")
             elif req.get("can_tera"):
                 self.gimmick = "tera"
                 tt = req.get("tera_type", "normal")
-                self.mega_btn = ui.Button((20, 1150, 160, 100), "TERA",
+                self.mega_btn = ui.Button((20, 1150, 160, 100), "Tera",
                                           gfx.type_color(tt, 2) if self.mega_on else ui.PANEL2, 28,
                                           f"{tt.upper()} {'ON' if self.mega_on else 'off'}")
         if self.state and req:

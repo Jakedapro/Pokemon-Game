@@ -52,8 +52,8 @@ class _ReplayMixin:
         self.title = title
         self.after = 0.0
         self.done = False
-        self.replay_btns = [ui.Button((160, 640, 400, 90), "WATCH AGAIN", (196, 60, 60), 30, tag="again"),
-                            ui.Button((160, 750, 400, 90), "BACK", ui.PANEL2, 30, tag="back")]
+        self.replay_btns = [ui.Button((160, 640, 400, 90), "Watch again", ui.SHELL, 30, tag="again"),
+                            ui.Button((160, 750, 400, 90), "Back", ui.PANEL2, 30, tag="back")]
         self.end_buttons = self.end_btns = self.replay_btns
 
     def _replay_handle(self, ev, pos):
@@ -125,10 +125,10 @@ class ReplayList(Scene):
     def __init__(self, app):
         super().__init__(app)
         self.list = ui.ListView((40, 160, 640, 840), 84)
-        self.buttons = [ui.Button((40, 1020, 200, 80), "WATCH", (70, 120, 220), 28),
-                        ui.Button((260, 1020, 200, 80), "EXPORT MP4", (196, 60, 60), 24, "share it"),
-                        ui.Button((480, 1020, 200, 80), "DELETE", (150, 50, 50), 26),
-                        ui.Button((40, 1160, 200, 70), "BACK", ui.PANEL2, 24)]
+        self.buttons = [ui.Button((40, 1020, 200, 80), "Watch", (38, 104, 188), 28),
+                        ui.Button((260, 1020, 200, 80), "Export video", ui.SHELL, 24, "share it"),
+                        ui.Button((480, 1020, 200, 80), "Delete", ui.SHELL_DARK, 26),
+                        ui.Button((40, 1160, 200, 70), "Back", ui.PANEL2, 24)]
         if not recorder.available():  # no ffmpeg: no video export, just watch / delete
             self.buttons[1].enabled = False
             self.buttons[0].rect.width = self.buttons[2].rect.width = 310
@@ -185,7 +185,7 @@ class ReplayList(Scene):
 
     def draw(self, surf):
         ui.menu_background(surf, self.app.t)
-        ui.header(surf, "REPLAYS", "Every battle is saved automatically - watch it or turn it into a video")
+        ui.header(surf, "Replays", "Rewatch or export any battle")
         self.list.draw(surf)
         if not self.items:
             gfx.text(surf, "No replays yet - go battle!", (W / 2, 480), 24, ui.MUTED)

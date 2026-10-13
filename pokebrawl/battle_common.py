@@ -53,11 +53,11 @@ class BattleExtras:
             if self.s.rematch_me:
                 label = "WAITING..."
             elif self.s.rematch_them:
-                label = "ACCEPT REMATCH"
-            btns.append(ui.Button((160, y, 400, 90), label, (196, 60, 60), 30, tag="rematch"))
+                label = "Accept rematch"
+            btns.append(ui.Button((160, y, 400, 90), label, ui.SHELL, 30, tag="rematch"))
         else:
-            btns.append(ui.Button((160, y, 400, 90), "REMATCH", (196, 60, 60), 30, tag="rematch"))
-        btns.append(ui.Button((160, y + 110, 400, 90), "MAIN MENU", ui.PANEL2, 30, tag="menu"))
+            btns.append(ui.Button((160, y, 400, 90), "Rematch", ui.SHELL, 30, tag="rematch"))
+        btns.append(ui.Button((160, y + 110, 400, 90), "Main menu", ui.PANEL2, 30, tag="menu"))
         return btns
 
     def check_rematch(self):

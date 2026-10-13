@@ -69,7 +69,17 @@ Pick a preset or build a custom matchup in the app:
 - **Team size:** All, 100, 50, 25, 10, 3 or 1
 - **Toggles:** Megas, boss HP bars for legendaries, the trainer-catches-the-winner finale, speed
 
-Then **Play** to watch live (Space = pause, +/- = speed) or **Record MP4**. Videos go to `~/Movies/PokeBrawl/`.
+Then **Watch live** (Space = pause, +/- = speed) or **Record video**. Videos go to `~/Movies/PokeBrawl/`.
+
+- **Auto-edit:** recordings are cut down to the *Video length* you pick (TikTok 60s by default). The intro,
+  cutscenes, finishers and the catch play at normal speed; the long middle of the fight is fast-forwarded with
+  a small `>> x6` tag. Pick *Full battle* to keep everything.
+- **Battle royale:** set *Mode* to Royale (or pick a royale preset): every Pokemon for itself while a storm
+  shrinks the arena. Royales with 60+ Pokemon go full screen in a wide arena while you watch; recordings stay
+  vertical.
+- **Events:** Arceus can show up and drop off a legendary group (or, rarely, fight itself), Primal Kyogre and
+  Groudon bring their domains, Mega Rayquaza calms the weather, meteors rain down. Events never bring a
+  Pokemon that's already fighting.
 
 From the terminal (renders faster than real time):
 
@@ -132,7 +142,7 @@ Not modeled yet: Z-Moves, Dynamax and terrains.
 
 ```
 pokebrawl                     open the game
-pokebrawl showcase FILE.json  play a showcase (--record out.mp4 --seed N)
+pokebrawl showcase FILE.json  play a showcase (--record out.mp4 [--length 45 | --full] --seed N)
 pokebrawl relay               run a relay server (port 7778)
 pokebrawl download            re-download data and sprites
 pokebrawl update              update the game

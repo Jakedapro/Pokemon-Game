@@ -75,9 +75,9 @@ class ShowcaseMenu(Scene):
         self.video = ui.Cycle((40, 938, 640, 56), "Video length", list(VIDEO_LENGTHS))
         self.video.set(s.get("sc_video", "TikTok (60s)"))
         self.cycles.append(self.video)
-        self.buttons = [ui.Button((40, 1008, 310, 100), "PLAY", (70, 120, 220), 40, "watch it live"),
-                        ui.Button((370, 1008, 310, 100), "RECORD MP4", (196, 60, 60), 34, "auto-edited, 720x1280"),
-                        ui.Button((40, 1160, 200, 70), "BACK", ui.PANEL2, 24)]
+        self.buttons = [ui.Button((40, 1008, 310, 100), "Watch live", (38, 104, 188), 40),
+                        ui.Button((370, 1008, 310, 100), "Record video", ui.SHELL, 34, "auto-edited, 720x1280"),
+                        ui.Button((40, 1160, 200, 70), "Back", ui.PANEL2, 24)]
         if not recorder.available():  # no ffmpeg (no Homebrew / Command Line Tools): watch only
             self.buttons[0].rect.width = 640
             self.buttons[1].enabled = False
@@ -142,12 +142,12 @@ class ShowcaseMenu(Scene):
 
     def draw(self, surf):
         ui.menu_background(surf, self.app.t)
-        ui.header(surf, "SHOWCASE", "Mass battles for your content - pick a preset or build a matchup")
-        gfx.text(surf, "PRESETS", (40, 170), 18, ui.MUTED if self.custom else (255, 240, 150), anchor="midleft", ow=1)
+        ui.header(surf, "Showcase", "Mass battles for your videos")
+        gfx.text(surf, "Presets", (40, 170), 18, ui.MUTED if self.custom else (255, 240, 150), anchor="midleft", ow=1)
         if self.custom:
             self.list.selected = None
         self.list.draw(surf)
-        gfx.text(surf, "CUSTOM MATCHUP", (40, 535), 18, (255, 240, 150) if self.custom else ui.MUTED,
+        gfx.text(surf, "Custom matchup", (40, 535), 18, (255, 240, 150) if self.custom else ui.MUTED,
                  anchor="midleft", ow=1)
         for c in self.cycles:
             c.draw(surf)
@@ -252,7 +252,7 @@ class ShowcaseRecord(Scene):
         except RuntimeError as e:
             self.rec = None
             self.error = str(e)
-        self.buttons = [ui.Button((160, 1000, 400, 90), "CANCEL", ui.PANEL2, 30)]
+        self.buttons = [ui.Button((160, 1000, 400, 90), "Cancel", ui.PANEL2, 30)]
 
     def close(self):
         if self.rec and not self.finished and not self.mixing:
@@ -300,7 +300,7 @@ class ShowcaseRecord(Scene):
                 finish_video(self.path, events, self.frames / self.fps, log=lambda m: None)
                 self.mixing = False
                 self.finished = True
-                self.buttons = [ui.Button((160, 1000, 400, 90), "OPEN FOLDER", (60, 160, 90), 30)]
+                self.buttons = [ui.Button((160, 1000, 400, 90), "Open folder", (34, 140, 88), 30)]
             threading.Thread(target=mix, daemon=True).start()
 
     def draw(self, surf):

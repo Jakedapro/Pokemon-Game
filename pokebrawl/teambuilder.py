@@ -27,13 +27,13 @@ class TeamList(Scene):
         self.list = ui.ListView((40, 160, 640, 640), 76)
         self.msg = ""
         self.buttons = [
-            ui.Button((40, 830, 200, 80), "NEW", (60, 160, 90), 28, tag="new"),
-            ui.Button((260, 830, 200, 80), "RANDOM", ui.PANEL2, 28, tag="random"),
-            ui.Button((480, 830, 200, 80), "IMPORT", ui.PANEL2, 28, "from clipboard", tag="import"),
-            ui.Button((40, 930, 200, 80), "EDIT", (70, 120, 220), 28, tag="edit"),
-            ui.Button((260, 930, 200, 80), "EXPORT", ui.PANEL2, 28, "copy Showdown", tag="export"),
-            ui.Button((480, 930, 200, 80), "DELETE", (150, 50, 50), 28, tag="delete"),
-            ui.Button((40, 1160, 200, 70), "BACK", ui.PANEL2, 24, tag="back"),
+            ui.Button((40, 830, 200, 80), "New", (34, 140, 88), 28, tag="new"),
+            ui.Button((260, 830, 200, 80), "Random", ui.PANEL2, 28, tag="random"),
+            ui.Button((480, 830, 200, 80), "Import", ui.PANEL2, 28, "from clipboard", tag="import"),
+            ui.Button((40, 930, 200, 80), "Edit", (38, 104, 188), 28, tag="edit"),
+            ui.Button((260, 930, 200, 80), "Export", ui.PANEL2, 28, "copy Showdown", tag="export"),
+            ui.Button((480, 930, 200, 80), "Delete", ui.SHELL_DARK, 28, tag="delete"),
+            ui.Button((40, 1160, 200, 70), "Back", ui.PANEL2, 24, tag="back"),
         ]
         self.refresh()
 
@@ -95,7 +95,7 @@ class TeamList(Scene):
 
     def draw(self, surf):
         ui.menu_background(surf, self.app.t)
-        ui.header(surf, "TEAMS", "Build comp teams for PvP and practice")
+        ui.header(surf, "Teams", "Build teams for PvP and practice")
         self.list.draw(surf)
         if not self.teams:
             gfx.text(surf, "No teams yet - make one!", (W / 2, 450), 24, ui.MUTED)
@@ -165,12 +165,12 @@ class TeamEdit(Scene):
                 self.move_btns.append(ui.Button((40 + (i % 2) * 325, my + (i // 2) * 76, 315, 68), label, col, 22,
                                                 sub, tag=i))
         self.side_btns = [
-            ui.Button((40, 1060, 150, 60), "AUTO MOVES", ui.PANEL2, 18, tag="auto"),
-            ui.Button((205, 1060, 150, 60), "REMOVE", (150, 50, 50), 20, tag="remove"),
-            ui.Button((370, 1060, 150, 60), "RANDOMIZE", ui.PANEL2, 18, tag="reroll"),
+            ui.Button((40, 1060, 150, 60), "Auto moves", ui.PANEL2, 18, tag="auto"),
+            ui.Button((205, 1060, 150, 60), "Remove", ui.SHELL_DARK, 20, tag="remove"),
+            ui.Button((370, 1060, 150, 60), "Randomize", ui.PANEL2, 18, tag="reroll"),
         ]
-        self.save_btn = ui.Button((480, 1160, 200, 70), "SAVE", (60, 160, 90), 26, tag="save")
-        self.back_btn = ui.Button((40, 1160, 200, 70), "BACK", ui.PANEL2, 24, tag="back")
+        self.save_btn = ui.Button((480, 1160, 200, 70), "Save", (34, 140, 88), 26, tag="save")
+        self.back_btn = ui.Button((40, 1160, 200, 70), "Back", ui.PANEL2, 24, tag="back")
         self.buttons = [self.species_btn, self.save_btn, self.back_btn] + self.move_btns + \
             (self.side_btns if m else [])
 
@@ -284,7 +284,7 @@ class TeamEdit(Scene):
     # ------------------------------------------------------------------ draw
     def draw(self, surf):
         ui.menu_background(surf, self.app.t)
-        gfx.title_text(surf, "EDIT TEAM", (W / 2, 70), 46)
+        ui.header(surf, "Edit team")
         self.name.draw(surf)
         for i, r in enumerate(self.slot_rects):
             sel = i == self.sel
@@ -332,7 +332,7 @@ class SpeciesPicker(Scene):
         self.list = ui.ListView((40, 220, 640, 920), 70)
         self.all = sorted(app.dex.selectable(), key=lambda e: e["id"])
         self.last_q = None
-        self.buttons = [ui.Button((40, 1160, 200, 70), "BACK", ui.PANEL2, 24)]
+        self.buttons = [ui.Button((40, 1160, 200, 70), "Back", ui.PANEL2, 24)]
         self.filter()
 
     def filter(self):
@@ -384,7 +384,7 @@ class SpeciesPicker(Scene):
 
     def draw(self, surf):
         ui.menu_background(surf, self.app.t)
-        gfx.title_text(surf, "PICK A POKEMON", (W / 2, 70), 44)
+        ui.header(surf, "Pick a Pokemon")
         self.search.draw(surf)
         self.list.draw(surf)
         gfx.text(surf, f"{len(self.list.rows)} results", (W - 40, 1195), 16, ui.MUTED, anchor="midright", ow=1,
@@ -403,7 +403,7 @@ class MovePicker(Scene):
         self.search.focus = True
         self.list = ui.ListView((40, 220, 640, 920), 58)
         self.last_q = None
-        self.buttons = [ui.Button((40, 1160, 200, 70), "BACK", ui.PANEL2, 24)]
+        self.buttons = [ui.Button((40, 1160, 200, 70), "Back", ui.PANEL2, 24)]
         self.filter()
 
     def filter(self):
