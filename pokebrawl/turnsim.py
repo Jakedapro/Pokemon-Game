@@ -7,7 +7,7 @@ Usage:
             b.choose(side, some_choice_for(req))
         log = b.run()    # list of {"t": text, "a": animation hint}
 
-Choices: {"type": "move", "slot": i, "mega": bool} or {"type": "switch", "index": j}
+Choices: {"type": "move", "slot": i, "mega": bool, "tera": bool, "gmax": bool} or {"type": "switch", "index": j}
 """
 import random
 
@@ -38,6 +38,8 @@ class Side:
         self.reflect = self.light_screen = self.veil = self.tailwind = 0
         self.mega_used = False
         self.tera_used = False
+        self.gmax_used = False
+        self.gmax_turns = 0     # turns of Gigantamax left for the active Pokemon
         self.wish = None  # (turns_left, amount)
         self.heal_next = False
         self.pass_stages = None
@@ -143,7 +145,10 @@ class TurnBattle:
                     slot = v["charging"]
                 if c.get("mega") and self.sides[side].mon.can_mega and not self.sides[side].mega_used:
                     actions.append(("mega", side, None))
-                elif c.get("tera") and not self.sides[side].tera_used and not self.sides[side].mon.megaed:
+                elif c.get("gmax") and self.sides[side].mon.can_gmax and not self.sides[side].gmax_used:
+                    actions.append(("gmax", side, None))
+                elif c.get("tera") and not self.sides[side].tera_used and not self.sides[side].mon.megaed \
+                        and not self.sides[side].mon.gmaxed:
                     actions.append(("tera", side, None))
                 actions.append(("move", side, slot))
         self.queue = self._order(actions)
@@ -171,6 +176,7 @@ class TurnBattle:
                 "screens": [n for n, t in (("Reflect", s.reflect), ("Light Screen", s.light_screen),
                                            ("Aurora Veil", s.veil), ("Tailwind", s.tailwind)) if t],
                 "sub": v["sub"] > 0, "mega_used": s.mega_used, "tera_used": s.tera_used,
+                "gmax_turns": s.gmax_turns,
             })
         return out
 
@@ -192,7 +198,10 @@ class TurnBattle:
                 or (v["taunt"] > 0 and mv["cls"] == "status") \
                 or (mon.item == "assault-vest" and mv["cls"] == "status") \
                 or (v["charging"] is not None and v["charging"] != i)
-            moves.append({"slot": i, "name": mv["name"], "type": mv["type"], "pp": mon.pp[i], "maxpp": mv["pp"],
+            shown = mv["name"]
+            if mon.gmaxed and mv["cls"] != "status" and mv["type"] == mon.gmax_move()[1]:
+                shown = "G-Max " + mon.gmax_move()[0]
+            moves.append({"slot": i, "name": shown, "type": mv["type"], "pp": mon.pp[i], "maxpp": mv["pp"],
                           "power": mv["power"], "acc": mv["acc"], "cls": mv["cls"], "disabled": disabled})
         if all(m["disabled"] for m in moves):
             moves = [{"slot": -1, "name": "Struggle", "type": "normal", "pp": 1, "maxpp": 1, "power": 50,
@@ -207,7 +216,10 @@ class TurnBattle:
         elif v["taunt"] > 0:
             lock = f"{mon.name} is taunted - no status moves"
         return {"kind": "move", "moves": moves, "can_mega": mon.can_mega and not s.mega_used,
-                "can_tera": not s.tera_used and not mon.megaed and not mon.can_mega, "tera_type": mon.tera_type,
+                "can_gmax": mon.can_gmax and not s.gmax_used and not mon.can_mega,
+                "gmax_move": mon.gmax_move()[0] if mon.gmax_form else None,
+                "can_tera": not s.tera_used and not mon.megaed and not mon.can_mega and not mon.gmaxed,
+                "tera_type": mon.tera_type,
                 "switches": [] if forced else s.bench(), "forced": forced, "lock": lock}
 
     def _valid(self, req, c):
@@ -231,7 +243,7 @@ class TurnBattle:
             kind, side, arg = a
             if kind == "switch":
                 pri = 7
-            elif kind in ("mega", "tera"):
+            elif kind in ("mega", "tera", "gmax"):
                 pri = 6
             else:
                 mv = self._move_obj(side, arg)
@@ -257,9 +269,9 @@ class TurnBattle:
                 self._switch_out(side)
                 self._switch_in(side, arg)
                 self._after_switch_ins([side])
-            elif kind in ("mega", "tera"):
+            elif kind in ("mega", "tera", "gmax"):
                 if s.mon and not s.mon.fainted:
-                    self._mega(side) if kind == "mega" else self._tera(side)
+                    {"mega": self._mega, "tera": self._tera, "gmax": self._gmax}[kind](side)
                 # re-sort: megas can change speed
                 self.queue = self._order(self.queue)
             elif kind == "move":
@@ -309,6 +321,8 @@ class TurnBattle:
     # ------------------------------------------------------------------ switching
     def _switch_out(self, side):
         s = self.sides[side]
+        if s.mon and s.mon.gmaxed:
+            self._end_gmax(side, quiet=True)
         if s.mon:
             AB.on_switch_out(s.mon)
             s.mon.type_override = None
@@ -393,6 +407,25 @@ class TurnBattle:
                 self.emit(f"[{mon.name}'s {name}]", ["ability", side, name])
                 self._boost(side, payload)
 
+    GMAX_TURNS = 3
+
+    def _gmax(self, side):
+        s = self.sides[side]
+        old = s.mon.name
+        form = s.mon.gigantamax()
+        s.gmax_used = True
+        s.gmax_turns = self.GMAX_TURNS
+        self.emit(f"{old} Gigantamaxed! It became {form['name']}!", ["gmax", side, form["id"], s.mon.hp_frac()])
+
+    def _end_gmax(self, side, quiet=False):
+        s = self.sides[side]
+        if s.mon and s.mon.gmaxed:
+            s.mon.end_gmax()
+            if not quiet and not s.mon.fainted:
+                self.emit(f"{s.mon.name} returned to its normal size.", ["ungmax", side, s.mon.entry["id"],
+                                                                           s.mon.hp_frac()])
+        s.gmax_turns = 0
+
     def _tera(self, side):
         s = self.sides[side]
         t = s.mon.terastallize()
@@ -470,7 +503,7 @@ class TurnBattle:
             else:
                 self.emit(f"{mon.name} is frozen solid!", ["status", side, "frz"])
                 return False
-        if v["flinch"]:
+        if v["flinch"] and not mon.gmaxed:  # Gigantamax Pokemon can't flinch
             self.emit(f"{mon.name} flinched and couldn't move!")
             return False
         if mon.status == "par" and self.rng.random() < 0.25:
@@ -505,7 +538,10 @@ class TurnBattle:
             return
         v["charging"] = None
         mtype = move_type_and_power(user, mv, self.weather)[0]
-        self.emit(f"{user.name} used {mv['name']}!", ["move", side, mv["name"], mtype, mv["cls"]])
+        shown = mv["name"]
+        if user.gmaxed and mv["cls"] != "status" and mtype == user.gmax_move()[1]:
+            shown = "G-Max " + user.gmax_move()[0]
+        self.emit(f"{user.name} used {shown}!", ["move", side, shown, mtype, mv["cls"]])
         if AB.protean(user, mtype):
             self.emit(f"[{user.name}'s {AB.ability_name(user.ability)}] It became the {mtype.title()} type!",
                       ["ability", side, AB.ability_name(user.ability)])
@@ -915,6 +951,11 @@ class TurnBattle:
 
     # ------------------------------------------------------------------ end of turn
     def _end_of_turn(self):
+        for s in self.sides:  # Gigantamax lasts three turns
+            if s.gmax_turns > 0:
+                s.gmax_turns -= 1
+                if s.gmax_turns == 0:
+                    self._end_gmax(s.index)
         if self.weather:
             if self.weather_turns < 100:
                 self.weather_turns -= 1

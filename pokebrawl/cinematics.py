@@ -235,6 +235,9 @@ class Cutscene:
     def done(self):
         return self.t >= self.duration
 
+    def skip(self):
+        self.t = self.duration
+
     EYE = 0.75
 
     def _start(self):

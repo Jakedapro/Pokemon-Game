@@ -8,7 +8,7 @@ from .app import Scene
 from .audio import AUDIO
 from .battle_common import BattleExtras
 from .battlecore import STATUS_NAMES
-from .cinematics import AttackFX, Finisher
+from .cinematics import AttackFX, Finisher, Gigantamax, MegaEvolution
 from .gfx import H, INK, SPRITES, W, WHITE
 from .render import STATUS_COLORS
 from .types import effectiveness
@@ -52,8 +52,8 @@ class TurnBattleScene(Scene):
         self.shake = {0: 0.0, 1: 0.0}
         self.flash = {0: 0.0, 1: 0.0}
         self.faint = {0: 0.0, 1: 0.0}
-        self.mega_on = False
-        self.gimmick = "mega"
+        self.mega_on = False      # a gimmick is selected for the next move
+        self.gimmick = "mega"     # which one: mega / gmax / tera (the button cycles through what's available)
         self.ability_pop = None
         self.finisher = None     # knockout cutscene playing right now
         self.last_move = None
@@ -231,7 +231,28 @@ class TurnBattleScene(Scene):
             self.vis[side] = {"id": pid, "frac": m.get("frac", 1.0), "status": m.get("status"),
                               "name": m.get("name", "?"), "idx": idx, "fainted": False}
             self.faint[side] = 0.0
+        elif kind == "gmax":
+            v = self.vis[a[1]]
+            base = v.get("id")
+            e = self.app.dex.all.get(a[2])
+            mv = (self.req or {}).get("gmax_move") if a[1] == self.me else None
+            self.finisher = Gigantamax(base, a[2], e["name"] if e else "", mv or self._gmax_move_name(a[2]))
+            v["id"], v["gmax"] = a[2], True
+            if e:
+                v["name"] = e["name"]
+        elif kind == "ungmax":
+            v = self.vis[a[1]]
+            v["id"], v["gmax"] = a[2], False
+            e = self.app.dex.all.get(a[2])
+            if e:
+                v["name"] = e["name"]
+            self.flash[a[1]] = 0.5
         elif kind == "mega":
+            old = self.vis[a[1]].get("id")
+            e2 = self.app.dex.all.get(a[2])
+            if old and e2:
+                self.finisher = MegaEvolution(old, a[2], e2["name"],
+                                              "PRIMAL REVERSION" if "primal" in e2["key"] else "MEGA EVOLUTION")
             self.vis[a[1]]["id"] = a[2]
             e = self.app.dex.all.get(a[2])
             if e:
@@ -248,6 +269,11 @@ class TurnBattleScene(Scene):
             self.shake[a[1]] = 0.15
 
     # ------------------------------------------------------------------ layout + input
+    def _gmax_move_name(self, form_id):
+        from .pokedex import GMAX_MOVES
+        e = self.app.dex.all.get(form_id, {})
+        return GMAX_MOVES.get(e.get("key", "").split("-")[0], ("Max Strike", ""))[0]
+
     def _start_finisher(self, side):
         """The hit that knocks out `side`'s Pokemon becomes a cutscene."""
         mv = self.last_move
@@ -274,16 +300,19 @@ class TurnBattleScene(Scene):
                 b = ui.Button((x, y, 335, 80), m["name"], gfx.type_color(m["type"], 2), 24, sub,
                               enabled=not m["disabled"], tag=m["slot"])
                 self.move_btns.append(b)
-            if req["can_mega"]:
-                self.gimmick = "mega"
-                self.mega_btn = ui.Button((20, 1150, 160, 100), "Mega", (150, 70, 210) if self.mega_on else ui.PANEL2,
-                                          28, "ON" if self.mega_on else "off")
-            elif req.get("can_tera"):
-                self.gimmick = "tera"
+            opts = self._gimmicks(req)
+            if opts:
+                if self.gimmick not in opts:
+                    self.gimmick = opts[0]
+                g = self.gimmick
+                on = self.mega_on
                 tt = req.get("tera_type", "normal")
-                self.mega_btn = ui.Button((20, 1150, 160, 100), "Tera",
-                                          gfx.type_color(tt, 2) if self.mega_on else ui.PANEL2, 28,
-                                          f"{tt.upper()} {'ON' if self.mega_on else 'off'}")
+                label, col, sub = {"mega": ("Mega", (150, 70, 210), "evolve"),
+                                   "gmax": ("G-Max", (200, 30, 60), (req.get("gmax_move") or "")[:12]),
+                                   "tera": ("Tera", gfx.type_color(tt, 2), tt.upper())}[g]
+                self.mega_btn = ui.Button((20, 1150, 160, 100), label if on else (label if len(opts) == 1 else
+                                                                                  "Gimmick"),
+                                          col if on else ui.PANEL2, 26, sub if on else "off")
         if self.state and req:
             sd = self.state["sides"][self.me]
             allowed = set(req.get("switches", []))
@@ -316,8 +345,11 @@ class TurnBattleScene(Scene):
         if ev.type == pygame.KEYDOWN:
             if ev.key == pygame.K_ESCAPE:
                 self.app.home()
-            elif ev.key in (pygame.K_m, pygame.K_t) and self.mega_btn:
-                self.mega_on = not self.mega_on
+            elif ev.key in (pygame.K_m, pygame.K_t, pygame.K_g) and self.mega_btn:
+                want = {pygame.K_m: "mega", pygame.K_t: "tera", pygame.K_g: "gmax"}[ev.key]
+                if want in self._gimmicks(self.req or {}):
+                    self.mega_on = not (self.mega_on and self.gimmick == want)
+                    self.gimmick = want
             elif ev.key in (pygame.K_1, pygame.K_2, pygame.K_3, pygame.K_4):
                 i = ev.key - pygame.K_1
                 if i < len(self.move_btns) and self.move_btns[i].enabled:
@@ -335,12 +367,30 @@ class TurnBattleScene(Scene):
                 self._send(self._move_choice(b.tag))
                 return
         if self.mega_btn and self.mega_btn.hit(pos):
-            self.mega_on = not self.mega_on
+            self._cycle_gimmick()
             return
         for rect, i, ok, m in self.party_btns:
             if ok and rect.collidepoint(pos):
                 self._send({"type": "switch", "index": i})
                 return
+
+    @staticmethod
+    def _gimmicks(req):
+        return [g for g, flag in (("mega", "can_mega"), ("gmax", "can_gmax"), ("tera", "can_tera")) if req.get(flag)]
+
+    def _cycle_gimmick(self):
+        """Off -> first available gimmick -> next -> ... -> off."""
+        opts = self._gimmicks(self.req or {})
+        if not opts:
+            return
+        if not self.mega_on:
+            self.mega_on, self.gimmick = True, opts[0]
+            return
+        i = opts.index(self.gimmick) if self.gimmick in opts else len(opts)
+        if i + 1 < len(opts):
+            self.gimmick = opts[i + 1]
+        else:
+            self.mega_on = False
 
     def _move_choice(self, slot):
         c = {"type": "move", "slot": slot}
@@ -485,6 +535,8 @@ class TurnBattleScene(Scene):
         mine = side == self.me
         x, y = MY_POS if mine else FOE_POS
         hgt = 250 if mine else 190
+        if v.get("gmax"):
+            hgt = int(hgt * 1.35)
         white = 0.8 if self.flash[side] > 0 and int(self.flash[side] * 20) % 2 else 0.0
         img = SPRITES.get(v["id"], hgt, back=mine, white=white)
         dx = math.sin(self.shake[side] * 60) * 10 * (self.shake[side] > 0)

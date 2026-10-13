@@ -166,8 +166,10 @@ class TurnBot:
                 sc *= self.rng.uniform(0.3, 1.7)
             scores.append((sc, m["slot"]))
         scores.sort(reverse=True)
-        return {"type": "move", "slot": scores[0][1], "mega": mega,
-                "tera": not mega and self._want_tera(battle, side, req, me, foe, scores[0][1])}
+        gmax = bool(req.get("can_gmax")) and not mega and self.level != "easy" and me.hp_frac() > 0.5 \
+            and self.rng.random() < (0.9 if self.level in ("hard", "insane") else 0.6)
+        return {"type": "move", "slot": scores[0][1], "mega": mega, "gmax": gmax,
+                "tera": not mega and not gmax and self._want_tera(battle, side, req, me, foe, scores[0][1])}
 
     def _want_tera(self, battle, side, req, me, foe, slot):
         if not req.get("can_tera") or self.level == "easy":

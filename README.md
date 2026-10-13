@@ -77,6 +77,13 @@ Then **Watch live** (Space = pause, +/- = speed) or **Record video**. Videos go 
 - **Battle royale:** set *Mode* to Royale (or pick a royale preset): every Pokemon for itself while a storm
   shrinks the arena. Royales with 60+ Pokemon go full screen in a wide arena while you watch; recordings stay
   vertical.
+- **Gigantamax:** the 32 Pokemon with a Gigantamax form can Gigantamax (no plain Dynamax) - in showcases they
+  grow huge with a red cloud crown, and in 1v1 battles it's a gimmick next to Mega and Tera: 3 turns, more HP,
+  G-Max moves, no flinching. Mega Evolution and Gigantamax both have their own cutscenes.
+- **Mewtwo:** when Mewtwo snaps it gets a rampage cutscene, says a line (spoken with the Mac's built-in voice,
+  shown as subtitles) and a psychic shockwave wipes out everyone near it.
+- **Final battle:** the last Pokemon standing faces the other side's champion on a full duel stage - big fighters,
+  move callouts, slow-motion crits, clash beats and Sudden Death so it always ends.
 - **Events:** Arceus can show up and drop off a legendary group (or, rarely, fight itself), Primal Kyogre and
   Groudon bring their domains, Mega Rayquaza calms the weather, meteors rain down. Events never bring a
   Pokemon that's already fighting.
