@@ -11,7 +11,7 @@ import pygame
 from . import gfx
 from .audio import AUDIO
 from .cinematics import Cutscene
-from .gfx import H, W
+from .gfx import H, INK, SPRITES, W
 from .pokedex import prefetch
 from .render import ArenaRenderer
 from .sim import ARENA, Sim
@@ -351,38 +351,81 @@ class ShowcaseScene:
                 self.r._burst(u.x, u.y, (255, 120, 120), 6, 60, 4, 0.5)
         mv = self.r.units.get(m.uid)
         self.target = (mv.x, mv.y) if mv else (m.x, m.y)
-        tx = self.target[0] - 140 if self.target[0] > ARENA[0] + 200 else self.target[0] + 140
+        tx = self.target[0] - 75 if self.target[0] > ARENA[0] + 200 else self.target[0] + 75
         self.finale = {"t": 0.0, "start": (ARENA[0] - 30 if tx < self.target[0] else ARENA[2] + 30, self.target[1] + 10),
                        "stop": (tx, self.target[1] + 10), "stage": "walk"}
-        self.r.cam_target = (self.target[0] + (tx - self.target[0]) / 2, self.target[1], 1.6)
+        self.r.cam_target = (self.target[0] + (tx - self.target[0]) / 2, self.target[1] - 10, 4.2)
+
+    # catch timeline (seconds since the finale started)
+    THROW, HIT, ABSORB, CLOSE, LAND = 2.0, 2.75, 2.95, 3.75, 4.35
+    SHAKES = (4.75, 5.65, 6.55)
+    CAUGHT, END = 7.45, 12.0
 
     def _update_finale(self, dt):
         f = self.finale
         f["t"] += dt
         t = f["t"]
         uid = self.mvp.uid
-        if t > 2.0 and self._once("throw"):
+        tx, ty = self.target
+        if t > self.THROW and self._once("throw"):
             AUDIO.play("select")
-        if t > 2.7 and self._once("capture"):
+        if t > self.HIT and self._once("hit"):
             AUDIO.play("ball")
-        for k in range(3):
-            if t > 3.4 + k * 0.93 and self._once(f"wiggle{k}"):
+            self.r._burst(tx, ty, (255, 255, 255), 10, 120, 4, 0.4)
+        if t > self.ABSORB and self._once("absorb"):
+            self.r.hidden.add(uid)          # we draw it ourselves while it turns into red energy
+            AUDIO.play("beam", 0.7)
+        if t > self.CLOSE and self._once("close"):
+            AUDIO.play("ball")
+            self.r._burst(tx, ty - 40, (255, 90, 90), 14, 110, 4, 0.5)
+        for k, at in enumerate(self.SHAKES):
+            if t > at and self._once(f"wiggle{k}"):
                 AUDIO.play("wiggle")
-        if t > 6.2 and self._once("caught"):
+        if t > self.CAUGHT and self._once("caught"):
+            AUDIO.play("ball")
             AUDIO.play("catch")
-        if 2.7 <= t < 3.3:
-            k = (t - 2.7) / 0.6
-            self.r.white[uid] = min(1.0, k * 2)
-            self.r.scale_over[uid] = max(0.02, 1 - k)
-        elif t >= 3.3:
-            self.r.hidden.add(uid)
-        if 6.2 <= t < 6.25:
-            self.r._burst(self.target[0], self.target[1], (255, 240, 120), 24, 160, 5, 0.9)
-        if t > 7.0:
-            sx, sy = f["stop"]
-            self.r.cam_target = ((sx + self.target[0]) / 2, sy - 30, 2.4)
-        if t > 11.0:
+            gy = self._ball_ground()
+            self.r._burst(tx, gy, (255, 240, 120), 30, 180, 5, 1.0)
+            f["stars"] = [(math.cos(a) * sp, -abs(math.sin(a)) * sp - 60, a)
+                          for a, sp in ((i * 0.55, 160 + (i % 3) * 50) for i in range(12))]
+        sx_, _ = f["stop"]
+        if t > self.THROW + 0.4:  # push in on the ball, keeping the trainer in shot
+            z_in = 4.8 if t < self.CAUGHT + 1.2 else 5.2
+            self.r.cam_target = (tx + (sx_ - tx) * 0.3, ty - 15, z_in)
+        if t > self.END:
             self.done = True
+
+    def _ball_ground(self):
+        u = self.r.units.get(self.mvp.uid)
+        return self.target[1] + (u.r * 0.6 if u else 12) - 6
+
+    def _ball_pos(self, t):
+        """World position + rotation of the ball at finale time t (after the throw)."""
+        f, (tx, ty) = self.finale, self.target
+        x, y = f["stop"]
+        top = ty - 34                       # where the ball hovers while it opens
+        if t < self.HIT:                    # throw arc
+            p = (t - self.THROW) / (self.HIT - self.THROW)
+            return x + (tx - x) * p, (y - 30) + (top - (y - 30)) * p - math.sin(p * math.pi) * 70, -p * 900
+        if t < self.CLOSE:                  # bounce back up a little and hover
+            p = min(1.0, (t - self.HIT) / 0.25)
+            return tx, top - math.sin(p * math.pi / 2) * 14 + math.sin(t * 9) * 2, 0
+        gy = self._ball_ground()
+        if t < self.LAND:                   # drop with two bounces
+            p = (t - self.CLOSE) / (self.LAND - self.CLOSE)
+            h = (top - 14) - gy             # negative: above the ground
+            if p < 0.55:
+                q = p / 0.55
+                return tx, gy + h * (1 - q * q), 0
+            q = (p - 0.55) / 0.45
+            bounce = abs(math.sin(q * math.pi * 2)) * (1 - q) * 22
+            return tx, gy - bounce, 0
+        ang = 0
+        for at in self.SHAKES:
+            if at <= t < at + 0.55:
+                ph = (t - at) / 0.55
+                ang = math.sin(ph * math.pi * 2) * 28 * (1 - ph * 0.3)
+        return tx + ang * 0.15, gy, ang
 
     # ------------------------------------------------------------------ drawing
     def draw(self, surf):
@@ -453,44 +496,116 @@ class ShowcaseScene:
             gfx.text(surf, name if c else f"{name} (down)", (x, y - 30), 20,
                      (255, 210, 80) if c else (150, 150, 150))
 
+    def _draw_open_ball(self, surf, cx, cy, size, open_k):
+        """Poke Ball drawn in two halves; open_k 0 = closed, 1 = lid flipped open."""
+        r = size / 2
+        lid = pygame.Surface((size + 4, size // 2 + 4), pygame.SRCALPHA)
+        pygame.draw.circle(lid, (230, 45, 45), (r + 2, r + 2), r)
+        pygame.draw.circle(lid, INK, (r + 2, r + 2), r, max(2, int(size / 12)))
+        base = pygame.Surface((size + 4, size // 2 + 4), pygame.SRCALPHA)
+        pygame.draw.circle(base, (245, 245, 245), (r + 2, 2), r)
+        pygame.draw.circle(base, INK, (r + 2, 2), r, max(2, int(size / 12)))
+        surf.blit(base, base.get_rect(midtop=(cx, cy)))
+        if open_k > 0:  # glow from inside
+            pygame.draw.ellipse(surf, (255, 200, 200), (cx - r * 0.8, cy - r * 0.25, r * 1.6, r * 0.5))
+        rot = pygame.transform.rotate(lid, open_k * 70)
+        surf.blit(rot, rot.get_rect(midbottom=(cx - open_k * r * 0.5, cy - open_k * r * 0.35)))
+        pygame.draw.circle(surf, (250, 250, 250), (int(cx - open_k * r * 0.4), int(cy - open_k * r * 0.2)),
+                           max(2, int(size / 6)))
+        pygame.draw.circle(surf, INK, (int(cx - open_k * r * 0.4), int(cy - open_k * r * 0.2)),
+                           max(2, int(size / 6)), 2)
+
     def _draw_finale(self, surf):
         f = self.finale
         t = f["t"]
         (x0, y0), (x1, y1) = f["start"], f["stop"]
+        z = self.r.cam[2]
+        # trainer walks in, winds up and throws
         k = min(1.0, t / 2.0)
         x, y = x0 + (x1 - x0) * k, y0 + (y1 - y0) * k
-        frame = int(t * 6) % 2 if k < 1 else 0
-        z = self.r.cam[2]
-        tr = gfx.trainer_sprite(max(3, int(3 * z)), frame)
+        hop = -abs(math.sin((t - 1.7) / 0.3 * math.pi)) * 10 if 1.7 < t < 2.0 else 0
+        frame = int(t * 6) % 2 if k < 1 else (1 if self.THROW <= t < self.THROW + 0.25 else 0)
+        tr = gfx.trainer_sprite(max(3, int(1.6 * z)), frame)
         if x1 < x0:
             tr = pygame.transform.flip(tr, True, False)
-        sx, sy = self.r.world_to_screen(x, y)
+        sx, sy = self.r.world_to_screen(x, y + hop)
         surf.blit(tr, tr.get_rect(midbottom=(sx, sy)))
         tx, ty = self.target
-        ball = gfx.ball_sprite(int(18 * z))
-        if 2.0 <= t < 2.7:  # throw arc
-            p = (t - 2.0) / 0.7
-            bx = x + (tx - x) * p
-            by = y - 30 + (ty - y) * p - math.sin(p * math.pi) * 90
+        size = max(12, int(10 * z))
+        u = self.r.units.get(self.mvp.uid)
+        # the Pokemon turns into red energy and gets pulled into the ball
+        if u and self.ABSORB <= t < self.CLOSE:
+            p = (t - self.ABSORB) / (self.CLOSE - self.ABSORB)
+            bx, by, _ = self._ball_pos(t)
+            mx, my = tx + (bx - tx) * p ** 2, (ty + u.r * 0.6) + (by - (ty + u.r * 0.6)) * p ** 2
+            img = SPRITES.get(u.form, max(4, u.r * 2.3 * z * (1 - p * 0.95)), flip=u.face > 0)
+            red = gfx.silhouette(img, (255, 70, 70))
+            red.set_alpha(int(255 * min(1.0, p * 4)))
+            msx, msy = self.r.world_to_screen(mx, my)
+            if p < 0.25:
+                surf.blit(img, img.get_rect(midbottom=(msx, msy)))
+            surf.blit(red, red.get_rect(midbottom=(msx, msy)))
             bsx, bsy = self.r.world_to_screen(bx, by)
-            rot = pygame.transform.rotate(ball, -p * 720)
-            surf.blit(rot, rot.get_rect(center=(bsx, bsy)))
-        elif t >= 2.7:
-            bsx, bsy = self.r.world_to_screen(tx, ty)
-            ang = 0
-            if 3.4 < t < 6.2:  # three wiggles
-                ph = (t - 3.4) % 0.93
-                ang = math.sin(ph / 0.45 * math.pi) * 25 if ph < 0.45 else 0
-            if 2.7 <= t < 3.3:
-                beam = pygame.Surface((W, H), pygame.SRCALPHA)
-                pygame.draw.line(beam, (255, 255, 255, 160), (bsx, bsy), (bsx, bsy - 40 * z), int(10 * z))
-                surf.blit(beam, (0, 0))
-            rot = pygame.transform.rotate(ball, ang)
-            surf.blit(rot, rot.get_rect(center=(bsx, bsy)))
-        if t > 6.2:
-            name = self.mvp.mon.name
-            gfx.title_text(surf, "GOTCHA!", (W / 2, H * 0.22), 72)
-            gfx.text(surf, f"{name} was caught!", (W / 2, H * 0.22 + 64), 32)
+            beam = pygame.Surface((W, H), pygame.SRCALPHA)
+            for i in range(3):
+                pygame.draw.line(beam, (255, 90, 90, 140 - i * 40), (bsx, bsy), (msx, msy - img.get_height() / 2),
+                                 int((12 - i * 4) * z / 2) + 2)
+            surf.blit(beam, (0, 0))
+        # the ball
+        if t >= self.THROW:
+            bx, by, ang = self._ball_pos(t)
+            bsx, bsy = self.r.world_to_screen(bx, by)
+            if t < self.HIT:  # motion trail
+                for i in range(1, 5):
+                    px, py, _ = self._ball_pos(max(self.THROW, t - i * 0.03))
+                    tsx, tsy = self.r.world_to_screen(px, py)
+                    pygame.draw.circle(surf, (255, 255, 255), (int(tsx), int(tsy)), max(1, size // 2 - i * 2), 1)
+            if self.HIT <= t < self.CLOSE:
+                open_k = min(1.0, (t - self.HIT) / 0.2) * min(1.0, (self.CLOSE - t) / 0.15)
+                self._draw_open_ball(surf, bsx, bsy, size, open_k)
+            else:
+                ball = pygame.transform.rotate(gfx.ball_sprite(size), ang)
+                surf.blit(ball, ball.get_rect(center=(bsx, bsy - size / 2 if t >= self.LAND else bsy)))
+                # the button glows while it shakes, then locks with a click
+                if t >= self.LAND:
+                    lit = any(at <= t < at + 0.55 for at in self.SHAKES) or t >= self.CAUGHT
+                    if lit:
+                        col = (255, 230, 120) if t >= self.CAUGHT else (255, 120, 120)
+                        pygame.draw.circle(surf, col, (int(bsx + ang * 0.1), int(bsy - size / 2)), max(2, size // 6))
+            if t >= self.CAUGHT:  # stars burst out
+                st = t - self.CAUGHT
+                for vx, vy, a in f.get("stars", []):
+                    if st > 1.2:
+                        break
+                    px, py = bsx + vx * st * z * 0.5, bsy - size / 2 + (vy * st + 260 * st * st) * z * 0.5
+                    rr = 7 * z * (1 - st / 1.2) + 2
+                    pts = [(px + math.cos(a + i * math.pi / 5) * (rr if i % 2 == 0 else rr * 0.45),
+                            py + math.sin(a + i * math.pi / 5) * (rr if i % 2 == 0 else rr * 0.45)) for i in range(10)]
+                    pygame.draw.polygon(surf, (255, 225, 80), pts)
+                    pygame.draw.polygon(surf, INK, pts, 1)
+        # GOTCHA card
+        if t > self.CAUGHT + 0.5:
+            p = min(1.0, (t - self.CAUGHT - 0.5) / 0.35)
+            ease = 1 - (1 - p) ** 3
+            gfx.title_text(surf, "GOTCHA!", (W / 2, H * 0.20), 80, scale=1.6 - 0.6 * ease)
+            cy = H - 230 + (1 - ease) * 300
+            ui_rect = pygame.Rect(60, cy - 90, W - 120, 180)
+            pygame.draw.rect(surf, INK, ui_rect.move(0, 6), border_radius=18)
+            pygame.draw.rect(surf, (248, 246, 236), ui_rect, border_radius=18)
+            pygame.draw.rect(surf, (230, 60, 60), (ui_rect.x, ui_rect.y, ui_rect.w, 14), border_top_left_radius=18,
+                             border_top_right_radius=18)
+            m = self.mvp
+            img = SPRITES.get(m.mon.entry["id"], 140)
+            surf.blit(img, img.get_rect(center=(ui_rect.x + 100, ui_rect.centery + 6)))
+            line = f"{m.mon.name} was caught!"
+            fs = 30
+            while fs > 16 and gfx.font(fs, True).size(line)[0] > ui_rect.w - 210:
+                fs -= 2
+            gfx.text(surf, line, (ui_rect.x + 190, ui_rect.y + 52), fs, INK, None, anchor="midleft")
+            gfx.text(surf, f"MVP  -  {m.kills} KOs  -  {self.team_names[m.team]}", (ui_rect.x + 190, ui_rect.y + 96),
+                     20, (90, 90, 100), None, anchor="midleft", chunky=False)
+            for i, typ in enumerate(m.mon.types):
+                gfx.pill(surf, typ.upper(), (ui_rect.x + 230 + i * 90, ui_rect.y + 136), gfx.type_color(typ, 0), 14)
 
 
 # ---------------------------------------------------------------------- headless rendering
