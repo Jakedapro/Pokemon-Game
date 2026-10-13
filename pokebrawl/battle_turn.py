@@ -7,6 +7,7 @@ from . import gfx, ui
 from .app import Scene
 from .audio import AUDIO
 from .battle_common import BattleExtras, draw_rank_change
+from .weather import WeatherFX
 from .battlecore import STATUS_NAMES
 from .cinematics import ARCEUS_JUDGMENT, AttackFX, Finisher, Gigantamax, Judgment, MegaEvolution
 from .gfx import H, INK, SPRITES, W, WHITE
@@ -42,6 +43,7 @@ class TurnBattleScene(Scene):
         self.me = session.my_side
         self.foe = 1 - self.me
         self.bg = gfx.turn_background()
+        self.weather = WeatherFX((W, H))
         self.state = None
         self.req = None
         self.queue = []          # log entries waiting to be shown
@@ -94,6 +96,7 @@ class TurnBattleScene(Scene):
         if self.t == 0:
             AUDIO.music("battle")
         self.t += dt
+        self.weather.update(dt, self.state["weather"] if self.state else None)
         if self._finished() and self.state and self.state["over"]:
             self.x.finish(self.state["winner"])
             self.end_btns = self.x.end_buttons(640)
@@ -446,10 +449,12 @@ class TurnBattleScene(Scene):
     # ------------------------------------------------------------------ drawing
     def draw(self, surf):
         surf.blit(self.bg, (0, 0))
+        self.weather.draw_back(surf)
         if self.state:
             self._draw_field_info(surf)
             for side in (self.foe, self.me):
                 self._draw_mon(surf, side)
+            self.weather.draw_front(surf)
             if self.attack is not None:
                 self.attack[0].draw(surf, self.attack[1] / 0.55)
             self._draw_hp_box(surf, self.foe, (30, 120))

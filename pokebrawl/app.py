@@ -192,8 +192,9 @@ class MainMenu(Scene):
                       tag="showcase", icon=384),
             ui.Button((x, 644, w, 176), "PvP", (34, 140, 88), 46, "Battle your friends with a room code",
                       tag="pvp", icon=25),
-            ui.Button((x, 860, 290, 100), "Teams", ui.SCREEN2, 30, tag="teams"),
-            ui.Button((x + 310, 860, 290, 100), "Replays", ui.SCREEN2, 30, tag="replays"),
+            ui.Button((x, 860, 190, 100), "Teams", ui.SCREEN2, 28, tag="teams"),
+            ui.Button((x + 205, 860, 190, 100), "Pokedex", ui.SCREEN2, 28, tag="dex"),
+            ui.Button((x + 410, 860, 190, 100), "Replays", ui.SCREEN2, 28, tag="replays"),
             ui.Button((x, 984, 190, 84), "Trainer", (130, 60, 200), 24, tag="trainer"),
             ui.Button((x + 205, 984, 190, 84), "Settings", ui.SCREEN2, 24, tag="settings"),
             ui.Button((x + 410, 984, 190, 84), "Quit", ui.SCREEN2, 24, tag="quit"),
@@ -242,6 +243,9 @@ class MainMenu(Scene):
         elif tag == "replays":
             from .replays_ui import ReplayList
             self.app.push(ReplayList(self.app))
+        elif tag == "dex":
+            from .pokedex_ui import PokedexScene
+            self.app.push(PokedexScene(self.app))
         elif tag == "trainer":
             from .trainer_ui import TrainerCard
             self.app.push(TrainerCard(self.app))
