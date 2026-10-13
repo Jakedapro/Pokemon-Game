@@ -62,6 +62,8 @@ class App:
         self.t = 0.0
         pygame.key.set_repeat(350, 35)
         AUDIO.init(self.settings, headless=headless)
+        self._shown = None        # the scene drawn last frame (to notice screen changes)
+        self._trans = None        # [old frame, time, direction] while a screen transition plays
 
     def push(self, scene):
         self.stack.append(scene)
@@ -80,6 +82,50 @@ class App:
         while len(self.stack) > 1:
             self.pop()
         gfx.SPRITES.shiny_forms = set()
+
+    TRANSITION = 0.32
+
+    def _start_transition(self, scene, canvas):
+        """The screen just changed: keep the old picture and slide it away over the new one."""
+        old = self._shown
+        self._shown = scene
+        if old is None or getattr(scene, "no_transition", False) or getattr(old, "no_transition", False):
+            self._trans = None
+            return
+        if canvas.get_size() != (gfx.W, gfx.H):
+            self._trans = None
+            return
+        back = old not in self.stack   # popped: slide right, pushed: slide left
+        self._trans = [canvas.copy(), 0.0, 1 if back else -1]
+
+    def _draw_transition(self, canvas, dt):
+        if not self._trans or canvas.get_size() != self._trans[0].get_size():
+            self._trans = None
+            return
+        old, t, d = self._trans
+        t += dt
+        self._trans[1] = t
+        k = min(1.0, t / self.TRANSITION)
+        e = 1 - (1 - k) ** 3
+        w = canvas.get_width()
+        # the new screen slides in like a card over the old one, which drifts back and dims
+        if k < 1:
+            new = canvas.copy()
+            canvas.blit(old, (int(d * w * 0.2 * e), 0))
+            dim = pygame.Surface(canvas.get_size(), pygame.SRCALPHA)
+            dim.fill((0, 0, 0, int(170 * e)))
+            canvas.blit(dim, (0, 0))
+            x = int(-d * w * (1 - e))
+            canvas.blit(new, (x, 0))
+            # soft shadow cast by the sliding card onto the old screen
+            hgt = canvas.get_height()
+            shade = pygame.Surface((16, hgt), pygame.SRCALPHA)
+            for i in range(16):  # darkest right next to the card's edge
+                col = 15 - i if d < 0 else i
+                pygame.draw.line(shade, (0, 0, 0, 130 - i * 8), (col, 0), (col, hgt))
+            canvas.blit(shade, (x - 16, 0) if d < 0 else (x + w, 0))
+        else:
+            self._trans = None
 
     def run(self):
         self.push(LoadingScene(self))
@@ -109,7 +155,11 @@ class App:
             mp = self.display.to_canvas(pygame.mouse.get_pos())
             for b in getattr(scene, "buttons", []):
                 b.hover = b.rect.collidepoint(mp)
-            scene.draw(self.display.canvas)
+            canvas = self.display.canvas
+            if scene is not self._shown:
+                self._start_transition(scene, canvas)
+            scene.draw(canvas)
+            self._draw_transition(canvas, dt)
             self.display.present()
         while self.stack:
             self.pop()
@@ -206,8 +256,51 @@ class MainMenu(Scene):
         self.restart_btn = ui.Button((60, 1100, 600, 72), "Restart to update", (34, 140, 88), 26,
                                      "or it installs next time you open the game")
 
+    TIPS = ["Win battles for a chance to meet a legendary",
+            "1 in 64 showcase Pokemon is shiny",
+            "Tournament mode: 8 or 16 Pokemon, one champion",
+            "Hold a Choice item and you're locked into one move",
+            "Press G in a 1v1 to Gigantamax (if your Pokemon can)",
+            "Recordings auto-edit down to TikTok length",
+            "Rank up for a guaranteed legendary encounter",
+            "Tap a sprite in the Pokedex to see its shiny",
+            "Only one legendary per team in PvP",
+            "Big battle royales go full screen"]
+
     def update(self, dt):
         AUDIO.music("menu")
+        self._parade_update(dt)
+
+    def _parade_update(self, dt):
+        """Pokemon running across the strip under the header."""
+        if not hasattr(self, "parade"):
+            self.parade, self.parade_rng, self.parade_gap = [], random.Random(), 0.0
+        self.parade_gap -= dt
+        if self.parade_gap <= 0 and self.app.dex:
+            rng = self.parade_rng
+            e = rng.choice(self.app.dex.selectable())
+            # only Pokemon already on disk (never stall the menu on a download)
+            if not os.path.exists(pokedex.sprite_path(e["id"])):
+                return
+            shiny = rng.randrange(64) == 0 and os.path.exists(os.path.join(pokedex.SPRITE_DIR,
+                                                                           f"shiny-{e['id']}.png"))
+            self.parade.append([W + 60, e["id"], rng.uniform(70, 130), rng.uniform(0, 6), shiny])
+            self.parade_gap = rng.uniform(0.7, 1.6)
+        for p in self.parade:
+            p[0] -= p[2] * dt
+        self.parade = [p for p in self.parade if p[0] > -80]
+
+    def _draw_parade(self, surf):
+        t = self.app.t
+        for x, pid, speed, ph, shiny in getattr(self, "parade", []):
+            hop = abs(math.sin(t * speed / 14 + ph)) * 10
+            img = gfx.SPRITES.get(pid, 62, flip=True, shiny=shiny)
+            if img.get_width() > 90:
+                img = gfx.SPRITES.get(pid, int(62 * 90 / img.get_width()), flip=True, shiny=shiny)
+            pygame.draw.ellipse(surf, (16, 22, 32), (x - 22, 218, 44, 10))
+            surf.blit(img, img.get_rect(midbottom=(x, 224 - hop)))
+            if shiny:
+                gfx.sparkles(surf, (x, 190), 40, t, pid, 4)
 
     def _rp(self):
         now = self.app.t
@@ -258,6 +351,7 @@ class MainMenu(Scene):
     def draw(self, surf):
         ui.menu_background(surf, self.app.t)
         ui.header(surf, "PokeBrawl", f"{len(self.app.dex.selectable())} Pokemon and {len(self.app.dex.moves)} moves")
+        self._draw_parade(surf)
         rk = profile.rank_of(self._rp())
         ui.rank_badge(surf, (650, 58), 34, rk, self.app.t)
         gfx.text(surf, rk["label"], (650, 118), 13, (255, 230, 235), ui.SHELL_DARK, 2)
@@ -269,6 +363,13 @@ class MainMenu(Scene):
         gfx.text(surf, "Fan-made, not affiliated with Nintendo, Game Freak or The Pokemon Company", (W / 2, H - 30),
                  13, (96, 110, 128), None, 0, chunky=False)
         st = self.updater.state
+        if st not in ("ready", "downloading", "available", "error"):
+            tip = self.TIPS[int(self.app.t / 6) % len(self.TIPS)]
+            k = (self.app.t / 6) % 1.0
+            a = int(255 * min(1.0, k / 0.08, (1 - k) / 0.08))
+            ui.panel(surf, (60, 1100, 600, 60), ui.SCREEN2, 12)
+            gfx.text(surf, "TIP", (90, 1130), 15, ui.SIGNAL, None, 0, anchor="midleft")
+            gfx.text(surf, tip, (134, 1130), 16, ui.TEXT, None, 0, anchor="midleft", chunky=False, alpha=a)
         if st == "ready":
             self.restart_btn.draw(surf)
         elif st == "downloading":

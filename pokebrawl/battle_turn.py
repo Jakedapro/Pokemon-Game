@@ -53,6 +53,8 @@ class TurnBattleScene(Scene):
         self.history = []
         self.vis = {0: {}, 1: {}}  # displayed id/frac/status per side
         self.shake = {0: 0.0, 1: 0.0}
+        self.pops = []       # floating "-34%", "SUPER EFFECTIVE!", "CRITICAL HIT!"
+        self.quake = 0.0     # whole-screen shake for big hits
         self.flash = {0: 0.0, 1: 0.0}
         self.faint = {0: 0.0, 1: 0.0}
         self.mega_on = False      # a gimmick is selected for the next move
@@ -114,6 +116,11 @@ class TurnBattleScene(Scene):
             self.ability_pop[2] -= dt
             if self.ability_pop[2] <= 0:
                 self.ability_pop = None
+        self.quake = max(0.0, self.quake - dt)
+        for p in self.pops:
+            p[5] -= dt
+            p[2] -= 40 * dt
+        self.pops = [p for p in self.pops if p[5] > 0]
         for side in (0, 1):
             self.shake[side] = max(0.0, self.shake[side] - dt)
             self.flash[side] = max(0.0, self.flash[side] - dt)
@@ -227,12 +234,29 @@ class TurnBattleScene(Scene):
         elif kind == "end":
             AUDIO.music(None)
             AUDIO.play("win" if a[1] == self.me else "lose")
+        if kind == "crit":
+            self._pop(a[1], "CRITICAL HIT!", (255, 120, 70), 30, -60)
+            self.quake = max(self.quake, 0.35)
         if kind in ("hp", "hit"):
             side = a[1]
+            lost = self.vis[side].get("frac", 1.0) - a[2]
             self.vis[side]["frac"] = a[2]
+            if lost > 0.005:
+                self._pop(side, f"-{max(1, round(lost * 100))}%", (255, 255, 255), 34 if lost > 0.4 else 28, 0)
+            elif lost < -0.005:
+                self._pop(side, f"+{max(1, round(-lost * 100))}%", (130, 255, 150), 26, 0)
             if kind == "hit":
                 self.shake[side] = 0.4
                 self.flash[side] = 0.3
+                if a[3] > 1:
+                    self._pop(side, "SUPER EFFECTIVE!", (120, 255, 140), 26, 44)
+                    self.quake = max(self.quake, 0.25)
+                elif a[3] == 0:
+                    self._pop(side, "NO EFFECT", (190, 190, 200), 24, 44)
+                elif a[3] < 1:
+                    self._pop(side, "not very effective", (190, 190, 200), 20, 44)
+                if lost > 0.5:
+                    self.quake = max(self.quake, 0.3)
         elif kind == "faint":
             self.faint[a[1]] = 0.001
             self.vis[a[1]]["frac"] = 0
@@ -282,6 +306,10 @@ class TurnBattleScene(Scene):
             self.vis[a[1]]["status"] = a[2]
         elif kind == "move":
             self.shake[a[1]] = 0.15
+
+    def _pop(self, side, text, color, size, dy):
+        x, y = (FOE_POS[0], FOE_POS[1] - 150) if side == self.foe else (MY_POS[0], MY_POS[1] - 200)
+        self.pops.append([text, x, y + dy, color, size, 1.1])
 
     # ------------------------------------------------------------------ layout + input
     def _gmax_move_name(self, form_id):
@@ -502,6 +530,14 @@ class TurnBattleScene(Scene):
                 draw_rank_change(surf, self.x.outcome, (W / 2, 466), self.x.outcome_t)
             for b in self.end_btns:
                 b.draw(surf)
+        for text, x, y, col, size, life in self.pops:
+            k = min(1.0, (1.1 - life) / 0.12)
+            gfx.text(surf, text, (x, y), size, col, INK, 3, alpha=int(255 * min(1.0, life / 0.3)))
+            if k < 1:   # pop in big
+                gfx.text(surf, text, (x, y), int(size * (1.5 - 0.5 * k)), col, INK, 3, alpha=int(120 * (1 - k)))
+        if self.quake > 0 and self.finisher is None:
+            amt = int(14 * self.quake / 0.35)
+            surf.scroll(int(math.sin(self.t * 90) * amt), int(math.cos(self.t * 77) * amt * 0.6))
         self.x.draw(surf, lambda i: (200, 640) if i == self.me else (520, 300))
         if self.finisher is not None:
             self.finisher.draw(surf)
