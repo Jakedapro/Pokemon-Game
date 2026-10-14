@@ -591,7 +591,7 @@ class OverworldScene(Scene):
                      lambda: self._battle(team, "gym", trainer), speaker=leader)
         elif k == "champion":
             if len(g["badges"]) < len(A.GYMS):
-                self.say(["Come back when you have all eight badges."], speaker=CHAMP_NAME)
+                self.say(["Come back when you have all 18 badges."], speaker=CHAMP_NAME)
                 return
             name, lvl, intro, lose = A.CHAMPION
             trainer = {"name": f"Champion {name}", "leader": name, "id": "champion", "lose": lose,

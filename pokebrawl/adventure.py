@@ -1,5 +1,5 @@
 """Adventure mode: the rules and the world. Your party (levels, XP, moves, evolution), the bag, money, badges,
-the save file, and the Brawl region - 9 towns joined by routes, 8 gyms, Victory Road and the Pokemon League.
+the save file, and the Brawl region - 20 towns joined by routes, 18 gyms, Victory Road and the Pokemon League.
 
 Everything here is plain data + logic (no drawing), so it can be tested headless. The screens live in
 overworld.py and adventure_ui.py.
