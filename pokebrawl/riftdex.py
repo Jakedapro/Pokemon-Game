@@ -30,6 +30,15 @@ CUSTOM_MEGAS = [
      ((330, 30, 50, 1.0, 1.15), (190, 260, 300, 1.0, 1.0)), (255, 240, 160)),
 ]
 CUSTOM_BASE_ID = 30001
+# Our own Megas only turn on once an artist has drawn them: drop a front sprite named after the base Pokemon
+# (e.g. flygon.png, transparent background, 64x64 or 80x80) into pokebrawl/art/megas/ and it's in the game.
+import os as _os
+ART_DIR = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "art", "megas")
+
+
+def art_path(base_key):
+    p = _os.path.join(ART_DIR, f"{base_key}.png")
+    return p if _os.path.exists(p) else None
 _custom = {}        # form id -> (base id, rules, outline colour)
 
 # ---------------------------------------------------------------------- the Rift-Born move
@@ -57,7 +66,7 @@ CORRUPT_MULT = 2.0     # a corrupted Mega Stone doubles every stat, at a price
 
 
 def install(dex):
-    """Adds our Megas and the Rift Breaker move to a loaded dex (once)."""
+    """Adds the Rift Breaker move, and any of our Megas an artist has drawn, to a loaded dex (once)."""
     if getattr(dex, "_rift_installed", False):
         return
     dex._rift_installed = True
@@ -66,7 +75,7 @@ def install(dex):
         dex.move_by_key[RIFT_MOVE["key"]] = RIFT_MOVE
     for k, (base_key, types, delta, ability, rules, glow) in enumerate(CUSTOM_MEGAS):
         base = dex.get(base_key)
-        if base is None:
+        if base is None or not art_path(base_key):   # not drawn yet: not in the game yet
             continue
         fid = CUSTOM_BASE_ID + k
         key = f"{base['key']}-mega"
@@ -127,64 +136,18 @@ def sprite_for(pid, base_img):
     return final
 
 
-PLAT_URL = "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/versions/generation-iv/platinum/"
-_plat_wait = set()
-
-
-def _platinum(bid, shiny):
-    """A Pokemon's Platinum front sprite (80x80), downloaded once in the background. None until it's there."""
-    import os
-    import threading
+def artist_sprite(pid):
+    """The artist's front sprite for one of our Megas, at 2x (None if missing or unreadable)."""
     import pygame
-    from . import frlg
-    path = os.path.join(frlg.DIR, "mons", f"plat_{'shiny_' if shiny else ''}{bid}.png")
-    if os.path.exists(path):
-        try:
-            return pygame.image.load(path)
-        except Exception:
-            return None
-    key = (bid, shiny)
-    if key not in _plat_wait:
-        _plat_wait.add(key)
-
-        def get():
-            try:
-                from .pokedex import fetch as download
-                os.makedirs(os.path.dirname(path), exist_ok=True)
-                data = download(PLAT_URL + ("shiny/" if shiny else "") + f"{bid}.png", timeout=20)
-                with open(path + ".part", "wb") as f:
-                    f.write(data)
-                os.replace(path + ".part", path)
-            except Exception:
-                pass
-        threading.Thread(target=get, daemon=True).start()
-    return None
-
-
-def drawn(pid, shiny, base_img):
-    """Our hand-drawn Mega front sprite (megaart), at 2x - or None while what it's drawn on is still downloading."""
-    import pygame
-    from . import megaart
-    bid, _, _, key = _custom[pid]
-    if key not in megaart.DESIGNS:
+    path = art_path(_custom[pid][3])
+    if not path:
         return None
-    if megaart.BASES.get(key) == "platinum":
-        body = _platinum(bid, shiny)
-        if body is None:
-            return None
-        body = body.convert_alpha() if pygame.display.get_surface() else body
-    else:
-        w, h = base_img.get_size()
-        body = pygame.transform.scale(base_img, (w // 2, h // 2))
     try:
-        return pygame.transform.scale_by(megaart.draw(key, body), 2)
+        img = pygame.image.load(path)
+        img = img.convert_alpha() if pygame.display.get_surface() else img
+        return pygame.transform.scale_by(img, 2) if img.get_height() <= 96 else img
     except Exception:
         return None
-
-
-def is_platinum(pid):
-    from . import megaart
-    return pid in _custom and megaart.BASES.get(_custom[pid][3]) == "platinum"
 
 
 def base_of(pid):

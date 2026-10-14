@@ -61,7 +61,7 @@ class AdventureTitle(GBAScene):
         opts = ([("continue", "CONTINUE")] if self.save else []) + [("new", "NEW GAME"), ("back", "BACK")]
         self.menu = U.Menu(opts)
         from . import fieldmap, frlg
-        frlg.start(fieldmap.warm)   # FireRed graphics download in the background the first time
+        frlg.start(fieldmap.warm)   # the graphics download in the background the first time
 
     def update(self, dt):
         self.t += dt
@@ -130,7 +130,7 @@ class AdventureTitle(GBAScene):
             box = U.box(surf, (40, 214, VW - 80, 92))
             if state == "loading":
                 done, total = frlg.PROGRESS
-                F.draw(surf, "Downloading the FireRed graphics" + "." * (int(t * 3) % 4), (box.x + 8, box.y + 4),
+                F.draw(surf, "Loading graphics" + "." * (int(t * 3) % 4), (box.x + 8, box.y + 4),
                        U.TEXT, U.SHADOW)
                 bar = pygame.Rect(box.x + 8, box.y + 36, box.w - 16, 12)
                 pygame.draw.rect(surf, (64, 72, 88), bar, border_radius=4)

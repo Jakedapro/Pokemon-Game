@@ -251,7 +251,7 @@ class OverworldScene(Scene):
             k = self.world.areas[area_index].get("town", 1) - 1
             town, leader, typ, ace, *_ = A.GYMS[k]
             rng = random.Random(900 + k)
-            for j, (sx, sy, face, gfx) in enumerate(trainer_spots):
+            for j, (sx, sy, face, gfx) in enumerate(trainer_spots[:2]):   # two gym trainers, then the leader
                 team = self.world.team_for([typ], ace - 7 + j, 1 + (k > 2) + (k > 5), rng)
                 out.append({"id": f"gym{k}-x{j}", "kind": "trainer", "x": sx, "y": sy, "face": face,
                             "name": f"Gym Trainer {rng.choice(A.TRAINER_NAMES)}", "cls": "Ace Trainer", "look": gfx,
@@ -785,13 +785,9 @@ class OverworldScene(Scene):
                                        f"Pokemon, enters the arena!"]),
                       ("say", name, [intro]), ("battle", f"e4_{k}"), ("say", name, [lose])]
         steps += [("say", "Host", ["The Elite Four has fallen! The crowd is on its feet!",
-                                   f"Ladies and gentlemen... the GRAND FINAL! The {S.CHAMP[1].upper()},",
-                                   f"{S.CHAMP[0].upper()}!"]),
-                  ("say", S.CHAMP[0], ["So you're the one everyone's talking about.",
-                                       "I've held this title for ten years. Show me everything you have!"]),
-                  ("battle", "final"),
-                  ("say", "Host", [f"IT'S OVER! {self.game['name'].upper()} IS THE NEW WORLD CHAMPION!",
+                                   f"IT'S OVER! {self.game['name'].upper()} IS THE NEW WORLD CHAMPION!",
                                    "The best Pokemon trainer in the world!"]),
+                  ("say", S.CHAMP[0], ["Ten years I held that title. You've earned it - wear it well, Champion."]),
                   ("crowned",)]
         return steps
 

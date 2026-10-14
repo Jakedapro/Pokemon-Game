@@ -164,9 +164,10 @@ back to its own drawn art.
 - **Corrupted Mega Stones:** some buried stones are corrupted. They double every stat after Mega Evolving, but
   the Pokemon loses HP every turn and can be poisoned, burned or paralysed by the corruption. Pick clean or
   corrupted per stone in the BAG's Mega Stone case.
-- **New Mega Evolutions:** ten Megas the official games never made, only found by digging: Mega Flygon,
-  Luxray, Arcanine, Milotic, Typhlosion, Snorlax, Lapras, Ninetales, Machamp and Togekiss, each with new types,
-  stats and abilities. Their sprites are recolours of the originals in Mega colours with an energy outline.
+- **New Mega Evolutions (coming):** ten Megas the official games never made - Flygon, Luxray, Arcanine,
+  Milotic, Typhlosion, Snorlax, Lapras, Ninetales, Machamp and Togekiss. Their stats are ready; each one switches
+  on as soon as its sprite is dropped into `pokebrawl/art/megas/` (see the README there). Until then, digging
+  turns up corrupted Mega Stones.
 - **No more one-Mega rule:** every Pokemon holding its stone can Mega Evolve in the same battle, and from the
   fourth Gym on, leaders bring two Megas.
 - **Real interiors:** Pokemon Centers, Marts, houses and Prof. Hazel's lab are FireRed's own rooms, with their
@@ -202,7 +203,7 @@ back to its own drawn art.
   more. **QUESTS** in the START menu shows your next story goal and every quest.
 - **Secrets:** a few hidden things to find (there's a counter in the quest log). Hidden items too: check the ground.
 - **The World Tournament:** with all 18 badges, enter the League and face the Elite Four back to back with no
-  healing, then World Champion Aurelia in the Grand Final. Win to become the best trainer in the world.
+  healing. Beat all four to become World Champion - the best trainer in the world.
 - **Trainers** spot you and walk over. **Gym leaders** give badges, and the road north stays closed until you
   have a town's badge.
 - **START menu:** Pokedex, party, quests (summary pages, switching order), bag, trainer card with badges, save.

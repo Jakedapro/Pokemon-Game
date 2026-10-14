@@ -4,7 +4,7 @@ The plot: Professor Hazel gives you your first Pokemon. Your rival Blake picks t
 is stealing Mega Stones across the Brawl region to power their machine and rig the Pokemon World Tournament.
 Hazel gives you a Key Stone so your Pokemon can Mega Evolve - collect the stones (gym leaders, hidden spots,
 side quests, stones won back from Team Rocket), stop Team Rocket's boss Giovanni on Victory Road, then win the World
-Tournament: the Elite Four back to back and the Grand Final against the World Champion.
+Tournament: the Elite Four back to back - beat all four to become World Champion.
 
 Everything here is data: NPCs with a 'script' (a list of steps run by the overworld), quests and secrets.
 Script steps:
@@ -16,7 +16,7 @@ Script steps:
   ("keystone",)                        the Key Stone (Mega Evolution unlocked)
   ("money", n) / ("heal",)
   ("wild", species, level, shiny)      a one-off wild encounter (the Snorlax, the red Gyarados...)
-  ("tournament",)                      the World Tournament (Elite Four + Grand Final)
+  ("tournament",)                      the World Tournament (the Elite Four back to back)
 """
 import random
 
@@ -513,7 +513,7 @@ def _room_npcs(world, kind, area, door, game):
                     "name": CHAMP[0], "lines": (["You took my title fair and square. Come defend it any time!"]
                                                 if game.get("champion") else
                                                 ["I am Aurelia, the World Champion.",
-                                                 "Beat all four of the Elite Four, and I'll face you myself."])})
+                                                 "Beat all four of the Elite Four, and my title is yours."])})
         if len(game.get("badges", [])) < len(A.GYMS):
             out.append({"id": "host", "kind": "talk", "look": "guard", "x": 7, "y": 10, "face": "up",
                         "name": "Host", "lines": ["Welcome to the POKeMON WORLD TOURNAMENT!",
@@ -524,8 +524,8 @@ def _room_npcs(world, kind, area, door, game):
                     "name": "Host", "script": [
                         ("say", "Host", ["Welcome to the POKeMON WORLD TOURNAMENT!",
                                          "You'll face the four members of the Elite Four, one after another.",
-                                         "No breaks, no healing between rounds. Win them all to reach the GRAND FINAL",
-                                         "against the World Champion. Ready? Then let the tournament begin!"]),
+                                         "No breaks, no healing between rounds. Win all four and you're the WORLD",
+                                         "CHAMPION. Ready? Then let the tournament begin!"]),
                         ("tournament",)]})
     return out
 

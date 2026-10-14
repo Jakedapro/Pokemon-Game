@@ -746,7 +746,7 @@ class World:
         lo, hi = area["levels"]
         npcs = []
         h = len(rows)
-        ys = sorted(rng.sample(range(6, h - 6), min(h - 12, 5 + r // 2)))
+        ys = sorted(rng.sample(range(6, h - 6), min(h - 12, 2 + r // 6)))
         last = -9
         for y in ys:
             if y - last < 4:
