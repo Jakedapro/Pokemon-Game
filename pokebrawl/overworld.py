@@ -411,6 +411,8 @@ class OverworldScene(Scene):
             return
         if self.menu is not None:
             return
+        if self._look_around(dt):
+            return
         if self.move is not None:
             fx, fy, tx, ty, p = self.move
             keys = pygame.key.get_pressed()
@@ -932,18 +934,39 @@ class OverworldScene(Scene):
                     self.emote = ["!", n, 0.8, lambda n=n: self._talk(n)]
                     return True
                 continue
-            if n["kind"] != "trainer" or n["id"] in self.game["beaten"]:
+            if self._sees(n):
+                return True
+        return False
+
+    def _sees(self, n):
+        """An unbeaten trainer who can see you down their line of sight walks over to battle."""
+        if n["kind"] != "trainer" or n["id"] in self.game["beaten"]:
+            return False
+        x, y = self.game["x"], self.game["y"]
+        dx, dy = DIRS[n["face"]]
+        for k in range(1, n.get("sight", 4) + 1):
+            tx, ty = n["x"] + dx * k, n["y"] + dy * k
+            if (tx, ty) == (x, y):
+                AUDIO.play("select")
+                AUDIO.music("battle")
+                self.emote = ["!", n, 0.8, lambda n=n: self._approach(n)]
+                return True
+            if not self.walkable(tx, ty):
+                return False
+        return False
+
+    def _look_around(self, dt):
+        """Trainers don't just stare one way: every few seconds they turn to look for someone to battle."""
+        for n in self.npcs:
+            if n["kind"] != "trainer" or n["id"] in self.game["beaten"] or n.get("still"):
                 continue
-            dx, dy = DIRS[n["face"]]
-            for k in range(1, n.get("sight", 4) + 1):
-                tx, ty = n["x"] + dx * k, n["y"] + dy * k
-                if (tx, ty) == (x, y):
-                    AUDIO.play("select")
-                    AUDIO.music("battle")
-                    self.emote = ["!", n, 0.8, lambda n=n: self._approach(n)]
-                    return True
-                if not self.walkable(tx, ty) and (tx, ty) != (x, y):
-                    break
+            n["_look"] = n.get("_look", self.rng.uniform(0.5, 3.0)) - dt
+            if n["_look"] > 0:
+                continue
+            n["_look"] = self.rng.uniform(1.2, 3.5)
+            n["face"] = self.rng.choice([d for d in DIRS if d != n["face"]])
+            if self.move is None and self._sees(n):
+                return True
         return False
 
     def _approach(self, n):
