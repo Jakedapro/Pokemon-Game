@@ -341,6 +341,46 @@ def scar(c, a, b):
             c.body.set_at((x, y), (240, 208, 192, 255))
 
 
+def rim(c, col, k=0.55):
+    """A coloured rim light along the sprite's own top-left edges - the energy of a Mega Evolution."""
+    w, h = c.body.get_size()
+    hits = []
+    for y in range(h):
+        for x in range(w):
+            if not c.opaque(x, y):
+                continue
+            p = c.body.get_at((x, y))
+            if p.r + p.g + p.b < 90:   # leave the outline alone
+                continue
+            for dx, dy in ((-1, 0), (0, -1), (-1, -1)):   # only the outer silhouette, not inner lines
+                if not c.opaque(x + 2 * dx, y + 2 * dy) or not c.opaque(x + dx, y + dy):
+                    hits.append((x, y, p))
+                    break
+    for x, y, p in hits:
+        c.body.set_at((x, y), (round(p.r + (col[0] - p.r) * k), round(p.g + (col[1] - p.g) * k),
+                               round(p.b + (col[2] - p.b) * k), 255))
+
+
+def glow_line(c, pts, core, edge, test=None):
+    """A glowing line cut into the body (cracks, markings): hot core, darker edge around it."""
+    path = []
+    for a, b in zip(pts, pts[1:]):
+        n = max(abs(b[0] - a[0]), abs(b[1] - a[1]), 1)
+        for i in range(n + 1):
+            path.append((round(a[0] + (b[0] - a[0]) * i / n), round(a[1] + (b[1] - a[1]) * i / n)))
+    on = set(path)
+    for x, y in path:
+        for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            q = (x + dx, y + dy)
+            if q not in on and c.opaque(*q):
+                col = c.body.get_at(q)
+                if col.r + col.g + col.b > 90 and (test is None or test(col)):
+                    c.body.set_at(q, (*edge, 255))
+    for x, y in path:
+        if c.opaque(x, y):
+            c.body.set_at((x, y), (*core, 255))
+
+
 def _bright(r, g, b):
     return r + g + b > 600
 
@@ -450,8 +490,9 @@ def snorlax(c):
     for rect in ((0, 30, 10, 8), (12, 43, 10, 8), (36, 40, 12, 8)):
         c.stretch(rect, 1.2, 1.3, "center", claws)
     glow_eye(c, [(44, 13), (45, 13), (53, 11), (54, 11)], (255, 64, 32), (255, 160, 64))
-    scar(c, (17, 15), (25, 21))
-    scar(c, (21, 13), (27, 18))
+    for crack in ([(16, 19), (20, 22), (18, 26)], [(31, 15), (34, 20), (31, 25), (35, 29)]):   # magma glowing through cracks in its stone belly
+        glow_line(c, crack, (255, 200, 72), (176, 64, 40))
+    rim(c, (255, 96, 48))
 
 
 def lapras(c):
@@ -469,6 +510,10 @@ def lapras(c):
     c.stretch((21, 2, 7, 8), 1.0, 1.8, "bottom")               # the horn becomes a spear
     c.stretch((13, 8, 7, 8), 1.8, 1.0, "right")                # the head fins sweep back
     glow_eye(c, [(24, 10), (23, 11), (24, 11), (25, 11), (25, 12), (26, 12)], (96, 255, 255), (64, 160, 220))
+    dark = lambda col: col.b > col.r   # only on the blue hide, not the belly
+    glow_line(c, [(30, 14), (31, 22), (30, 30), (31, 38)], (128, 255, 255), (32, 120, 200), dark)   # runes down the neck
+    glow_line(c, [(43, 50), (49, 52), (55, 50)], (128, 255, 255), (32, 120, 200), dark)
+    rim(c, (120, 240, 255))
 
 
 def ninetales(c):
@@ -497,7 +542,10 @@ def machamp(c):
                    [(7, 31), (27, 31), (27, 48), (7, 48)], [(38, 31), (59, 31), (59, 48), (38, 48)]):
         c.material(region, STEEL)
     glow_eye(c, [(22, 17), (30, 17), (22, 16), (30, 16)], (255, 240, 96), (255, 128, 48))
-    scar(c, (27, 30), (37, 37))
+    for x, y in ((7, 6), (11, 5), (52, 5), (56, 6), (15, 37), (19, 37), (45, 37), (49, 37)):   # red-hot knuckles
+        if c.opaque(x, y):
+            c.body.set_at((x, y), (255, 200, 80, 255))
+    rim(c, (255, 96, 72), 0.5)
 
 
 def togekiss(c):
@@ -510,6 +558,7 @@ def togekiss(c):
     c.clone((0, 31, 22, 16), (20, 28), scale=1.2, angle=-18)
     c.clone((42, 31, 22, 14), (44, 28), scale=1.2, angle=18)
     c.stretch((15, 29, 10, 7), 1.0, 2.0, "bottom")               # crest -> crown
+    rim(c, (255, 208, 80), 0.7)
 
 
 DESIGNS = {"flygon": flygon, "luxray": luxray, "arcanine": arcanine, "milotic": milotic, "typhlosion": typhlosion,
