@@ -311,7 +311,9 @@ class NewGame(GBAScene):
         self._talk("mon", ["This world is inhabited far and wide by creatures called POKeMON.",
                            "People live alongside them - some as friends, some as partners in battle.",
                            "But lately, something strange has been happening...",
-                           "Pokemon all over the region have begun to MEGA EVOLVE. That's what I study."], self._part3)
+                           "Tears of purple light are opening across the region, and the Pokemon",
+                           "caught in them MEGA EVOLVE and go wild. I've seen a light like that once before...",
+                           "...Never mind. That's a story for another day."], self._part3)
 
     def _part3(self):
         self._talk("player", ["Now, tell me a little about yourself.", "Let's begin with your name. What is it?"],
