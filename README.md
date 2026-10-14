@@ -52,6 +52,17 @@ The Windows installer:
 - installs `ffmpeg` with `winget` for video recording
 - downloads the Pokedex and sprites once (about 20 MB)
 
+### From a zip (no GitHub needed)
+
+Got a `PokeBrawl.zip` from a friend? Unzip it first (don't run it from inside the zip), then:
+
+- **Mac:** double-click `Install on Mac.command` (if macOS blocks it: right-click > Open > Open), or run
+  `bash ~/Downloads/PokeBrawl/install.sh` in Terminal
+- **Windows:** double-click `Install on Windows.bat` (if SmartScreen pops up: More info > Run anyway)
+
+It installs (or updates) the game from that folder. Your save and progress are kept. To update later, get a newer zip
+and do the same again.
+
 ### Updating
 
 The game **updates itself**: it downloads new versions in the background while you're in the menu and installs

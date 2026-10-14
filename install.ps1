@@ -4,6 +4,9 @@
 #
 # Installs into %USERPROFILE%\.pokebrawl with its own private Python (nothing else on your PC is touched), adds a
 # `pokebrawl` command and PokeBrawl shortcuts on the Desktop and in the Start menu. Re-running it updates the game.
+#
+# Offline copy (e.g. a PokeBrawl zip from a friend): unzip it and double-click "Install on Windows.bat"
+# - the game is installed from that folder instead of being downloaded.
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"   # Invoke-WebRequest is very slow with its progress bar on
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
@@ -18,6 +21,10 @@ $Venv = Join-Path $Root "venv"
 $VPy = Join-Path $Venv "Scripts\python.exe"
 $VPyW = Join-Path $Venv "Scripts\pythonw.exe"
 $Bin = Join-Path $Root "bin"
+# run from an unzipped copy of the game? then install that copy instead of downloading it
+$Local = $env:POKEBRAWL_LOCAL
+if (-not $Local -and $PSScriptRoot -and (Test-Path (Join-Path $PSScriptRoot "pokebrawl\__main__.py"))) { $Local = $PSScriptRoot }
+if ($Local -and (Test-Path $App) -and ((Resolve-Path $Local).Path -eq (Resolve-Path $App).Path)) { $Local = $null }
 
 function Say($m) { Write-Host "==> " -ForegroundColor Red -NoNewline; Write-Host $m -ForegroundColor White }
 function Warn($m) { Write-Host "!! $m" -ForegroundColor Yellow }
@@ -61,10 +68,17 @@ Say "Using $(& $Py --version)"
 $old = "none"
 if (Test-Path (Join-Path $App "VERSION")) { $old = ((Get-Content (Join-Path $App "VERSION") -Raw) -split "\s+")[0] -replace '^(.{7}).*', '$1' }
 if (Test-Path $App) { Say "Updating PokeBrawl..." } else { Say "Downloading PokeBrawl..." }
-$zip = Join-Path $Tmp "game.zip"
-try { Get-Url "https://github.com/$OwnerRepo/archive/$Branch.zip" $zip } catch { Die "Couldn't download the game (check your internet)." }
 $x = Join-Path $Tmp "game"
-Expand-Archive -Path $zip -DestinationPath $x -Force
+if ($Local) {
+    Say "Using the copy in $Local"
+    New-Item -ItemType Directory -Force -Path $x | Out-Null
+    Copy-Item -Recurse -Force $Local (Join-Path $x "PokeBrawl")
+    Remove-Item -Recurse -Force (Join-Path $x "PokeBrawl\.git") -ErrorAction SilentlyContinue
+} else {
+    $zip = Join-Path $Tmp "game.zip"
+    try { Get-Url "https://github.com/$OwnerRepo/archive/$Branch.zip" $zip } catch { Die "Couldn't download the game (check your internet, or install from a PokeBrawl zip)." }
+    Expand-Archive -Path $zip -DestinationPath $x -Force
+}
 $top = Get-ChildItem $x -Directory | Select-Object -First 1
 if (-not $top -or -not (Test-Path (Join-Path $top.FullName "pokebrawl\__main__.py"))) { Die "The game download looks wrong." }
 # keep showcase files you made yourself
@@ -79,7 +93,10 @@ Remove-Item -Recurse -Force $App -ErrorAction SilentlyContinue
 if (Test-Path $App) { Die "Close PokeBrawl first, then run this again." }
 Move-Item $top.FullName $App
 $sha = "unknown"
-try { $sha = (Invoke-RestMethod -UseBasicParsing -ErrorAction Stop "https://api.github.com/repos/$OwnerRepo/commits/$Branch").sha } catch { }
+$verFile = Join-Path $App "VERSION"
+if ($Local -and (Test-Path $verFile)) { $sha = ((Get-Content $verFile -Raw) -split "\s+")[0] }
+elseif ($Local) { $sha = "local" }
+else { try { $sha = (Invoke-RestMethod -UseBasicParsing -ErrorAction Stop "https://api.github.com/repos/$OwnerRepo/commits/$Branch").sha } catch { } }
 Set-Content -Path (Join-Path $App "VERSION") -Value "$sha $(Get-Date -Format 'MMM dd')" -Encoding ascii
 $new = $sha -replace '^(.{7}).*', '$1'
 if ($old -eq "none") { } elseif ($old -eq $new) { Say "Already up to date ($new)" } else { Say "Updated $old -> $new" }

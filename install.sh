@@ -5,6 +5,9 @@
 #
 # Installs into ~/.pokebrawl, adds a `pokebrawl` command and a PokeBrawl app in ~/Applications.
 # Re-running it updates the game.
+#
+# Offline copy (e.g. a PokeBrawl zip from a friend): unzip it and run   bash ~/Downloads/PokeBrawl/install.sh
+# - the game is installed from that folder instead of being downloaded.
 set -euo pipefail
 
 REPO="${POKEBRAWL_REPO:-https://github.com/jamalmusialla81-hub/Pokemon-Game.git}"
@@ -56,6 +59,13 @@ if [ -z "${POKEBRAWL_NO_GIT:-}" ] && usable git; then GIT="$(command -v git)"; f
 
 OWNER_REPO="$(printf '%s' "$REPO" | sed -E 's#^https://github.com/##; s#\.git$##')"
 STANDALONE="$ROOT/python/bin/python3"
+
+# run from an unzipped copy of the game? then install that copy instead of downloading it
+LOCAL="${POKEBRAWL_LOCAL:-}"
+if [ -z "$LOCAL" ] && [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "$(dirname "${BASH_SOURCE[0]}")/pokebrawl/__main__.py" ]; then
+  LOCAL="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+fi
+if [ -n "$LOCAL" ] && [ "$LOCAL" = "$(cd "$APP" 2>/dev/null && pwd)" ]; then LOCAL=""; fi
 
 download_python() {
   local arch os_tag url
@@ -111,6 +121,15 @@ fetch_archive() {  # download the code without git
         | grep -m1 '"sha"' | sed -E 's/.*"sha": *"([0-9a-f]+)".*/\1/' || true)}"
   printf '%s %s\n' "${sha:-unknown}" "$(date '+%b %d')" > "$APP/VERSION"
 }
+copy_local() {  # install the unzipped copy the script was run from
+  local tmp="$ROOT/app.download"
+  rm -rf "$tmp"
+  cp -R "$LOCAL" "$tmp" || die "Couldn't copy the game from $LOCAL"
+  rm -rf "$tmp/.git"
+  [ -f "$tmp/VERSION" ] || printf 'local %s\n' "$(date '+%b %d')" > "$tmp/VERSION"
+  rm -rf "$APP"
+  mv "$tmp" "$APP"
+}
 fresh_clone() {
   rm -rf "$APP"
   git clone --depth 1 ${BRANCH:+-b "$BRANCH"} "$REPO" "$APP" \
@@ -118,7 +137,10 @@ fresh_clone() {
 }
 OLD="$(version_of)"
 rm -rf "$APP.new" "$APP.old" "$APP.download"  # leftovers from the in-game auto-updater
-if [ -d "$APP/.git" ] && [ -n "$GIT" ]; then
+if [ -n "$LOCAL" ]; then
+  [ -d "$APP" ] && say "Updating PokeBrawl from $LOCAL..." || say "Installing PokeBrawl from $LOCAL..."
+  copy_local
+elif [ -d "$APP/.git" ] && [ -n "$GIT" ]; then
   say "Updating PokeBrawl..."
   git -C "$APP" remote set-url origin "$REPO"
   if git -C "$APP" fetch --depth 1 origin ${BRANCH:+"$BRANCH"} && git -C "$APP" reset --hard FETCH_HEAD >/dev/null; then
@@ -167,7 +189,12 @@ cat > "$BIN/pokebrawl" <<EOF
 #!/usr/bin/env bash
 export PYTHONPATH="$APP\${PYTHONPATH:+:\$PYTHONPATH}"
 if [ "\${1:-}" = "update" ]; then
-  exec bash -c "curl -fsSL https://raw.githubusercontent.com/jamalmusialla81-hub/Pokemon-Game/HEAD/install.sh | bash"
+  script="\$(curl -fsSL https://raw.githubusercontent.com/jamalmusialla81-hub/Pokemon-Game/HEAD/install.sh)" || {
+    echo "Can't reach the PokeBrawl update server right now. Get the latest PokeBrawl zip, unzip it and run:"
+    echo "  bash ~/Downloads/PokeBrawl/install.sh"
+    exit 1
+  }
+  exec bash -c "\$script"
 fi
 exec "$VENV/bin/python" -m pokebrawl "\$@"
 EOF
