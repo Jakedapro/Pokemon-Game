@@ -256,14 +256,14 @@ NT_TIPS = [((30, 6), (0, -1)), ((42, 9), (0.4, -1)), ((52, 15), (0.8, -0.8)), ((
 NT_BACK_TIPS = [((6, 44), (-1, -0.6)), ((14, 41), (-0.6, -1)), ((24, 40), (-0.2, -1)), ((4, 54), (-1, 0))]
 
 
-def _tip_flames(tips, length=9.0, width=3.6):
+def _tip_flames(tips, length=7.0, width=4.4):
+    """Fox-fire: a fat teardrop of pink flame on each tail tip, curling a little at the point."""
     img = K.Img(64, 64)
     for (x, y), (dx, dy) in tips:
         n = (dx * dx + dy * dy) ** 0.5
         dx, dy = dx / n, dy / n
-        spine = [(x - dx * 2, y - dy * 2), (x + dx * length * 0.4 - dy * 2.2, y + dy * length * 0.4 + dx * 2.2),
-                 (x + dx * length * 0.75 + dy * 0.8, y + dy * length * 0.75 - dx * 0.8),
-                 (x + dx * length - dy * 1.5, y + dy * length + dx * 1.5)]
+        spine = [(x - dx * 2.5, y - dy * 2.5), (x + dx * length * 0.45, y + dy * length * 0.45),
+                 (x + dx * length - dy * 1.6, y + dy * length + dx * 1.6)]
         K.flame(img, spine, width, FAIRYFIRE, FF_OUT)
     return img
 
@@ -274,10 +274,10 @@ def ninetales(L):
     recol = lambda c: NT_FUR.get(c, c)
     out = L("ninetales")
     out.map_colors(recol)
-    out.paste(_tip_flames(NT_TIPS), 0, 0, under=True)
+    out.paste(_tip_flames(NT_TIPS, 6.0, 3.6), 0, 0)
     back = L("ninetales", back=True)
     back.map_colors(recol)
-    back.paste(_tip_flames(NT_BACK_TIPS, 10, 4.0), 0, 0, under=True)
+    back.paste(_tip_flames(NT_BACK_TIPS, 7.0, 4.2), 0, 0)
     return out, back
 
 
@@ -517,7 +517,7 @@ def build(base_key):
     return True
 
 
-VERSION = "2"   # bump when a recipe changes so players' cached sprites get rebuilt
+VERSION = "3"   # bump when a recipe changes so players' cached sprites get rebuilt
 _busy = set()
 
 
