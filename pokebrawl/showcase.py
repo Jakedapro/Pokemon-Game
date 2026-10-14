@@ -76,6 +76,9 @@ def load_config(path_or_dict):
 
 
 def build_teams(dex, cfg, rng, arena=ARENA):
+    if cfg.get("new_megas"):   # PokeBrawl's own Mega Evolutions join in
+        from .riftdex import install
+        install(dex)
     teams, names = [], []
     bosses = cfg.get("bosses", "legendary")
     boss_names = {dex.get(b)["id"] for b in bosses if dex.get(b)} if isinstance(bosses, list) else set()

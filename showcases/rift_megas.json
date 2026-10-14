@@ -1,0 +1,6 @@
+{"title": "NEW MEGAS!", "subtitle": "NEW vs CLASSIC MEGAS",
+ "teams": [
+   {"name": "Rift Megas", "pokemon": ["snorlax", "lapras", "machamp", "arcanine", "typhlosion", "luxray", "ninetales", "milotic", "flygon", "togekiss"]},
+   {"name": "Classic Megas", "pokemon": ["charizard", "blastoise", "gengar", "gyarados", "tyranitar", "lucario", "garchomp", "gardevoir", "salamence", "metagross"]}
+ ],
+ "bosses": "none", "events": "none", "megas": true, "new_megas": true, "hp_mult": 10}
