@@ -284,6 +284,23 @@ def battle_team(world, game, key):
         ace["mega"] = dex.get("rayquaza")["megas"][0] if dex.get("rayquaza")["megas"] else None
         return team[:5] + [ace], {"name": f"{CHAMP[1]} {CHAMP[0]}", "look": "champ", "money": 30000,
                                   "ai": "insane", "lose": "I've waited years for someone like you. Well done."}
+    if key == "tower":   # the Battle Tower: tougher with every win, a Tycoon every 7th battle
+        streak = game.get("tower_streak", 0)
+        lv = min(100, max(m["level"] for m in game["party"]))
+        trng = random.Random(streak * 7919 + len(game.get("name", "")))
+        if streak % 7 == 6:
+            team = world.team_for(None, lv + 2, 6, trng, strong=True)
+            megas = [m for m in team if dex.all[m["species"]].get("megas")]
+            for m in megas[:1 + streak // 14]:
+                m["mega"] = dex.all[m["species"]]["megas"][0]
+            return team, {"name": "Tower Tycoon Rex", "look": "ace", "money": 0, "ai": "insane",
+                          "lose": "...Seven straight. You've earned my respect. Keep climbing."}
+        types = trng.sample(sorted({t for e in dex.all.values() for t in e["types"]}), 2)
+        size = min(6, 3 + streak // 7)
+        team = world.team_for(types, lv, size, trng, strong=streak >= 7)
+        cls = trng.choice(A.TRAINER_CLASSES)
+        return team, {"name": f"{cls} {trng.choice(A.TRAINER_NAMES)}", "look": cls, "money": 0,
+                      "ai": "hard" if streak < 14 else "insane", "lose": "You're on fire! Keep that streak going!"}
     if key == "creator":
         team = []
         for nm in ("mewtwo", "arceus", "rayquaza", "lugia", "giratina", "necrozma"):
@@ -617,6 +634,8 @@ def npcs_for(world, index, game):
             ("give", "master-ball", 2), ("flag", "rift_keeper")])
     if rtown:
         _town_extras(world, area, rtown, game, add, out)
+    if index == len(world.areas) - 1 and game.get("champion"):   # the Battle Tower, for Champions
+        add(id="tower", kind="story", look="ace", x=4, y=14, face="down", name="Tower Clerk", script=[("tower",)])
     if index == len(world.areas) - 1:   # the League town
         add(id="league_guard", kind="talk", look="guard", x=8, y=8, face="down",
             lines=["Beyond here is the POKeMON WORLD TOURNAMENT.", "Only trainers with all 18 badges may enter."])
@@ -1041,7 +1060,7 @@ SECRETS = {"chatterbox": "The Chatterbox", "red_gyarados": "The Red Gyarados", "
            "pikachu": "The Mouse Behind the Fence", "magikarp_deal": "The Magikarp Deal",
            "legend_name": "A Familiar Name", "ghost_girl": "The Girl in Duskmoor", "celebi": "Out of Time",
            "jirachi": "A Wish Upon a Rift", "darkrai": "The Nightmare", "rift_keeper": "Rift Keeper",
-           "elias_beaten": "Like Father, Like Son", "true_ending": "The World Worth Keeping"}
+           "elias_beaten": "Like Father, Like Son", "tower_legend": "Tower Legend", "true_ending": "The World Worth Keeping"}
 
 
 def rifts_sealed(game):

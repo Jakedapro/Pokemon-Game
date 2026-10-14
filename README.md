@@ -237,7 +237,10 @@ back to its own drawn art.
 - **Side quests (15):** a lost lucky charm, a letter to deliver, a lost Psyduck, Pokedex goals, a route clean
   sweep, a Bug Maniac, a Rift Watcher, raising a Lv 50 Pokemon, showing off a shiny, a 100-kind Pokedex, hunting
   a brand-new Mega Stone, and an old miner who can purify a corrupted stone. **QUESTS** in the START menu shows your next story goal and every quest.
-- **Secrets (19):** legendary encounters after the credits, a Magikarp salesman, a girl in Duskmoor who isn't
+- **Battle Tower (post-game):** in the League town once you're Champion. Your team is healed before every
+  battle, the trainers get tougher as your streak grows, every 7th battle is the Tower Tycoon with Megas, and
+  streaks of 7, 14, 21, 35 and 50 win prizes (Rare Candies, Ultra Balls, Master Balls). A loss only ends the streak.
+- **Secrets (20):** legendary encounters after the credits, a Magikarp salesman, a girl in Duskmoor who isn't
   quite there, something for trainers with a famous name, and more (there's a counter in the quest log). Every
   town has people with something to say. Hidden items too: check the ground.
 - **The World Tournament:** with all 18 badges, enter the League and face the Elite Four back to back with no

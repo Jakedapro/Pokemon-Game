@@ -733,6 +733,8 @@ class OverworldScene(Scene):
             foe["species"] = e["id"]
             self._battle([foe], "wild", {"rift": True, "ai": "insane", "name": e["name"], "anomaly": anomaly,
                                          "turns": 99, "boss": True}, then=self._step)
+        elif op == "tower":
+            self._tower()
         elif op == "pay":
             if g["money"] < st[1]:
                 self.script = None
@@ -807,6 +809,49 @@ class OverworldScene(Scene):
             self._step()
         else:
             self._step()
+
+    TOWER_PRIZES = {7: [("rare-candy", 3)], 14: [("ultra-ball", 10), ("rare-candy", 5)], 21: [("master-ball", 1)],
+                    35: [("rare-candy", 10)], 50: [("master-ball", 3)]}
+
+    def _tower(self):
+        """One Battle Tower battle: your team is healed, the opponent scales with your streak, a loss only ends
+        the streak."""
+        g = self.game
+        streak = g.get("tower_streak", 0)
+        self._heal_all()
+        team, trainer = S.battle_team(self.world, g, "tower")
+        trainer = dict(trainer, id=None, practice=True)
+        boss = streak % 7 == 6
+
+        def after():
+            r = getattr(self, "last_battle", None) or {}
+            self._heal_all()
+            lines = []
+            if r.get("won"):
+                n = g["tower_streak"] = streak + 1
+                g["tower_best"] = max(g.get("tower_best", 0), n)
+                prize = 500 * (1 + n // 7)
+                g["money"] += prize
+                lines += [f"Win number {n}! You earned {prize} coins."]
+                for item, k in self.TOWER_PRIZES.get(n, []):
+                    g["bag"][item] = g["bag"].get(item, 0) + k
+                    name = A.SHOP.get(item, (item,))[0]
+                    lines.append(f"A {n}-win streak! Here's {k} x {name.upper()}!")
+                if n >= 50:
+                    S.set_flag(g, "tower_legend")
+                lines.append("Talk to me again for your next battle!" if (n + 1) % 7 else
+                             "Next up... the TOWER TYCOON. Talk to me when you're ready.")
+            else:
+                lines += [f"Your streak ended at {streak} win{'s' if streak != 1 else ''}.",
+                          f"Your best is {g.get('tower_best', 0)}. Come back any time!"]
+                g["tower_streak"] = 0
+            A.save(g)
+            self.say(lines, self._step, speaker="Tower Clerk")
+        intro = ([f"Welcome to the BATTLE TOWER! Your streak: {streak}. Best: {g.get('tower_best', 0)}.",
+                  "Your team will be healed before every battle. Lose, and the streak is over."] +
+                 (["This is battle 7... the TOWER TYCOON is waiting for you!"] if boss else
+                  [f"Battle {streak + 1}: {trainer['name']} is ready!"]))
+        self.say(intro, lambda: self._battle(team, "trainer", trainer, then=after), speaker="Tower Clerk")
 
     def _tournament_steps(self):
         steps = []
@@ -962,6 +1007,7 @@ class OverworldScene(Scene):
         dex = self.app.dex
         g = self.game
         r = s.results()
+        self.last_battle = r
         then, self.battle_then = getattr(self, "battle_then", None), None
         rt = r.get("trainer") or {}
         if rt.get("echo"):

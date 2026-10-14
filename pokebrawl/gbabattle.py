@@ -333,6 +333,8 @@ class GBABattle(Scene):
         self.queue[0:0] = msgs
 
     def _exp_frac(self, i):
+        if not 0 <= i < len(self.g["party"]):
+            return 0.0
         p = self.g["party"][i]
         lo, hi = A.xp_for(p["level"]), A.xp_for(p["level"] + 1)
         return max(0.0, min(1.0, (p["xp"] - lo) / max(1, hi - lo)))
