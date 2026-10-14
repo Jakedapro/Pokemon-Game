@@ -16,6 +16,7 @@ class Canvas:
 
     def __init__(self, body):
         self.body = body.copy()
+        self.W, self.H = body.get_size()
         self.under = pygame.Surface(body.get_size(), pygame.SRCALPHA)
         self.over = pygame.Surface(body.get_size(), pygame.SRCALPHA)
         self.s_under = pygame.Surface(body.get_size(), pygame.SRCALPHA)   # sculpted parts (own outlines)
@@ -117,13 +118,13 @@ class Canvas:
 
     # -- sculpting: curved, shaded parts that sit in the sprite like they were always there ------------------
     def opaque(self, x, y):
-        return 0 <= x < 64 and 0 <= y < 64 and self.body.get_at((x, y)).a > 0
+        return 0 <= x < self.W and 0 <= y < self.H and self.body.get_at((x, y)).a > 0
 
     def sculpt(self, pix, ramp, layer="over", clip_body=False, alt=None):
         """Shade a set of pixels as a rounded form lit from the top-left, with an outline in its own darkest
         tone. ramp = (outline, shadow, base, light, highlight). alt = (ramp2, test(x, y)) paints some pixels with
         a second ramp (e.g. gold feather tips) using the same light."""
-        pix = {(x, y) for x, y in pix if 0 <= x < 64 and 0 <= y < 64}
+        pix = {(x, y) for x, y in pix if 0 <= x < self.W and 0 <= y < self.H}
         if clip_body:
             pix = {p for p in pix if self.opaque(*p)}
         if not pix:
@@ -156,7 +157,7 @@ class Canvas:
         for x, y in pix:   # the outline, in the part's own darkest tone
             for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
                 q = (x + dx, y + dy)
-                if q in pix or not (0 <= q[0] < 64 and 0 <= q[1] < 64):
+                if q in pix or not (0 <= q[0] < self.W and 0 <= q[1] < self.H):
                     continue
                 if clip_body and not self.opaque(*q):
                     continue
@@ -168,11 +169,11 @@ class Canvas:
     def material(self, region, ramp, test=None):
         """Turn part of the body into another material, keeping its own shading (so muscles stay muscles, bumps
         stay bumps): pixels by brightness onto ramp (darkest = outline)."""
-        mask = pygame.Surface((64, 64), pygame.SRCALPHA)
+        mask = pygame.Surface((self.W, self.H), pygame.SRCALPHA)
         pygame.draw.polygon(mask, (255, 255, 255), region)
         pts = []
-        for y in range(64):
-            for x in range(64):
+        for y in range(self.H):
+            for x in range(self.W):
                 if mask.get_at((x, y)).a and self.opaque(x, y):
                     c = self.body.get_at((x, y))
                     if test is None or test(c.r, c.g, c.b):
@@ -207,11 +208,10 @@ class Canvas:
             out.append(pts[-1])
         return out
 
-    @staticmethod
-    def fill(poly):
-        m = pygame.Surface((64, 64), pygame.SRCALPHA)
+    def fill(self, poly):
+        m = pygame.Surface((self.W, self.H), pygame.SRCALPHA)
         pygame.draw.polygon(m, (255, 255, 255), [(round(x), round(y)) for x, y in poly])
-        return {(x, y) for y in range(64) for x in range(64) if m.get_at((x, y)).a}
+        return {(x, y) for y in range(self.H) for x in range(self.W) if m.get_at((x, y)).a}
 
     def shape(self, pts, ramp, smooth=True, **kw):
         poly = self.spline(pts) if smooth else pts
@@ -253,7 +253,7 @@ class Canvas:
             for x in range(w):
                 col = surf.get_at((x, y))
                 X, Y = pos[0] + x, pos[1] + y
-                if col.a > 128 and 0 <= X < 64 and 0 <= Y < 64:
+                if col.a > 128 and 0 <= X < self.W and 0 <= Y < self.H:
                     dst.set_at((X, Y), (col.r, col.g, col.b, 255))
 
     def stretch(self, rect, sx, sy, anchor="bottom", test=None, layer="body"):
@@ -387,58 +387,43 @@ def _bright(r, g, b):
 
 # ====================================================================== the designs (64x64 front sprites)
 def flygon(c):
-    """Mega Flygon (Ground/Dragon): a desert dragon - crimson sail-wings, a second pair of wings, a horned crest,
-    spines down its neck and a bigger tail fin."""
+    """Mega Flygon (Ground/Dragon): emerald body and crimson sails, a bigger tail fin, and two gold horns
+    sweeping back from its head."""
     c.recolor(((60, 100, 128, 1.1, 0.85), (100, 170, 150, 1.0, 0.75), (330, 30, 352, 1.2, 0.8, 0.3)))
-    wing, wing_hi = (176, 32, 48), (232, 88, 88)
-    # the second, lower pair of wings (behind the body)
-    c.poly([(30, 30), (6, 36), (2, 44), (14, 42), (26, 40)], wing, wing_hi, layer="under")
-    c.poly([(42, 34), (60, 38), (63, 46), (52, 44), (44, 40)], wing, wing_hi, layer="under")
-    # horned crest on the head
-    c.spike((36, 9), (40, 8), (31, 0), (232, 200, 104), (255, 240, 176))
-    c.spike((41, 7), (45, 8), (44, 0), (232, 200, 104), (255, 240, 176))
-    # spines down the neck
-    for y in (15, 20, 25):
-        c.spike((38, y), (38, y + 4), (43, y + 1), wing, wing_hi, layer="under")
-    # the tail fin grows a third blade
-    c.spike((50, 47), (56, 47), (58, 38), wing, wing_hi)
-    # gold eye lenses
-    c.swap(lambda r, g, b: r > 200 and g < 120 and b < 120, (248, 200, 64))
+    c.stretch((46, 42, 18, 18), 1.35, 1.35, "center")              # a bigger tail fin
+    for pts in ([(37, 11), (34, 6), (31, 3)], [(42, 9), (44, 5), (47, 2)]):
+        c.tube(pts, 3, 1, GOLD, layer="under")
+    c.swap(lambda r, g, b: r > 200 and g < 120 and b < 120, (248, 200, 64))   # gold eye lenses
 
 
 def luxray(c):
-    """Mega Luxray (Electric/Dark): a storm-mane of jagged spikes, lightning stripes and a huge star tail."""
+    """Mega Luxray (Electric/Dark): its own spiky mane grows taller and wilder, lightning runs down its body, its
+    blue glows electric cyan, its star tail swells and its eyes burn red."""
     c.recolor(((200, 260, 186, 1.2, 1.2, 0.4),))
-    mane, mane_hi = (48, 40, 72), (88, 76, 120)
-    for a, b, tip in (((10, 12), (16, 10), (4, 2)), ((5, 18), (7, 24), (0, 12)), ((4, 28), (5, 34), (0, 30)),
-                      ((20, 9), (25, 9), (21, 0)), ((27, 11), (31, 13), (34, 3))):
-        c.spike(a, b, tip, mane, mane_hi, layer="under")
-    # lightning bolts down the body
-    bolt = (255, 224, 64)
-    for pts in ([(24, 36), (28, 36), (26, 39), (30, 39), (25, 44), (26, 40), (23, 40)],
-                [(38, 38), (42, 38), (40, 41), (44, 41), (39, 46), (40, 42), (37, 42)]):
-        c.poly(pts, bolt, (255, 248, 176))
-    # the tail star, bigger and crackling
-    cx, cy = 56, 46
-    star = [(cx, cy - 10), (cx + 3, cy - 3), (cx + 9, cy), (cx + 3, cy + 3), (cx, cy + 10), (cx - 3, cy + 3),
-            (cx - 8, cy), (cx - 3, cy - 3)]
-    c.poly(star, (248, 208, 48), (255, 248, 160))
-    c.swap(lambda r, g, b: r > 200 and g > 150 and b < 100, (255, 64, 64))   # red-gold eyes
+    dark = lambda x, y, col: col.r + col.g + col.b < 330
+    c.stretch((4, 7, 32, 14), 1.05, 1.5, "bottom", dark)            # the mane, taller and wilder
+    c.stretch((50, 40, 14, 14), 1.35, 1.35, "center")               # the star tail
+    for pts in ([(24, 36), (27, 39), (24, 41), (28, 45)], [(38, 37), (41, 40), (38, 42), (42, 46)]):
+        glow_line(c, pts, (255, 240, 96), (200, 160, 32))
+    for y in range(16, 36):   # red eyes (only on the head - the star tail stays gold)
+        for x in range(8, 30):
+            if c.opaque(x, y):
+                p = c.body.get_at((x, y))
+                if p.r > 200 and p.g > 150 and p.b < 100:
+                    c.body.set_at((x, y), (255, 64, 64, 255))
+    rim(c, (96, 232, 255), 0.4)
 
 
 def arcanine(c):
-    """Mega Arcanine (Fire/Dragon): dragon horns, a flame-crest mane and dark dragon stripes."""
+    """Mega Arcanine (Fire/Dragon): its own mane grows into a huge blazing crest, its coat deepens to flame-red,
+    and two dark dragon horns curve back from its brow."""
     c.recolor(((0, 25, 352, 1.1, 0.9, 0.3), (25, 40, 18, 1.2, 1.0, 0.35), (40, 60, 44, 0.8, 1.05, 0.2)))
-    # flame crest on the mane
-    for a, b, tip, col in (((14, 8), (20, 6), (12, -1), (248, 96, 48)), ((22, 6), (28, 8), (27, 0), (248, 136, 48)),
-                           ((38, 6), (44, 5), (40, -1), (248, 96, 48)), ((46, 7), (52, 10), (54, 2), (248, 136, 48))):
-        c.spike(a, b, tip, col, (255, 216, 120), layer="under")
-    # dragon horns
-    c.spike((9, 13), (13, 12), (4, 3), (72, 56, 120), (136, 112, 200))
-    c.spike((17, 11), (21, 11), (20, 2), (72, 56, 120), (136, 112, 200))
-    # glowing dragon marks on the legs
-    for x, y in ((12, 50), (36, 52), (52, 50)):
-        c.poly([(x, y), (x + 3, y - 2), (x + 6, y), (x + 3, y + 2)], (152, 120, 232), (200, 184, 255))
+    mane = lambda x, y, col: col.r > 200 and col.g > 160 or col.r + col.g + col.b < 120
+    c.stretch((34, 3, 30, 22), 1.0, 1.3, "bottom", mane)            # the back mane, taller
+    c.stretch((8, 5, 22, 12), 1.0, 1.35, "bottom", mane)            # and over the head
+    for pts in ([(10, 13), (7, 7), (3, 3)], [(18, 11), (19, 5), (22, 1)]):
+        c.tube(pts, 3, 1, HORN, layer="under")
+    rim(c, (255, 160, 64), 0.35)
 
 
 def milotic(c):
@@ -465,18 +450,16 @@ def milotic(c):
 
 
 def typhlosion(c):
-    """Mega Typhlosion (Fire/Ghost): violet spirit-flames, a burning mane down its back and a pale ghostly body."""
-    c.recolor(((0, 60, 282, 1.0, 1.0, 0.45), (190, 250, 268, 0.7, 0.45), (40, 70, 255, 0.3, 0.82, 0.15)))
-    flame, mid, core = (136, 48, 200), (200, 112, 248), (248, 208, 255)
-    # a bigger crown of flame, and flames down the back
-    for a, b, tip in (((40, 6), (44, 10), (58, 2)), ((44, 12), (46, 16), (62, 12)), ((46, 18), (46, 22), (60, 24)),
-                      ((46, 26), (47, 31), (58, 32)), ((48, 34), (49, 40), (58, 42))):
-        c.spike(a, b, tip, flame, mid, layer="under")
-        c.spike(a, b, ((a[0] + tip[0]) // 2 + 2, (a[1] + tip[1]) // 2), core, layer="under")
-    # will-o-wisps floating around it
-    for x, y in ((6, 6), (2, 26), (10, 50)):
-        c.circle((x, y), 3, flame, core)
-    c.swap(lambda r, g, b: r > 200 and 40 < g < 140 and b < 80, (255, 96, 200))   # glowing eyes
+    """Mega Typhlosion (Fire/Ghost): its own flames grow bigger and burn violet like spirit-fire, its back turns
+    black-purple, its body pale and ghostly, and its eyes glow pink."""
+    c.recolor(((190, 250, 268, 0.7, 0.45), (40, 70, 255, 0.28, 0.85, 0.15)))
+    hot = lambda x, y, col: col.r > 180 and col.b < 110 or col.r + col.g + col.b < 120
+    c.stretch((16, 0, 40, 26), 1.15, 1.15, "left", hot)             # bigger flames
+    c.material([(14, 0), (64, 0), (64, 30), (14, 30)],
+               ((48, 8, 72), (112, 40, 176), (168, 88, 232), (216, 160, 255), (255, 232, 255)),
+               lambda r, g, b: r > 180 and b < 110)
+    c.swap(lambda r, g, b: r > 200 and 40 < g < 140 and b < 80, (255, 96, 200))
+    rim(c, (200, 140, 255), 0.4)
 
 
 FUR = ((20, 36, 40), (36, 66, 64), (52, 96, 90), (80, 128, 118), (120, 164, 152))
@@ -507,19 +490,35 @@ def shaggy(c, line, depth, normal, ramp=FUR, teeth=3, layer="over", seed=0):
                 surf.set_at(q, (*ramp[1], 255))
 
 
+PFUR = ((16, 32, 48), (32, 66, 96), (48, 98, 132), (80, 140, 172), (130, 180, 206))
+
+
 def snorlax(c):
-    """Mega Snorlax (Normal/Fighting): a wild, shaggy brawler - a thick fur mane bristling round its neck, a
-    ragged fur fringe along its underside, long white claws, fangs and a fierce scowl."""
-    c.recolor(((140, 200, 182, 1.0, 0.8),))
-    shaggy(c, [(39, 6), (41, 14), (45, 21), (51, 27), (56, 30)], 8, (-0.75, 0.65), seed=1)   # the mane
-    shaggy(c, [(13, 42), (19, 45), (25, 46), (30, 45)], 8, (0.0, 1.0), teeth=3, layer="under", seed=2)   # fringe
+    """Mega Snorlax (Normal/Fighting), drawn on its upright (Platinum) sprite: it stands up - the body grows
+    taller over its feet - with a thick fur mane round its shoulders, a ragged fur fringe hiding its legs, toe
+    claws poking out under it, long hand claws, and a scowl over its fangs."""
+    c.recolor(((180, 235, 205, 1.05, 0.88),))
+    H = c.H
+    # stand up: clear the sitting legs and feet, then stretch the lower body down over where they were
+    for y in range(55, H):
+        for x in range(7, 64):
+            c.body.set_at((x, y), (0, 0, 0, 0))
+    torso = c.grab((12, 46, 53, 9))
+    c.put(pygame.transform.scale(torso, (53, 17)), (12, 46))
+    # claws on its feet, poking out under the fur
+    claw = ((96, 96, 112), (184, 184, 196), (232, 232, 240), (248, 248, 252), (255, 255, 255))
+    for fx in (22, 28, 46, 52):
+        c.shape([(fx, 63), (fx + 5, 63), (fx + 2, 72)], claw, smooth=False)
+    # the ragged fringe hiding its legs, and the mane over its shoulders
+    shaggy(c, [(15, 60), (25, 63), (38, 64), (52, 63), (63, 59)], 6, (0.0, 1.0), ramp=PFUR, teeth=3, seed=2)
+    shaggy(c, [(15, 33), (26, 30), (38, 31), (51, 30), (64, 34)], 5, (0.0, 1.0), ramp=PFUR, teeth=2, seed=1)
+    # long hand claws
     claws = lambda x, y, col: col.r + col.g + col.b > 600
-    for rect in ((0, 30, 10, 8), (12, 43, 10, 8), (36, 40, 12, 8), (58, 36, 6, 6)):
-        c.stretch(rect, 1.2, 1.6, "center", claws)
-    for x0 in (45, 49):   # fangs over the lip
-        c.body.set_at((x0, 15), (255, 255, 255, 255))
-        c.body.set_at((x0, 16), (255, 255, 255, 255))
-        c.body.set_at((x0 + 1, 15), (200, 200, 216, 255))
+    c.stretch((6, 42, 12, 12), 1.1, 1.7, "top", claws)
+    c.stretch((64, 47, 12, 10), 1.1, 1.7, "top", claws)
+    # a scowl: brows pulled down over its closed eyes
+    c.line((30, 20), (35, 22), (16, 32, 48), 1)
+    c.line((49, 20), (44, 22), (16, 32, 48), 1)
 
 
 def lapras(c):
@@ -570,14 +569,19 @@ def machamp(c):
 
 
 def togekiss(c):
-    """Mega Togekiss (Fairy/Flying): the Seraph. A second, bigger pair of its own wings grows out behind the
-    first, raised high, and its markings turn gold and crimson."""
-    c.swap(lambda r, g, b: r > 150 and g < 100 and b < 100, (248, 192, 48))   # red marks -> gold
-    c.swap(lambda r, g, b: b > 180 and r < 120, (176, 40, 72))                # blue marks -> crimson
-    c.clone((0, 31, 22, 16), (13, 23), scale=1.45, angle=-30)     # left wing, grown and raised
-    c.clone((42, 31, 22, 14), (51, 23), scale=1.45, angle=30)     # right wing
+    """Mega Togekiss (Fairy/Flying), drawn on its own (Platinum) sprite: the Seraph. Its great wing is mirrored
+    into a second one raised behind it, both wingtips are dipped in gold, its crest turns gold and its crown
+    markings crimson."""
+    c.swap(lambda r, g, b: r > 150 and g < 100 and b < 100, (240, 184, 48))    # red crest -> gold
+    c.swap(lambda r, g, b: b > 180 and r < 120, (192, 40, 88))                 # blue crown -> crimson
+    light = lambda r, g, b: r + g + b > 300
+    c.material([(58, 8), (79, 8), (79, 22), (66, 24), (58, 18)], GOLD, light)   # gold wingtip
+    wing = c.grab((48, 10, 30, 30), lambda x, y, col: x - 48 > (y - 10) * 0.25)
+    wing = pygame.transform.flip(wing, True, False)
+    c.put(wing, (12, 6), "under")                                                # the mirrored wing, raised
 
 
+BASES = {"snorlax": "platinum", "togekiss": "platinum"}   # these are drawn on their upright Gen 4 sprite (80x80)
 DESIGNS = {"flygon": flygon, "luxray": luxray, "arcanine": arcanine, "milotic": milotic, "typhlosion": typhlosion,
            "snorlax": snorlax, "lapras": lapras, "ninetales": ninetales, "machamp": machamp, "togekiss": togekiss}
 

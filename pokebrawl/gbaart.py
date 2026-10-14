@@ -620,8 +620,10 @@ def battle_sprite(pid, back=False, shiny=False, max_h=150):
     if riftdex.is_custom(pid):   # our own Megas: the base Pokemon in its Mega colours, crackling with energy
         base_id = riftdex.base_of(pid)
         base = battle_sprite(base_id, back, shiny, max_h)
-        out = riftdex.sprite_for(pid, base)
-        if ("bs", base_id, back, shiny, max_h) in _cache:
+        base_ready = ("bs", base_id, back, shiny, max_h) in _cache
+        art = None if back or not base_ready and not riftdex.is_platinum(pid) else riftdex.drawn(pid, shiny, base)
+        out = art if art is not None else riftdex.sprite_for(pid, base)   # the drawing; recolour for the back
+        if (art is not None or back) and (base_ready or art is not None):
             _cache[key] = out
         return out
     from . import battlegfx

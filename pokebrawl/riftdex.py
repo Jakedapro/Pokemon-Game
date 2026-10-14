@@ -79,7 +79,7 @@ def install(dex):
             dex.by_key[key] = entry
         if fid not in base["megas"]:
             base["megas"].append(fid)
-        _custom[fid] = (base["id"], rules, glow)
+        _custom[fid] = (base["id"], rules, glow, base_key)
 
 
 def is_custom(pid):
@@ -90,14 +90,14 @@ def custom_stones(dex):
     """(stone key, name, base id) for our own Megas - only ever found by digging."""
     from .team import mega_item_name
     install(dex)
-    return [(dex.all[f]["key"], mega_item_name(dex, dex.all[f]), b) for f, (b, _, _) in sorted(_custom.items())]
+    return [(dex.all[f]["key"], mega_item_name(dex, dex.all[f]), b) for f, (b, *_) in sorted(_custom.items())]
 
 
 def sprite_for(pid, base_img):
     """Our Mega's battle picture: its base sprite in its Mega colours with a crackling energy outline."""
     import pygame
     from . import frlg
-    _, rules, glow = _custom[pid]
+    _, rules, glow, _ = _custom[pid]
     w, h = base_img.get_size()
     src = base_img.copy()
     cols = {}
@@ -125,6 +125,66 @@ def sprite_for(pid, base_img):
     final.blit(edge, (0, 0))
     final.blit(out, (0, 0))
     return final
+
+
+PLAT_URL = "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/versions/generation-iv/platinum/"
+_plat_wait = set()
+
+
+def _platinum(bid, shiny):
+    """A Pokemon's Platinum front sprite (80x80), downloaded once in the background. None until it's there."""
+    import os
+    import threading
+    import pygame
+    from . import frlg
+    path = os.path.join(frlg.DIR, "mons", f"plat_{'shiny_' if shiny else ''}{bid}.png")
+    if os.path.exists(path):
+        try:
+            return pygame.image.load(path)
+        except Exception:
+            return None
+    key = (bid, shiny)
+    if key not in _plat_wait:
+        _plat_wait.add(key)
+
+        def get():
+            try:
+                from .pokedex import fetch as download
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                data = download(PLAT_URL + ("shiny/" if shiny else "") + f"{bid}.png", timeout=20)
+                with open(path + ".part", "wb") as f:
+                    f.write(data)
+                os.replace(path + ".part", path)
+            except Exception:
+                pass
+        threading.Thread(target=get, daemon=True).start()
+    return None
+
+
+def drawn(pid, shiny, base_img):
+    """Our hand-drawn Mega front sprite (megaart), at 2x - or None while what it's drawn on is still downloading."""
+    import pygame
+    from . import megaart
+    bid, _, _, key = _custom[pid]
+    if key not in megaart.DESIGNS:
+        return None
+    if megaart.BASES.get(key) == "platinum":
+        body = _platinum(bid, shiny)
+        if body is None:
+            return None
+        body = body.convert_alpha() if pygame.display.get_surface() else body
+    else:
+        w, h = base_img.get_size()
+        body = pygame.transform.scale(base_img, (w // 2, h // 2))
+    try:
+        return pygame.transform.scale_by(megaart.draw(key, body), 2)
+    except Exception:
+        return None
+
+
+def is_platinum(pid):
+    from . import megaart
+    return pid in _custom and megaart.BASES.get(_custom[pid][3]) == "platinum"
 
 
 def base_of(pid):
