@@ -293,6 +293,7 @@ def _diancie(L):
     return veil.trim()[0], crown.trim()[0]
 
 
+TIARA = {"o": (104, 24, 76), "w": (255, 255, 255), "l": (252, 196, 228), "p": (236, 104, 176)}
 MI_FIN = {(8, 120, 160): (96, 64, 176), (56, 168, 216): (160, 120, 236)}
 SPARKLE = {"w": (255, 255, 255), "p": (248, 168, 224), "k": (176, 72, 160)}
 
@@ -308,8 +309,8 @@ def sparkle(img, x, y, big=False):
 
 def milotic(L):
     """Mega Milotic - Water/Fairy, Multiscale: its tail fan grows into a vast iridescent fin, a pink diamond
-    tiara crowns it (Mega Diancie's) and veils of fairy light trail behind."""
-    veil, crown = _diancie(L)
+    tiara crowns it and veils of fairy light (Mega Diancie's) trail behind."""
+    veil, _ = _diancie(L)
     out = L("milotic")
     fin = out.cut(K.poly([(40, 10), (64, 10), (64, 40), (44, 40), (40, 26)]))
     fin, (fx, fy) = fin.trim()
@@ -320,8 +321,12 @@ def milotic(L):
     out.paste(big, fx - 6, fy - 12, under=True)
     v, _ = K.transform(veil, 1.15)
     out.paste(v, -3, 10, under=True)
-    c, _ = K.transform(crown, 0.8)
-    out.paste(c, 2, -1)
+    stamp(out, 11, 4, ["o.......o",
+                        "ol..o..lo",
+                        "olpowoplo",
+                        "oplpwplpo",
+                        "oppppppo.",
+                        ".oooooo.."], TIARA)
     for x, y, b in ((4, 6, True), (60, 50, True), (30, 6, False), (56, 2, False), (2, 30, False)):
         sparkle(out, x, y, b)
     back = L("milotic", back=True)
@@ -512,7 +517,7 @@ def build(base_key):
     return True
 
 
-VERSION = "1"   # bump when a recipe changes so players' cached sprites get rebuilt
+VERSION = "2"   # bump when a recipe changes so players' cached sprites get rebuilt
 _busy = set()
 
 
