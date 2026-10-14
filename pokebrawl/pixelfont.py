@@ -122,8 +122,19 @@ def _real(kind="normal"):
     return frlg.font(kind) if frlg.is_ready() else None
 
 
+_WORDS = [("POKeMON", "Pokémon"), ("POKéMON", "Pokémon"), ("POKEMON", "Pokémon"), ("POKeDEX", "Pokédex"),
+          ("POKéDEX", "Pokédex"), ("POKEDEX", "Pokédex"), ("POKe MART", "Poké Mart"), ("POKE MART", "Poké Mart"),
+          ("POKe BALL", "Poké Ball"), ("POKE BALL", "Poké Ball"), ("POKeBRAWL", "PokéBrawl"), ("POKe", "Poké"),
+          ("Pokemon", "Pokémon"), ("Pokedex", "Pokédex"), ("Poke ", "Poké ")]
+
+
 def _fix(text):
-    return text.replace("POKe", "POKé").replace("Poke", "Poké") if "oke" in text.lower() else text
+    """Writes Pokémon the normal way (not 'POKeMON')."""
+    if "ok" not in text.lower():
+        return text
+    for a, b in _WORDS:
+        text = text.replace(a, b)
+    return text
 
 
 def width(text, scale=2, small=False):
@@ -131,6 +142,7 @@ def width(text, scale=2, small=False):
     if f:
         text = _fix(text)
         return sum((f.width(ch) if f.has(ch) else _old_width(ch) + 1) * scale for ch in text)
+    text = _fix(text)
     w = 0
     for ch in text:
         if ch == " ":
@@ -177,6 +189,7 @@ def draw(surf, text, pos, color=(64, 64, 64), shadow=(216, 208, 176), scale=2, a
                     surf.blit(_glyph(ch, color, scale), (cx, y))
                 cx += (_old_width(ch) + 1) * scale
         return w
+    text = _fix(text)
     cx = x
     for ch in text:
         if ch == " ":

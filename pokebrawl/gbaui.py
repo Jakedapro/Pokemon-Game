@@ -133,7 +133,7 @@ class TextBox:
             self.add(ln)
 
     def add(self, text):
-        rows = F.wrap(text, W - 100)
+        rows = F.wrap(F._fix(text), W - 100)   # "Pokémon" spelt out before it types, not mid-word
         for i in range(0, len(rows), 2):
             self.pages.append(rows[i:i + 2])
 
