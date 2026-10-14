@@ -52,7 +52,9 @@ def files():
     out += [f"graphics/trainers/front_pics/{n}_front_pic.png" for n in sorted(set(FRONT_PICS.values()))]
     out += ["graphics/trainers/back_pics/red_back_pic.png"]
     out += [f"graphics/interface/ball/{n}.png" for n in BALLS.values()]
-    out += ["graphics/fonts/latin_normal.png", "src/text.c"]
+    out += ["graphics/fonts/latin_normal.png", "graphics/fonts/latin_small.png", "src/text.c"]
+    out += [PARTY + n for n in ("bg.png", "bg.bin", "slot_main.bin", "slot_wide.bin", "slot_wide_empty.bin")]
+    out += [f"graphics/text_window/{n}.png" for n in ("std", "menu_message")]
     return out
 
 
@@ -208,3 +210,86 @@ def mon(pid, back=False, shiny=False):
                 pass
         threading.Thread(target=get, daemon=True).start()
     return None
+
+
+# ====================================================================== the party menu (graphics/party_menu)
+PARTY = "graphics/party_menu/"
+# FireRed's party windows (src/data/party_menu.h): tile position, size and palette bank
+PARTY_SLOTS = [((1, 3), (10, 7), 3)] + [((12, 1 + 3 * i), (18, 3), 4 + i) for i in range(5)]
+# colours swapped into slots 4,5,6 and 1,7,8 of a slot's palette, by state (party_menu.c LoadPartyBoxPalette)
+SLOT_PALS = {"normal": ((52, 53, 54), (49, 55, 56)), "selected": ((116, 117, 118), (97, 103, 104)),
+             "fainted": ((84, 85, 86), (81, 87, 88)), "fainted_sel": ((148, 149, 150), (97, 103, 104)),
+             "switch": ((100, 101, 102), (161, 167, 168))}
+HP_PALS = {"green": (57, 58), "yellow": (73, 74), "red": (89, 90)}
+
+
+def _party_pal():
+    f = frlg.fetch(PARTY + "bg.png")
+    if not f:
+        return None
+    img = pygame.image.load(f)
+    return [tuple(c)[:3] for c in img.get_palette()]
+
+
+def party_bg():
+    def make():
+        pal = _party_pal()
+        if not pal:
+            return None
+        banks = [pal[i:i + 16] for i in range(0, len(pal), 16)]
+        img = frlg.tilemap(PARTY + "bg.png", PARTY + "bg.bin", banks, 0)
+        if img is None:
+            return None
+        out = pygame.Surface((240, 160))
+        out.fill(pal[0])
+        out.blit(img, (0, 0), (0, 0, 240, 160))
+        return pygame.transform.scale_by(out, S)
+    return _cached(("partybg",), make)
+
+
+def party_hp_colors(level):
+    pal = _cached(("partypal",), _party_pal)
+    if not pal:
+        return None
+    a, b = HP_PALS[level]
+    return pal[a], pal[b]
+
+
+def party_slot(i, state="normal", empty=False):
+    """Party slot i's box (2x) in this state, or None."""
+    def make():
+        pal = _party_pal()
+        f = frlg.fetch(PARTY + "bg.png")
+        (tx, ty), (w, h), bank = PARTY_SLOTS[i]
+        name = "slot_main.bin" if i == 0 else ("slot_wide_empty.bin" if empty else "slot_wide.bin")
+        mf = frlg.fetch(PARTY + name)
+        if not pal or not f or not mf:
+            return None
+        colors = list(pal[bank * 16:bank * 16 + 16])
+        if empty:   # empty slots: placeholder colours in the file; FireRed shows a dark outline
+            dark = pal[1] if pal[1] != (255, 0, 255) else (41, 98, 90)
+            colors = [dark if c[0] > 200 and c[1] < 60 and c[2] > 200 else c for c in colors]
+        else:
+            ids1, ids2 = SLOT_PALS[state]
+            for off, pid in zip((4, 5, 6), ids1):
+                colors[off] = pal[pid]
+            for off, pid in zip((1, 7, 8), ids2):
+                colors[off] = pal[pid]
+        img = pygame.image.load(f)
+        idx = pygame.image.tobytes(img, "P")
+        iw = img.get_width()
+        per_row = iw // 8
+        with open(mf, "rb") as fh:
+            nums = fh.read()
+        out = pygame.Surface((w * 8, h * 8), pygame.SRCALPHA)
+        for n in range(min(len(nums), w * h)):
+            t = nums[n]
+            sx, sy = (t % per_row) * 8, (t // per_row) * 8
+            ox, oy = (n % w) * 8, (n // w) * 8
+            for y in range(8):
+                for x in range(8):
+                    c = idx[(sy + y) * iw + sx + x] & 15
+                    if c:
+                        out.set_at((ox + x, oy + y), colors[c])
+        return pygame.transform.scale_by(out, S)
+    return _cached(("slot", i, state, empty), make)

@@ -298,7 +298,15 @@ class PartyScene(GBAScene):
     def update(self, dt):
         self.t += dt
 
+    def _real(self):
+        from . import battlegfx as BG
+        return BG.party_bg() is not None and BG.party_slot(0) is not None
+
     def _slot(self, i):
+        if self._real():   # FireRed's windows: (1, 3) 10x7 for the lead, (12, 1 + 3k) 18x3 for the rest
+            if i == 0:
+                return pygame.Rect(16, 48, 160, 112)
+            return pygame.Rect(192, 16 + (i - 1) * 48, 288, 48)
         if i == 0:
             return pygame.Rect(8, 36, 196, 108)
         return pygame.Rect(212, 6 + (i - 1) * 46, 262, 42)
@@ -363,7 +371,60 @@ class PartyScene(GBAScene):
             else:
                 self.app.pop()
 
+    def _draw_real(self, surf):
+        from . import battlegfx as BG
+        surf.blit(BG.party_bg(), (0, 0))
+        party = self.game["party"]
+        white, shade = (255, 255, 255), (112, 112, 112)
+        for i in range(6):
+            r = self._slot(i)
+            if i >= len(party):
+                if i > 0:
+                    surf.blit(BG.party_slot(i, empty=True), r.topleft)
+                continue
+            m = party[i]
+            hp, mx = A.hp_of(self.dex, m)
+            sel = i == self.index
+            state = ("fainted_sel" if sel else "fainted") if hp <= 0 else "selected" if sel else "normal"
+            if self.swap == i:
+                state = "switch"
+            surf.blit(BG.party_slot(i, state), r.topleft)
+            icon = G.icon(m["species"], m.get("shiny", False))
+            bob = int(math.sin(self.t * 8) * 2) if sel and hp > 0 else 0
+            nm = A.name_of(self.dex, m).upper()[:10]
+            frac = hp / max(1, mx)
+            level = "green" if frac > 0.5 else "yellow" if frac > 0.2 else "red"
+            cols = BG.party_hp_colors(level) or (U.hp_color(frac), U.hp_color(frac))
+            if i == 0:
+                surf.blit(icon, icon.get_rect(center=(r.x + 26, r.y + 30 + bob)))
+                F.draw(surf, nm, (r.x + 50, r.y + 22), white, shade)
+                F.draw(surf, f"Lv{m['level']}", (r.x + 66, r.y + 46), white, shade, small=True)
+                bar = pygame.Rect(r.x + 50, r.y + 70, 92, 6)
+                F.draw(surf, f"{hp}/ {mx}", (r.right - 14, r.y + 82), white, shade, anchor="topright", small=True)
+            else:
+                surf.blit(icon, icon.get_rect(center=(r.x + 22, r.y + 22 + bob)))
+                F.draw(surf, nm, (r.x + 48, r.y + 6), white, shade)
+                F.draw(surf, f"Lv{m['level']}", (r.x + 64, r.y + 28), white, shade, small=True)
+                bar = pygame.Rect(r.x + 178, r.y + 22, 92, 6)
+                F.draw(surf, f"{hp}/ {mx}", (r.right - 14, r.y + 30), white, shade, anchor="topright", small=True)
+            w = int(bar.w * max(0.0, min(1.0, frac)))
+            if w:
+                pygame.draw.rect(surf, cols[0], (bar.x, bar.y, w, bar.h))
+                pygame.draw.rect(surf, cols[1], (bar.x, bar.y, w, 2))
+            if m.get("status") and hp > 0:
+                F.draw(surf, m["status"].upper(), (r.x + (110 if i else 160), r.y + (46 if i else 28)),
+                       (248, 200, 64), None, scale=1)
+        F.draw(surf, "CANCEL", (424, 278), white, shade, anchor="center")
+        msg = self.msg or self.title or ("Move to where?" if self.swap is not None else "Choose a POKeMON.")
+        inner = U.box(surf, (8, 260, 352 if not self.sub else 300, 56))
+        F.draw(surf, msg, (inner.x + 8, inner.y + 8), U.TEXT, U.SHADOW)
+        if self.sub is not None:
+            self.sub.draw(surf, (318, 170, 158, 20 + 26 * len(self.sub.options)))
+
     def draw(self, surf):
+        if self._real():
+            self._draw_real(surf)
+            return
         bg(surf, (64, 136, 120), (104, 184, 160))
         party = self.game["party"]
         for i, m in enumerate(party):
