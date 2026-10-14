@@ -82,13 +82,14 @@ def all_stones(dex):
             continue
         for fid in e.get("megas", []):
             f = dex.all.get(fid)
-            if f and "primal" not in f["key"]:
+            if f and "primal" not in f["key"] and not f.get("custom"):
                 out.append((f["key"], mega_item_name(dex, f), e["id"]))
     return out
 
 
 def stone_name(dex, key):
-    for k, name, _ in all_stones(dex):
+    from .riftdex import custom_stones
+    for k, name, _ in all_stones(dex) + custom_stones(dex):
         if k == key:
             return name
     return key
@@ -136,6 +137,16 @@ def rift_stone(dex, r):
 def mega_form(dex, key):
     """The form id for a Mega Stone key (e.g. 'charizard-mega-x' -> 10034)."""
     return next((e["id"] for e in dex.all.values() if e["key"] == key), None)
+
+
+def echo_species(dex):
+    """Who can turn up in an echo rift: any Pokemon with a Mega Evolution (ours included), non-legendary."""
+    out = []
+    for e in dex.all.values():
+        if e["default"] and not (e["legendary"] or e["mythical"]) and e["species"] not in A.SPECIAL_IDS:
+            forms = [f for f in e.get("megas", []) if f in dex.all and "primal" not in dex.all[f]["key"]]
+            out += forms
+    return sorted(out)
 
 
 def _rift_spot(area, r):
@@ -289,10 +300,14 @@ def npcs_for(world, index, game):
                                         "it can MEGA EVOLVE in battle - by choice, as a partner.",
                                         "Take this Key Stone. With it you can see the rifts on every route.",
                                         "Calm the Pokemon inside and the rift seals... leaving its Mega Stone!"]),
-                ("keystone",), ("flag", "keystone"),
+                ("keystone",), ("flag", "keystone"), ("give", "mega-radar", 1),
                 ("say", "Prof. Hazel", ["In battle, press M (or the MEGA button) before picking a move.",
                                         "Gym Leaders have stones too. And some are hidden on the routes - look for "
-                                        "sparkles on the ground!"])])
+                                        "sparkles on the ground!",
+                                        "That MEGA RADAR picks up stones buried deep underground. Use it from your "
+                                        "BAG on a route, follow the signal, and dig!",
+                                        "Some buried stones are CORRUPTED. They give staggering power... "
+                                        "but they eat away at the Pokemon using them. Careful."])])
         add(id="hazel_key_wait", kind="talk", look="prof", x=4, y=7, name="Prof. Hazel", **{"if": "!badges>=2"},
             lines=["Oh, hello! Come and find me when you have two badges. I have something for you."])
         add(id="q_letter_man", kind="quest", quest="q_letter", look="Hiker", x=12, y=14, face="left")
@@ -391,13 +406,22 @@ def npcs_for(world, index, game):
         fid = mega_form(dex, key) if key else None
         if fid and not has(game, f"rift_{real_route}"):
             lv = A.World.route_levels(real_route)[1] + 5
-            add(id=f"rift_{real_route}", kind="rift", x=_rift_spot(area, real_route), y=None, pokemon=fid, level=lv, script=[
+            moved = game.get("rift_moved", {}).get(str(real_route), 0)   # it moves after a collapse
+            add(id=f"rift_{real_route}", kind="rift", x=_rift_spot(area, real_route + 1000 * moved), y=None,
+                pokemon=fid, level=lv, script=[
                 ("say", "", ["The air here is torn open... it's crackling with Mega energy!",
                              "Something is raging inside the rift!"]),
                 ("rift", fid, lv),
                 ("say", "", ["The Pokemon calmed down... and the rift sealed itself shut.",
                              "Something was left behind on the ground!"]),
                 ("mega", key), ("flag", f"rift_{real_route}")])
+    echo = game.get("echo") or {}
+    if echo.get("area") == index and real_route:   # an echo rift: a sealed rift flickering open again
+        add(id="echo_rift", kind="rift", echo=True, x=(echo["x"], echo["y"]), y=None, pokemon=echo["pid"],
+            level=echo["lv"], script=[
+                ("say", "", ["The sealed rift is flickering open again...", "A wild Mega Pokemon is raging inside!"]),
+                ("rift", echo["pid"], echo["lv"]),
+                ("say", "", ["The echo rift faded away."])])
     if index == 0 and all(has(game, f"rift_{r}") for r in range(1, A.NUM_ROUTES + 1)) and \
             not has(game, "rift_zero"):
         fid = mega_form(dex, "mewtwo-mega-y")
@@ -551,7 +575,8 @@ QUESTS = {
                  "need": "stones>=10", "done": ["10 Mega Stones! You're a true Mega Maniac! Take this MASTER BALL!"],
                  "reward": [("give", "master-ball", 1)]},
 }
-KEY_ITEMS = {"lucky-charm": ("Lucky Charm", "A lucky charm someone dropped."),
+KEY_ITEMS = {"mega-radar": ("Mega Radar", "Detects Mega Stones buried on a route. Use it, follow the signal, dig."),
+             "lucky-charm": ("Lucky Charm", "A lucky charm someone dropped."),
              "old-letter": ("Old Letter", "A letter for someone in Bloomfield City.")}
 
 
@@ -640,7 +665,8 @@ def next_goal(game, dex):
     gym = A.GYMS[b][0] if b < n else None
     if game.get("champion"):
         stones = len(game.get("megastones", []))
-        return (f"You're the World Champion! Mega Stones: {stones}/{len(all_stones(dex))}. "
+        from .riftdex import custom_stones
+        return (f"You're the World Champion! Mega Stones: {stones}/{len(all_stones(dex)) + len(custom_stones(dex))}. "
                 "Secrets still hide out there...")
     if not game.get("party"):
         return "Choose your first Pokemon from the three Poke Balls on Prof. Hazel's table."

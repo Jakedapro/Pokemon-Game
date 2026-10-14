@@ -109,6 +109,7 @@ class OverworldScene(Scene):
         g["room"] = None
         g["area"], g["x"], g["y"] = index, x, y
         self.cur = self.world.areas[index]
+        self._roll_echo(index)
         self.blds = buildings_of(self.cur)
         self._set_field(("area", index), lambda: fieldmap.render_area(self.cur, self.blds))
         self._refresh()
@@ -117,6 +118,67 @@ class OverworldScene(Scene):
         AUDIO.music(self.cur["music"])
         if not first:
             A.save(g)
+
+    # ------------------------------------------------------------------ the Mega Radar and digging
+    def _dig_sites(self):
+        from . import riftdex
+        r = self.cur.get("route")
+        if self.inside or not r:
+            return []
+        dug = self.game.get("dug", [])
+        return [s for s in riftdex.dig_sites(self.app.dex, self.cur, r) if s[0] not in dug]
+
+    def _use_radar(self):
+        if self.inside or not self.cur.get("route"):
+            self.say(["The MEGA RADAR only picks up signals out on the routes."])
+            return
+        sites = self._dig_sites()
+        if not sites:
+            self.say(["The MEGA RADAR is quiet. There's nothing left buried on this route."])
+            return
+        self.radar = 30.0
+        self.radar_ping = 0.0
+        AUDIO.play("select")
+        self.say([f"The MEGA RADAR switched on! {len(sites)} signal{'s' if len(sites) > 1 else ''} on this route.",
+                  "Follow the arrow. When it's going wild, stand on the spot and press Z to dig!"])
+
+    def _nearest_site(self):
+        g = self.game
+        sites = self._dig_sites()
+        if not sites:
+            return None, None
+        s = min(sites, key=lambda s: abs(s[1] - g["x"]) + abs(s[2] - g["y"]))
+        return s, abs(s[1] - g["x"]) + abs(s[2] - g["y"])
+
+    def _radar_beep(self, dt):
+        s, d = self._nearest_site()
+        if s is None:
+            return
+        self.radar_ping = getattr(self, "radar_ping", 0.0) - dt
+        if self.radar_ping <= 0 and self.text is None:
+            AUDIO.play("click", 0.25 if d > 6 else 0.5)
+            self.radar_ping = max(0.15, min(1.6, d * 0.1))
+
+    def _dig(self, site):
+        from .mining import MiningScene
+        self.radar = 0
+        self.app.push(MiningScene(self.app, self.game, site, on_done=lambda how: self._refresh()))
+
+    def _roll_echo(self, index):
+        """Sealed rifts flicker open again now and then: each visit to a route whose rift you sealed has a chance
+        of an echo rift with a wild Mega inside (caught ones are Rift-Born)."""
+        g = self.game
+        r = self.cur.get("route")
+        if (g.get("echo") or {}).get("area") == index:
+            return
+        g.pop("echo", None)
+        if not (r and g.get("keystone") and S.has(g, f"rift_{r}")) or self.rng.random() > 0.35:
+            return
+        pool = S.echo_species(self.app.dex)
+        if not pool:
+            return
+        x, y = S._rift_spot(self.cur, r + 5000 + self.rng.randrange(1000))
+        g["echo"] = {"area": index, "pid": self.rng.choice(pool), "lv": A.World.route_levels(r)[1] + 3, "x": x, "y": y}
 
     def _set_field(self, key, make):
         """The FireRed-tile drawing of this place (cached), or None to use the drawn art."""
@@ -297,6 +359,11 @@ class OverworldScene(Scene):
                 self._set_field(("area", self.game["area"]), lambda: fieldmap.render_area(self.cur, self.blds))
         g = self.game
         g["playtime"] = g.get("playtime", 0.0) + dt
+        if g.pop("_radar", None):
+            self._use_radar()
+        if getattr(self, "radar", 0) > 0:
+            self.radar -= dt
+            self._radar_beep(dt)
         self.banner += dt
         self.fade = max(0.0, self.fade - dt * 3)
         AUDIO.music(self.cur["music"])
@@ -436,6 +503,12 @@ class OverworldScene(Scene):
 
     # ------------------------------------------------------------------ talking
     def interact(self):
+        if not self.inside and "mega-radar" in self.game.get("bag", {}):
+            here = next((s for s in self._dig_sites() if (s[1], s[2]) == (self.game["x"], self.game["y"])), None)
+            if here:
+                self.say(["The MEGA RADAR is going wild! Something's buried right under your feet!",
+                          "You dug down and broke into a hidden cave..."], lambda: self._dig(here))
+                return
         dx, dy = DIRS[self.game["face"]]
         x, y = self.game["x"] + dx, self.game["y"] + dy
         n = self.npc_at(x, y)
@@ -647,7 +720,11 @@ class OverworldScene(Scene):
             form = dex.all[fid]
             foe = A.make_mon(dex, dex.all[form["species"]], level, self.rng, shiny=False)
             foe["species"] = fid
-            self._battle([foe], "wild", {"rift": True, "ai": "hard", "name": f"Wild {form['name']}"}, then=self._step)
+            from .riftdex import ANOMALIES
+            npc = getattr(self, "script_npc", None) or {}
+            self._battle([foe], "wild", {"rift": True, "ai": "insane", "name": f"Wild {form['name']}",
+                                         "anomaly": self.rng.choice(sorted(ANOMALIES)), "echo": npc.get("echo"),
+                                         "route": self.cur.get("route")}, then=self._step)
         elif op == "wild":
             _, species, level, shiny = st
             e = dex.get(species)
@@ -852,6 +929,20 @@ class OverworldScene(Scene):
         g = self.game
         r = s.results()
         then, self.battle_then = getattr(self, "battle_then", None), None
+        rt = r.get("trainer") or {}
+        if rt.get("echo"):
+            g.pop("echo", None)   # an echo rift only opens once
+        if r.get("collapsed"):
+            self.script = None
+            if not rt.get("echo") and rt.get("route"):   # the rift tears open again somewhere else on the route
+                moved = g.setdefault("rift_moved", {})
+                moved[str(rt["route"])] = moved.get(str(rt["route"]), 0) + 1
+            self._refresh()
+            self.say(["The rift collapsed around you!", "...You landed back on the route. The Mega Pokemon is gone.",
+                      "The rift re-formed somewhere else on this route..." if not rt.get("echo") else
+                      "The echo rift has faded away."])
+            A.save(g)
+            return
         if r["lost"] and (r.get("trainer") or {}).get("practice") and then:
             self._heal_all()
             then()
@@ -874,8 +965,16 @@ class OverworldScene(Scene):
             if not base["default"] and "-mega" in base["key"]:   # caught from a rift: it calms down
                 mon["species"] = base["species"]
                 lines.append(f"The Mega Evolution faded. {A.name_of(dex, mon)} looks calm now.")
+            rift_born = bool((r.get("trainer") or {}).get("rift"))
+            if rift_born:   # caught inside a rift: it keeps a spark of it forever
+                from .riftdex import RIFT_ABILITY
+                mon["rift_born"] = True
+                mon["ability"] = RIFT_ABILITY
             where = A.add_caught(g, dex, mon)
             nm = A.name_of(dex, mon)
+            if rift_born:
+                lines.append(f"{nm} is RIFT-BORN! It has the rare ability RIFT HEART,")
+                lines.append("and a fifth move no other Pokemon can learn: RIFT BREAKER!")
             if where == "box":
                 lines.append(f"{nm} was transferred to the Box.")
             e = dex.all[mon["species"]]
@@ -1143,6 +1242,8 @@ class OverworldScene(Scene):
                     surf.blit(G.htall_over(gf), (x, y + oy + T - 16))
         if field:
             surf.blit(field[1], (ox, oy))   # tree tops, roofs and grass tips go over everyone
+        if getattr(self, "radar", 0) > 0 and not inside:
+            self._draw_radar(surf, ox, oy)
         if self.emote is not None:
             n = self.emote[1]
             bx, by = n["x"] * T + T // 2 + ox, n["y"] * T + oy - 28
@@ -1175,6 +1276,36 @@ class OverworldScene(Scene):
             return (fx + (tx - fx) * p) * T, (fy + (ty - fy) * p) * T
         tx, ty = self.trail[-1] if self.trail else (self.game["x"], self.game["y"] + 1)
         return tx * T, ty * T
+
+    def _draw_radar(self, surf, ox, oy):
+        """The radar's signal: bars, an arrow toward the nearest buried stone and a glow once you're close."""
+        s, d = self._nearest_site()
+        if s is None:
+            return
+        g = self.game
+        r = pygame.Rect(VW - 120, VH - 58, 114, 52)
+        pygame.draw.rect(surf, (24, 32, 48), r, border_radius=6)
+        pygame.draw.rect(surf, (96, 200, 255), r, 2, border_radius=6)
+        F.draw(surf, "MEGA RADAR", (r.x + 8, r.y + 4), (200, 232, 255), None, small=True)
+        bars = 5 if d <= 1 else 4 if d <= 3 else 3 if d <= 7 else 2 if d <= 14 else 1
+        for i in range(5):
+            h = 4 + i * 4
+            col = (96, 255, 160) if i < bars else (56, 72, 88)
+            pygame.draw.rect(surf, col, (r.x + 10 + i * 9, r.bottom - 8 - h, 6, h))
+        ang = math.atan2(s[2] - g["y"], s[1] - g["x"])
+        cx, cy = r.right - 26, r.y + 30
+        if d == 0:
+            k = 0.5 + 0.5 * math.sin(self.t * 12)
+            pygame.draw.circle(surf, (255, 240, 128), (cx, cy), int(6 + 5 * k), 2)
+        else:
+            tip = (cx + math.cos(ang) * 12, cy + math.sin(ang) * 12)
+            left = (cx + math.cos(ang + 2.5) * 9, cy + math.sin(ang + 2.5) * 9)
+            right = (cx + math.cos(ang - 2.5) * 9, cy + math.sin(ang - 2.5) * 9)
+            pygame.draw.polygon(surf, (255, 216, 96), [tip, left, right])
+        if d <= 2:   # the spot itself shimmers when you're right next to it
+            k = 0.5 + 0.5 * math.sin(self.t * 8)
+            px, py = s[1] * T + T // 2 + ox, s[2] * T + T // 2 + oy
+            pygame.draw.circle(surf, (160, 240, 255), (px, py), int(5 + 7 * k), 2)
 
     def _draw_hud(self, surf):
         q = self.banner

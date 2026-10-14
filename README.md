@@ -146,9 +146,29 @@ back to its own drawn art.
   (Tidewater's beach and sea, Voltara's fenced power lots, Bloomfield's flower fields, the Toxmire swamp, the
   Duneholt desert...), routes have ledges to hop down and boulders, and each gym is recoloured in its type.
 - **Mega Rifts:** once you have the Key Stone, every route has a crackling rift. Inside, a raging wild Mega
-  Pokemon - beat or catch it to seal the rift and take its Mega Stone (found nowhere else). Seal all nine
+  Pokemon - beat or catch it to seal the rift and take its Mega Stone (found nowhere else). Seal all 19
   for a secret. Mega Evolution has its own sequence (the stone reacts, the Pokemon is wrapped in light,
   then bursts out under the Mega mark), and Mega forms are redrawn GBA-style to match.
+- **Inside a rift:** the Mega is boosted (+25% stats, +1 Attack and Sp. Atk), fights with the hardest AI and is
+  far harder to catch. The rift collapses after a few turns (10 on Easy down to 6 on Insane) - run out of time and
+  you're thrown back out, the Pokemon is gone and the rift re-forms elsewhere on the route. Every rift battle has
+  an anomaly: Gravity Distortion (Flying types grounded, moves don't miss), Time Distortion (permanent Trick Room),
+  Type Inversion, Mega Surge (harder hits), Entropy Field (everyone loses HP) or an Elemental Storm. Sealed rifts
+  flicker back open now and then as echo rifts with a random wild Mega to hunt.
+- **Rift-Born:** a Pokemon caught inside a rift keeps the rare ability Rift Heart (moves hit 20% harder) and a
+  fifth move no other Pokemon can learn, Rift Breaker (its own type, uses its better attack stat, double damage
+  against Megas).
+- **Mega Radar and digging:** Prof. Hazel's Mega Radar (with the Key Stone) points to stones buried on each route.
+  Stand on the spot, press Z, break into the cave and chip the stone out of the wall with the pick and hammer
+  before the wall caves in.
+- **Corrupted Mega Stones:** some buried stones are corrupted. They double every stat after Mega Evolving, but
+  the Pokemon loses HP every turn and can be poisoned, burned or paralysed by the corruption. Pick clean or
+  corrupted per stone in the BAG's Mega Stone case.
+- **New Mega Evolutions:** ten Megas the official games never made, only found by digging: Mega Flygon,
+  Luxray, Arcanine, Milotic, Typhlosion, Snorlax, Lapras, Ninetales, Machamp and Togekiss, each with new types,
+  stats and abilities. Their sprites are recolours of the originals in Mega colours with an energy outline.
+- **No more one-Mega rule:** every Pokemon holding its stone can Mega Evolve in the same battle, and from the
+  fourth Gym on, leaders bring two Megas.
 - **Real interiors:** Pokemon Centers, Marts, houses and Prof. Hazel's lab are FireRed's own rooms, with their
   counters, shelves and PCs.
 - **A Gym for every type:** 18 Gyms in 18 towns - Rock, Bug, Water, Normal, Electric, Flying, Grass, Fighting,

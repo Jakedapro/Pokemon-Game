@@ -31,8 +31,15 @@ class AdventureSession:
         for fm, f in zip(foe_members, foes):   # story bosses and the Elite Four can Mega Evolve too
             if f.get("mega"):
                 fm.item, fm.mega = "mega-stone", f["mega"]
+        rift = None
+        if self.trainer.get("rift"):   # inside a Mega Rift: a countdown, an anomaly, a raging Mega
+            from . import riftdex as R
+            rift = {"anomaly": self.trainer.get("anomaly"), "turns": self.trainer.get("turns") or
+                    R.RIFT_TURNS.get(A.OPTS.get("difficulty", "NORMAL"), 8),
+                    "boost": R.RIFT_BOOST, "catch": R.RIFT_CATCH}
         self.battle = TurnBattle(dex, [[A.member(m, game, dex) for m in game["party"]], foe_members],
-                                 self.seed, names=self.names, wild=kind == "wild", bag=True, gimmicks="mega")
+                                 self.seed, names=self.names, wild=kind == "wild", bag=True, gimmicks="mega",
+                                 rift=rift, multi_mega=True)   # the rifts broke the one-Mega-per-battle rule
         level = self.trainer.get("ai") or {"wild": "easy", "trainer": "normal", "gym": "hard",
                                            "champion": "insane"}.get(kind, "hard")
         if kind != "wild":
@@ -201,7 +208,7 @@ class AdventureSession:
                     gain //= 2      # the rest of the party learns by watching (like the Exp. Share)
                 xp[i] = xp.get(i, 0) + max(1, gain)
         out = {"won": b.winner == 0, "lost": b.winner == 1, "ran": b.ran, "caught": None, "xp": xp,
-               "kind": self.kind, "trainer": self.trainer}
+               "kind": self.kind, "trainer": self.trainer, "collapsed": b.collapsed}
         if b.caught is not None:
             mon = dict(self.foes[b.caught])
             cm = b.sides[1].mons[b.caught]

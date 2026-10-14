@@ -578,6 +578,8 @@ ICON_URL = "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pok
 
 def icon(pid, shiny=False):
     """A small Pokemon icon for the party screen and the walking follower. Falls back to a shrunk sprite."""
+    from .riftdex import base_of
+    pid = base_of(pid)
     key = ("i", pid, shiny)
     if key in _cache:
         return _cache[key]
@@ -614,6 +616,14 @@ def battle_sprite(pid, back=False, shiny=False, max_h=150):
     key = ("bs", pid, back, shiny, max_h)
     if key in _cache:
         return _cache[key]
+    from . import riftdex
+    if riftdex.is_custom(pid):   # our own Megas: the base Pokemon in its Mega colours, crackling with energy
+        base_id = riftdex.base_of(pid)
+        base = battle_sprite(base_id, back, shiny, max_h)
+        out = riftdex.sprite_for(pid, base)
+        if ("bs", base_id, back, shiny, max_h) in _cache:
+            _cache[key] = out
+        return out
     from . import battlegfx
     real = battlegfx.mon(pid, back, shiny) if battlegfx.frlg.is_ready() else None
     if real is not None:   # the FireRed sprite itself

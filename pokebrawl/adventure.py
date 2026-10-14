@@ -50,6 +50,8 @@ def default_options():
 
 def migrate(game):
     """Saves from the first, 8-gym region: move them to the same places on the 18-gym map."""
+    if game.get("keystone") and "mega-radar" not in game.get("bag", {}):   # the radar came out after the Key Stone
+        game.setdefault("bag", {})["mega-radar"] = 1
     if game.get("world", 1) >= 2:
         return
 
@@ -220,23 +222,38 @@ def make_mon(dex, entry, level, rng, shiny=None, origin=""):
 
 
 def mega_form_for(dex, mon, game):
-    """The Mega form this Pokemon can use: you need the Key Stone and its Mega Stone."""
+    """The Mega form this Pokemon can use: you need the Key Stone and its Mega Stone (or a corrupted one)."""
     if not game or not game.get("keystone"):
         return None
+    owned = set(game.get("megastones", [])) | set(game.get("corrupted", []))
     for fid in dex.all[mon["species"]].get("megas", []):
         f = dex.all.get(fid)
-        if f and "primal" not in f["key"] and f["key"] in game.get("megastones", []):
+        if f and "primal" not in f["key"] and f["key"] in owned:
             return fid
     return None
+
+
+def uses_corrupted(game, key):
+    """A corrupted stone is used when it's the only one you have, or you switched it on in the MEGA STONES list."""
+    if key not in game.get("corrupted", []):
+        return False
+    return key not in game.get("megastones", []) or key in game.get("corrupt_on", [])
 
 
 def member(mon, game=None, dex=None):
     """A battle-engine Member for a party Pokemon (no EVs, like a real playthrough). With the game state, a
     Pokemon whose Mega Stone you own holds it."""
+    if dex is not None:
+        from .riftdex import RIFT_MOVE_ID, install
+        install(dex)
     mega = mega_form_for(dex, mon, game) if dex is not None else None
     m = Member(mon["species"], mon["moves"], "mega-stone" if mega else "none", mon.get("nature", "Serious"),
                {"hp": 0}, mega, mon["level"], mon.get("ability"))
     m.cur_hp, m.status, m.pp = mon.get("cur_hp"), mon.get("status"), mon.get("pp")
+    if mega and game:
+        m.corrupted = uses_corrupted(game, dex.all[mega]["key"])
+    if mon.get("rift_born") and dex is not None:
+        m.rift_move = RIFT_MOVE_ID
     return m
 
 
@@ -607,6 +624,8 @@ class World:
     """The whole region, generated from a fixed seed so every player gets the same map."""
 
     def __init__(self, dex, seed=2024):
+        from .riftdex import install
+        install(dex)   # our own Megas and the Rift Breaker move
         self.dex = dex
         self.areas = []      # list of dicts: name, kind, rows, npcs, items, music, level range, pool
         self._rcache = {}
@@ -799,7 +818,33 @@ class World:
         town, leader, typ, ace, *_ = GYMS[k]
         rng = random.Random(1000 + k + (self.rseed if self.rand_trainers else 0))
         size = min(6, 2 + (k + 2) // 3)
-        return self.team_for([self.gym_types[k]], ace, size, rng, strong=True)
+        team = self.team_for([self.gym_types[k]], ace, size, rng, strong=True)
+        if k >= 3:   # the rifts broke the one-Mega rule: from the fourth Gym on, leaders Mega Evolve twice
+            self._megafy(team, [self.gym_types[k]], rng, 2)
+        return team
+
+    def _megafy(self, team, types, rng, n):
+        """Swap the last n Pokemon of a team for Mega-capable ones of these types, holding their stones."""
+        cands = [e for e in self.dex.all.values() if e["default"] and not (e["legendary"] or e["mythical"]) and
+                 e["species"] not in SPECIAL_IDS and any("primal" not in self.dex.all[f]["key"]
+                                                         for f in e.get("megas", []) if f in self.dex.all) and
+                 (types is None or self.rand_trainers or any(t in types for t in e["types"]))]
+        rng.shuffle(cands)
+        used = {m["species"] for m in team}
+        for i in range(1, n + 1):
+            if i > len(team):
+                break
+            mon = team[-i]
+            e = self.dex.all[mon["species"]]
+            if not e.get("megas"):
+                pick = next((c for c in cands if c["id"] not in used), None)
+                if pick is None:
+                    continue
+                used.add(pick["id"])
+                mon = make_mon(self.dex, pick, mon["level"], rng, shiny=False)
+                team[-i] = mon
+                e = pick
+            mon["mega"] = next(f for f in e["megas"] if f in self.dex.all and "primal" not in self.dex.all[f]["key"])
 
     def champion_team(self):
         rng = random.Random(4242)

@@ -24,6 +24,7 @@ NO_DROPS = {"clear-body", "white-smoke", "full-metal-body"}
 
 # What the team builder shows. Anything not listed still appears (as "no battle effect yet").
 DESCRIPTIONS = {
+    "rift-heart": "Rift-Born: all of its moves hit 20% harder",
     "intimidate": "Lowers the foe's Attack on entry", "levitate": "Immune to Ground moves",
     "drizzle": "Summons rain on entry", "drought": "Summons harsh sun on entry",
     "sand-stream": "Summons a sandstorm on entry", "snow-warning": "Summons snow on entry",
@@ -132,6 +133,8 @@ def power_mult(user, target, move, mtype, weather=None, moved_last=False):
     a, m, flags = user.ability, 1.0, move["flags"]
     if a == "technician" and move["power"] <= 60:
         m *= 1.5
+    elif a == "rift-heart":
+        m *= 1.2
     elif a == "iron-fist" and "punch" in flags:
         m *= 1.2
     elif a == "strong-jaw" and "bite" in flags:

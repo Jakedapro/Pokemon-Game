@@ -12,7 +12,7 @@ Choices: {"type": "move", "slot": i, "mega": bool, "tera": bool, "gmax": bool} o
 import random
 
 from . import abilities as AB
-from .battlecore import AILMENT_TO_STATUS, STATUS_NAMES, Mon, acc_mult, damage, move_type_and_power
+from .battlecore import AILMENT_TO_STATUS, STATUS_NAMES, Mon, acc_mult, damage, move_type_and_power, type_eff
 from .types import effectiveness
 
 WEATHER_MOVES = {"rain-dance": "rain", "sunny-day": "sun", "sandstorm": "sand", "snowscape": "snow",
@@ -65,7 +65,10 @@ MEDICINE = {"potion": ("Potion", 20, False, False), "super-potion": ("Super Poti
 
 
 class TurnBattle:
-    def __init__(self, dex, teams, seed=None, names=None, wild=False, bag=False, gimmicks=True):
+    def __init__(self, dex, teams, seed=None, names=None, wild=False, bag=False, gimmicks=True, rift=None,
+                 multi_mega=False):
+        """rift: a battle inside a Mega Rift - {"anomaly", "turns", "boost", "catch"} (Adventure).
+        multi_mega: every Pokemon holding its stone may Mega Evolve, not just one per side."""
         self.dex = dex
         self.wild = wild          # Adventure: a wild Pokemon (catchable, you can run)
         self.bag = bag            # Adventure: side 0 may use items
@@ -89,6 +92,17 @@ class TurnBattle:
         self.stage = "preview"
         self.vol = [self._fresh_vol(), self._fresh_vol()]
         self.choice_log = []   # [side, choice] in order - with the seed this replays the whole battle
+        self.multi_mega = multi_mega
+        self.rift = dict(rift) if rift else None
+        self.anomaly = self.rift.get("anomaly") if self.rift else None
+        self.turns_left = self.rift.get("turns") if self.rift else None
+        self.collapsed = False
+        if self.rift:
+            for s in self.sides:
+                for m in s.mons:
+                    m.flags["field"] = self.anomaly
+            for m in self.sides[1].mons:   # overflowing with rift energy
+                m.flags["stat_mult"] = self.rift.get("boost", 1.0)
 
     # ------------------------------------------------------------------ public API
     def requests(self):
@@ -128,6 +142,8 @@ class TurnBattle:
             for side in (0, 1):
                 self._switch_in(side, choices[side]["index"], first=True)
             self._after_switch_ins([0, 1])
+            if self.rift:
+                self._rift_start()
             self.stage = "turn"
             self._begin_turn()
             return self.log
@@ -160,7 +176,8 @@ class TurnBattle:
                 v = self.vol[side]
                 if v["charging"] is not None:
                     slot = v["charging"]
-                if c.get("mega") and self.sides[side].mon.can_mega and not self.sides[side].mega_used:
+                if c.get("mega") and self.sides[side].mon.can_mega and (self.multi_mega or
+                                                                         not self.sides[side].mega_used):
                     actions.append(("mega", side, None))
                 elif c.get("gmax") and self.sides[side].mon.can_gmax and not self.sides[side].gmax_used:
                     actions.append(("gmax", side, None))
@@ -175,7 +192,9 @@ class TurnBattle:
     def state(self, viewer=None):
         """Public battle state for UIs."""
         out = {"turn": self.turn, "weather": self.weather, "trick_room": self.trick_room, "over": self.over,
-               "winner": self.winner, "sides": [], "wild": self.wild, "caught": self.caught, "ran": self.ran}
+               "winner": self.winner, "sides": [], "wild": self.wild, "caught": self.caught, "ran": self.ran,
+               "rift": {"anomaly": self.anomaly, "turns": self.turns_left, "collapsed": self.collapsed}
+               if self.rift else None}
         for s in self.sides:
             v = self.vol[s.index]
             out["sides"].append({
@@ -235,7 +254,8 @@ class TurnBattle:
             lock = f"{mon.name} is taunted - no status moves"
         g = self.gimmicks is True                       # everything (PvP / practice)
         mg = g or self.gimmicks == "mega"               # Adventure: Mega Evolution only (with a Key Stone)
-        return {"kind": "move", "moves": moves, "can_mega": mg and mon.can_mega and not s.mega_used,
+        return {"kind": "move", "moves": moves,
+                "can_mega": mg and mon.can_mega and (self.multi_mega or not s.mega_used),
                 "can_gmax": g and mon.can_gmax and not s.gmax_used and not mon.can_mega,
                 "gmax_move": mon.gmax_move()[0] if mon.gmax_form else None,
                 "can_tera": g and not s.tera_used and not mon.megaed and not mon.can_mega and not mon.gmaxed,
@@ -326,8 +346,22 @@ class TurnBattle:
         self._next_turn_or_replace()
 
     def _next_turn_or_replace(self):
-        if self._check_over():
+        if self.over or self._check_over():
             return
+        if self.turns_left is not None and self.stage != "replace":
+            self.turns_left -= 1
+            self.emit("", ["rift", max(0, self.turns_left)])
+            if self.turns_left <= 0:   # the rift collapses: thrown back out, the Pokemon is gone
+                self.collapsed = True
+                self.over, self.winner = True, None
+                self.pending, self.queue = {}, []
+                self.emit("The rift is collapsing!!", ["rift", "collapse"])
+                self.emit("You were thrown back into the normal world... The Mega Pokemon vanished into the void.")
+                self.emit("", ["end", None])
+                return
+            if self.turns_left in (3, 1):
+                self.emit(f"The rift is getting unstable! {self.turns_left} turn{'s' if self.turns_left > 1 else ''} "
+                          f"until it collapses!", ["rift", self.turns_left])
         need = [side for side in (0, 1) if self.sides[side].mon.fainted and self.sides[side].bench()]
         if need:
             self.stage = "replace"
@@ -351,6 +385,8 @@ class TurnBattle:
         foe = self.sides[1 - side].mon
         self.emit(f"You threw a {name}!", ["ball", 1 - side, c["ball"]])
         rate = foe.base_entry.get("catch", 45)
+        if self.rift:   # a raging rift Mega fights the ball
+            rate *= self.rift.get("catch", 1.0)
         st = 2.5 if foe.status in ("slp", "frz") else 1.5 if foe.status else 1.0
         a = (3 * foe.maxhp - 2 * foe.hp) * rate * mult / (3 * foe.maxhp) * st
         if a >= 255:
@@ -537,10 +573,33 @@ class TurnBattle:
         s.mega_used = True
         verb = "reverted to its primal form" if "primal" in form["key"] else "Mega Evolved"
         self.emit(f"{old} has {verb}! It became {form['name']}!", ["mega", side, form["id"]])
+        if getattr(s.mon.member, "corrupted", False):   # absolute power, at a price
+            from .riftdex import CORRUPT_MULT
+            s.mon.flags["stat_mult"] = max(s.mon.flags.get("stat_mult", 1.0), CORRUPT_MULT)
+            s.mon.flags["corrupted"] = True
+            self.emit(f"The corrupted stone pulses black... {form['name']}'s power is out of control!",
+                      ["stat", side, True])
         if form["key"] in PRIMAL_WEATHER:
             self._set_weather(PRIMAL_WEATHER[form["key"]], 999)
         else:
             self._entry_ability(side, weather_only=True)
+
+    def _rift_start(self):
+        from .riftdex import ANOMALIES
+        name, text = ANOMALIES.get(self.anomaly, ("", ""))
+        if name:
+            self.emit(f"The rift warps the battle: {name}!", ["rift", self.anomaly])
+            self.emit(text)
+        if self.anomaly == "time":
+            self.trick_room = 999
+        elif self.anomaly == "storm":
+            self._set_weather(self.rng.choice(["rain", "sun", "sand", "snow"]), 999)
+        foe = self.sides[1].mon
+        if foe and not foe.fainted:
+            self.emit(f"{foe.name} is overflowing with rift energy!")
+            self._boost(1, {"atk": 1, "spa": 1})
+        if self.turns_left:
+            self.emit(f"The rift will collapse in {self.turns_left} turns!", ["rift", self.turns_left])
 
     def _set_weather(self, w, turns=5):
         self.weather = w
@@ -667,7 +726,9 @@ class TurnBattle:
             self.emit(f"It doesn't affect {target.name}...", ["immune", foe_i])
             return
         if hits_foe:
-            imm = AB.immunity(target, user, mv, mtype, effectiveness(mtype, target.types))
+            imm = AB.immunity(target, user, mv, mtype, type_eff(mtype, target))
+            if imm and self.anomaly == "gravity" and mtype == "ground":
+                imm = None   # Levitate can't hold anyone up in here
             if imm:
                 self._absorb(foe_i, imm)
                 return
@@ -675,6 +736,8 @@ class TurnBattle:
         accm = AB.accuracy(user, target, mv) if hits_foe else None
         if hits_foe and mv["acc"] <= 100 and accm is not None:
             acc = mv["acc"] * accm
+            if self.anomaly == "gravity":
+                acc *= 5 / 3
             if self.weather == "rain" and key in ("thunder", "hurricane"):
                 acc = 101
             if self.weather == "snow" and key == "blizzard":
@@ -1129,6 +1192,16 @@ class TurnBattle:
                     elif kind == "cure":
                         mon.status = None
                         self.emit(f"[{mon.name}'s {msg}] It was cured!", ["status", side, None])
+            if mon.flags.get("corrupted") and not mon.fainted:
+                if mon.indirect(mon.maxhp / 8):
+                    self.emit(f"{mon.name} is being eaten away by the corrupted stone!", ["hp", side, mon.hp_frac()])
+                if not mon.fainted and not mon.status and self.rng.random() < 0.25:
+                    st = self.rng.choice(["psn", "par", "brn"])
+                    if mon.can_status(st, self.weather):
+                        self.emit("The corruption lashes out!")
+                        self._inflict(side, st, "self")
+            if self.anomaly == "entropy" and not mon.fainted and mon.indirect(mon.maxhp / 16):
+                self.emit(f"The rift is eating away at {mon.name}!", ["hp", side, mon.hp_frac()])
             if v["yawn"]:
                 v["yawn"] -= 1
                 if v["yawn"] == 0 and not mon.fainted:

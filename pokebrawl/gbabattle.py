@@ -108,6 +108,8 @@ class GBABattle(Scene):
 
     # ------------------------------------------------------------------ update
     def update(self, dt):
+        if getattr(self, "collapse_t", 0) > 0:
+            self.collapse_t = max(0.0, self.collapse_t - dt)
         self.t += dt
         AUDIO.music("battle")
         for side in (0, 1):
@@ -219,6 +221,14 @@ class GBABattle(Scene):
             if a[4] != "status":
                 self._burst(1 - side, type_color(a[3], 0))
             self.anim = {"kind": "move", "t": 0, "dur": 0.45}
+        elif kind == "rift":   # the countdown ticking, or the whole rift caving in
+            if a[1] == "collapse":
+                self.collapse_t = 1.2
+                AUDIO.play("faint", 0.9)
+            elif isinstance(a[1], int):
+                self.rift_left = a[1]
+                if a[1] <= 2:
+                    AUDIO.play("select", 0.6)
         elif kind in ("hit", "hp"):
             side = a[1]
             v = self.vis[side]
@@ -348,6 +358,7 @@ class GBABattle(Scene):
         self.mode = "fight"
         moves = self.req["moves"]
         self.menu = U.Menu([(m["slot"], m["name"].upper()[:13], not m["disabled"]) for m in moves], cols=2)
+        self.move_row_h = 32 if len(moves) <= 4 else 22   # a Rift-Born Pokemon has a fifth move
 
     def _open_bag(self):
         self.mode = "bag"
@@ -496,6 +507,7 @@ class GBABattle(Scene):
                 self._foe_box(surf)
             if self.vis[0] and self.faint[0] < 1:
                 self._my_box(surf)
+        self._rift_hud(surf)
         self._bottom(surf)
 
     def _draw_real(self, surf):
@@ -527,7 +539,31 @@ class GBABattle(Scene):
                 self._foe_box_real(surf)
             if self.vis[0] and self.faint[0] < 1:
                 self._my_box_real(surf)
+        self._rift_hud(surf)
         self._bottom_real(surf)
+
+    def _rift_hud(self, surf):
+        """Inside a rift: the countdown to collapse and the anomaly warping the battle."""
+        b = self.s.battle
+        if not getattr(b, "rift", None):
+            return
+        from .riftdex import ANOMALIES
+        left = getattr(self, "rift_left", b.rift.get("turns"))
+        danger = left is not None and left <= 2
+        name = ANOMALIES.get(b.anomaly, ("",))[0]
+        r = pygame.Rect(4, 2, 300, 26)   # a strip along the top, clear of both Pokemon
+        pygame.draw.rect(surf, (24, 8, 40), r, border_radius=5)
+        edge = (255, 80, 80) if danger and int(self.t * 6) % 2 else (176, 112, 255)
+        pygame.draw.rect(surf, edge, r, 2, border_radius=5)
+        F.draw(surf, f"RIFT {left}", (r.x + 8, r.y + 4), (255, 120, 120) if danger else (248, 232, 255),
+               None, small=True)
+        F.draw(surf, name, (r.x + 80, r.y + 4), (200, 168, 255), None, small=True)
+        ct = getattr(self, "collapse_t", 0)
+        if ct > 0:   # the rift caving in: shaking violet-white flash
+            k = min(1.0, ct)
+            fl = pygame.Surface((VW, VH), pygame.SRCALPHA)
+            fl.fill((236, 220, 255, int(200 * k)))
+            surf.blit(fl, (int(math.sin(self.t * 60) * 6 * k), 0))
 
     def _foe_box_real(self, surf):
         v = self.vis[1]
@@ -588,7 +624,8 @@ class GBABattle(Scene):
             self.menu.draw(surf, (256, top + 12, 220, 76), row_h=32, col_w=104, bare=True)
         elif self.mode == "fight":
             surf.blit(BG.box("move"), (0, top))
-            self.menu.draw(surf, (4, top + 12, 316, 76), row_h=32, col_w=150, bare=True)
+            self.menu.draw(surf, (4, top + 10 if getattr(self, "move_row_h", 32) < 32 else top + 12, 316, 80),
+                           row_h=getattr(self, "move_row_h", 32), col_w=150, bare=True)
             m = self.req["moves"][self.menu.index] if self.menu.index < len(self.req["moves"]) else None
             if m:
                 F.draw(surf, "PP", (338, top + 18), U.TEXT, U.SHADOW)

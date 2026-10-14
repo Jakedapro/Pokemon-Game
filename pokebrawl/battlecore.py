@@ -31,6 +31,8 @@ class Mon:
         self.base_entry = dex.all[member.species]
         self.entry = self.base_entry
         self.moves = [dex.moves[m] for m in member.moves if m in dex.moves] or [dex.move("struggle")]
+        if getattr(member, "rift_move", None) in dex.moves:   # a Rift-Born Pokemon's fifth move
+            self.moves.append(dex.moves[member.rift_move])
         self.pp = [m["pp"] for m in self.moves]
         self.item = member.item
         self.stats = calc_stats(self.entry, member)
@@ -142,6 +144,8 @@ class Mon:
             v *= 1.5
         if not self.ability_suppressed:
             v *= AB.stat_mult(self, key, weather, other)
+        if key != "hp":   # rift energy / a corrupted Mega Stone
+            v *= self.flags.get("stat_mult", 1.0)
         return v
 
     # --------------------------------------------------------------- changes
@@ -239,8 +243,22 @@ class Mon:
         return amount
 
 
+def type_eff(mtype, target):
+    """Type effectiveness, bent by a Mega Rift's anomaly (target.flags['field'])."""
+    field = target.flags.get("field")
+    types = target.types
+    if field == "gravity" and mtype == "ground" and "flying" in types:   # everything is grounded
+        types = [t for t in types if t != "flying"] or ["normal"]
+    eff = effectiveness(mtype, types)
+    if field == "inverse":
+        eff = 2.0 if eff == 0 else 1 / eff
+    return eff
+
+
 def move_type_and_power(user, move, weather=None):
     t, p = move["type"], move["power"]
+    if move["key"] == "rift-breaker":   # always the user's own (original) type
+        t = user.base_entry["types"][0]
     if move["key"] == "weather-ball" and weather:
         t = {"rain": "water", "sun": "fire", "sand": "rock", "snow": "ice"}[weather]
         p = 100
@@ -256,8 +274,8 @@ def damage(user, target, move, rng, weather=None, level=None, spread=False, forc
     mtype, power = move_type_and_power(user, move, weather)
     if power <= 0:
         return 0, 1.0, False
-    eff = effectiveness(mtype, target.types)
-    if mtype == "ground" and target.item == "air-balloon":
+    eff = type_eff(mtype, target)
+    if mtype == "ground" and target.item == "air-balloon" and target.flags.get("field") != "gravity":
         eff = 0.0
     if eff == 0:
         return 0, 0.0, False
@@ -275,6 +293,12 @@ def damage(user, target, move, rng, weather=None, level=None, spread=False, forc
     stage = move["crit"] + AB.crit_bonus(user)
     crit = force_crit if force_crit is not None else rng.random() < (1 / 24, 1 / 8, 1 / 2, 1, 1)[min(stage, 4)]
     phys = move["cls"] == "phys"
+    if move["key"] == "rift-breaker":   # hits with whichever attack stat is higher, and tears through Megas
+        phys = user.stats["atk"] > user.stats["spa"]
+        if target.megaed or "-mega" in target.entry["key"]:
+            power *= 2
+    if user.flags.get("field") == "surge":
+        power *= 1.3
     tgt_unaware = AB.ab(target, user) == "unaware"
     usr_unaware = user.ability == "unaware"
     if move["key"] == "body-press":

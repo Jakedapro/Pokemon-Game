@@ -96,6 +96,8 @@ class Member:
         self.cur_hp = None
         self.status = None
         self.pp = None
+        self.corrupted = False          # Adventure: Mega Evolving with a corrupted stone
+        self.rift_move = None           # Adventure: a Rift-Born Pokemon's exclusive fifth move (move id)
 
     def to_dict(self):
         return {"species": self.species, "moves": self.moves, "item": self.item, "nature": self.nature,

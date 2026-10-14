@@ -725,11 +725,17 @@ class SummaryScene(GBAScene):
                    (inner.x + 8, inner.y + 240), U.TEXT, U.SHADOW, scale=1)
         else:
             pps = m.get("pp") or []
-            for i, mid in enumerate(m["moves"]):
+            from .riftdex import RIFT_MOVE_ID, install
+            install(dex)
+            moves = list(m["moves"]) + ([RIFT_MOVE_ID] if m.get("rift_born") else [])
+            step = 64 if len(moves) <= 4 else 52   # a Rift-Born Pokemon's fifth move
+            for i, mid in enumerate(moves):
                 mv = dex.moves[mid]
-                y = inner.y + 4 + i * 64
-                type_tag(surf, mv["type"], inner.x + 6, y + 2)
-                F.draw(surf, mv["name"].upper(), (inner.x + 78, y + 2), U.TEXT, U.SHADOW)
+                y = inner.y + 4 + i * step
+                type_tag(surf, dex.all[m["species"]]["types"][0] if mid == RIFT_MOVE_ID else mv["type"], inner.x + 6,
+                         y + 2)
+                F.draw(surf, mv["name"].upper(), (inner.x + 78, y + 2), (136, 40, 160) if mid == RIFT_MOVE_ID else
+                       U.TEXT, U.SHADOW)
                 pp = pps[i] if i < len(pps) else mv["pp"]
                 F.draw(surf, f"PP {pp}/{mv['pp']}", (inner.x + 78, y + 26), U.TEXT, U.SHADOW)
                 F.draw(surf, f"POW {mv['power'] or '-'}", (inner.right - 8, y + 26), (120, 120, 136), None,
@@ -842,6 +848,9 @@ class BagScene(GBAScene):
         elif k is not None:
             if k == "stones":
                 self.app.push(StonesScene(self.app, self.game))
+            elif k == "mega-radar":   # back to the field with the radar switched on
+                self.game["_radar"] = True
+                self.app.pop()
             elif k in A.BALL_KEYS:
                 self.msg = "Throw it at a wild POKeMON in battle!"
             elif k not in A.SHOP:
@@ -921,49 +930,79 @@ class BagScene(GBAScene):
 
 
 class StonesScene(GBAScene):
-    """The Mega Stone case: every stone you've found, and which of your Pokemon can use it."""
+    """The Mega Stone case: every stone you've found (corrupted ones too), and which of your Pokemon can use it.
+    Z on a corrupted stone you also have a clean copy of picks which one your Pokemon holds."""
 
     def __init__(self, app, game):
         super().__init__(app)
         self.game = game
         self.top = 0
+        self.index = 0
+
+    def rows(self):
+        g = self.game
+        return [(k, False) for k in g.get("megastones", [])] + [(k, True) for k in g.get("corrupted", [])]
 
     def handle(self, ev, pos):
         d = U.direction(ev)
-        n = len(self.game.get("megastones", []))
-        if d in ("down", "up"):
-            self.top = max(0, min(max(0, n - 8), self.top + (1 if d == "down" else -1)))
+        rows = self.rows()
+        n = len(rows)
+        if d in ("down", "up") and n:
+            self.index = max(0, min(n - 1, self.index + (1 if d == "down" else -1)))
+            self.top = max(0, min(self.index, max(self.top, self.index - 7)))
+        elif U.is_a(ev) and n and rows[self.index][1]:
+            key = rows[self.index][0]
+            if key in self.game.get("megastones", []):
+                on = self.game.setdefault("corrupt_on", [])
+                if key in on:
+                    on.remove(key)
+                else:
+                    on.append(key)
+                AUDIO.play("select")
+            else:
+                AUDIO.play("miss", 0.4)
         elif U.is_a(ev) or U.is_b(ev):
             self.app.pop()
 
     def draw(self, surf):
-        from . import story as S
+        from . import riftdex as R
         dex = self.app.dex
         g = self.game
         bg(surf, (112, 72, 160), (168, 128, 208))
         inner = U.box(surf, (8, 8, VW - 16, 44))
-        total = len(S.all_stones(dex))
+        total = len(S.all_stones(dex)) + len(R.custom_stones(dex))
         F.draw(surf, f"MEGA STONES  {len(g.get('megastones', []))}/{total}", (inner.x + 8, inner.y + 8),
                U.TEXT, U.SHADOW)
         F.draw(surf, "KEY STONE: " + ("YES" if g.get("keystone") else "NOT YET"), (inner.right - 8, inner.y + 8),
                (64, 136, 72) if g.get("keystone") else (200, 72, 64), U.SHADOW, anchor="topright")
         box = U.box(surf, (8, 58, VW - 16, VH - 66))
-        stones = g.get("megastones", [])
-        if not stones:
+        rows = self.rows()
+        if not rows:
             F.draw(surf, "No Mega Stones yet. Look for sparkles", (box.x + 8, box.y + 10), U.TEXT, U.SHADOW)
             F.draw(surf, "on the routes, and beat Gym Leaders!", (box.x + 8, box.y + 36), U.TEXT, U.SHADOW)
             return
         owned = {dex.all[m["species"]]["name"].split(" ")[0].lower() for m in g["party"] + g.get("box", [])}
-        for i, key in enumerate(stones[self.top:self.top + 8]):
+        for i, (key, bad) in enumerate(rows[self.top:self.top + 8]):
             y = box.y + 6 + i * 30
+            if self.top + i == self.index:
+                U.cursor(surf, (box.x + 2, y + 2))
             base = key.split("-mega")[0].split("-primal")[0]
             e = dex.get(base)
             if e:
-                surf.blit(G.icon(e["id"]), (box.x + 4, y - 4))
+                surf.blit(G.icon(e["id"]), (box.x + 14, y - 4))
             have = base.replace("-", " ") in owned or base in owned
-            F.draw(surf, S.stone_name(dex, key).upper()[:22], (box.x + 48, y + 4), U.TEXT, U.SHADOW)
-            F.draw(surf, "IN TEAM" if have else "", (box.right - 8, y + 4), (64, 136, 72), U.SHADOW,
+            name = (R.corrupted_name(dex, key) if bad else S.stone_name(dex, key)).upper()[:24]
+            F.draw(surf, name, (box.x + 56, y + 4), (136, 40, 120) if bad else U.TEXT, U.SHADOW)
+            tag = ""
+            if bad:
+                tag = "IN USE" if A.uses_corrupted(g, key) else "Z: USE"
+            elif have:
+                tag = "IN TEAM"
+            F.draw(surf, tag, (box.right - 8, y + 4), (136, 40, 120) if bad else (64, 136, 72), U.SHADOW,
                    anchor="topright")
+        if rows[self.index][1]:
+            F.draw(surf, "Corrupted: doubles every stat after Mega Evolving - and hurts it every turn.",
+                   (box.x + 8, box.bottom - 18), (136, 40, 120), None, scale=1)
 
 
 class QuestScene(GBAScene):

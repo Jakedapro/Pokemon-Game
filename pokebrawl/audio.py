@@ -372,6 +372,8 @@ class Audio:
         return voice_length(path)
 
     def cry(self, pid, vol=1.0):
+        from .riftdex import base_of
+        pid = base_of(pid)   # our own Megas use their base Pokemon's cry
         now = time.time() if self.clock is None else self.clock()
         if now - self.last.get("cry", -9) < THROTTLE["cry"]:
             return
