@@ -66,6 +66,7 @@ class OverworldScene(Scene):
     def __init__(self, app, game):
         super().__init__(app)
         self.game = game
+        A.use_options(game)   # difficulty, text speed, sound, the player's look, the randomizer
         self.world = A.World(app.dex)
         self.rng = random.Random()
         self.t = 0.0
@@ -96,6 +97,10 @@ class OverworldScene(Scene):
             self._load_room(r["kind"], r["area"], tuple(r["door"]), g["x"], g["y"])
         else:
             self._load_area(g["area"], g["x"], g["y"], first=True)
+            ch = self.tile(g["x"], g["y"])
+            if ch not in OUT_WALK and ch not in DOORS:   # an old save on a map that has changed since
+                area, x, y = g["center"]
+                self._load_area(area, x, y, first=True)
 
     # ------------------------------------------------------------------ places
     def _load_area(self, index, x, y, first=False):
@@ -605,6 +610,12 @@ class OverworldScene(Scene):
             from .adventure_ui import HallOfFame
             g["champion"] = True
             S.set_flag(g, "world_champion")
+            data = profile.load()
+            if not data.get("adventure_champion"):
+                data["adventure_champion"] = True
+                profile.save(data)
+                self.script[0:0] = [("say", "", ["RANDOMIZER MODE UNLOCKED!",
+                                                 "Start a NEW GAME and turn it on in the OPTION screen."])]
             A.save(g)
             self.app.push(HallOfFame(self.app, g))
             self._step()
@@ -851,8 +862,8 @@ class OverworldScene(Scene):
     def _open_menu(self):
         AUDIO.play("select", 0.5)
         self.menu = U.Menu([("dex", "POKeDEX"), ("party", "POKeMON"), ("bag", "BAG"), ("quests", "QUESTS"),
-                            ("card", self.game["name"].upper()), ("save", "SAVE"), ("quit", "QUIT"),
-                            ("close", "EXIT")])
+                            ("card", self.game["name"].upper()), ("save", "SAVE"), ("options", "OPTION"),
+                            ("quit", "QUIT"), ("close", "EXIT")])
 
     def _menu_handle(self, ev, pos):
         if ev.type == pygame.KEYDOWN and ev.key in (pygame.K_RETURN, pygame.K_TAB) and \
@@ -875,6 +886,8 @@ class OverworldScene(Scene):
             self.app.push(UI.CardScene(self.app, self.game))
         elif k == "quests":
             self.app.push(UI.QuestScene(self.app, self.game))
+        elif k == "options":
+            self.app.push(UI.OptionsScene(self.app, self.game))
         elif k == "save":
             self.menu = None
             A.save(self.game)

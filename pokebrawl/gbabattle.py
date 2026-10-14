@@ -275,6 +275,8 @@ class GBABattle(Scene):
             AUDIO.play("tera", 0.9)
             self.anim = {"kind": "mega", "t": 0, "dur": 2.6, "side": side, "pid": pid,
                          "name": self.s.battle.sides[side].mon.name, "swapped": False}
+            if A.OPTS.get("scene") == "OFF":   # BATTLE SCENE: OFF - straight to the result
+                self.anim.update(t=1.69, dur=1.9)
         elif kind == "item":
             AUDIO.play("heal", 0.6)
         elif kind == "win":
@@ -616,6 +618,8 @@ class GBABattle(Scene):
     # ------------------------------------------------------------------ shinies
     def _shine(self, side):
         """The shiny sparkle: stars burst around it, with the chime."""
+        if A.OPTS.get("scene") == "OFF":
+            return
         self.__dict__.setdefault("shines", {})[side] = self.t
         AUDIO.play("tera", 0.5)
 

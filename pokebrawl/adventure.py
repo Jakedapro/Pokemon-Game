@@ -19,6 +19,68 @@ SHINY_ODDS = 200     # 1 in 200: rare, but you'll see some
 
 STARTERS = {1: [1, 4, 7]}   # Bulbasaur, Charmander, Squirtle
 
+# ====================================================================== new-game options
+OPTION_DEFS = [("difficulty", "DIFFICULTY", ["EASY", "NORMAL", "HARD", "INSANE"]),
+               ("gender", "PLAYER", ["BOY", "GIRL"]),
+               ("text", "TEXT SPEED", ["SLOW", "MID", "FAST"]),
+               ("scene", "BATTLE SCENE", ["ON", "OFF"]),
+               ("sound", "SOUND", ["ON", "OFF"])]
+# unlocked by becoming World Champion once
+RANDOM_DEFS = [("random", "RANDOMIZER", ["OFF", "ON"]),
+               ("r_wild", "WILD ENCOUNTERS", ["SIMILAR", "ANY"]),
+               ("r_starters", "STARTERS", ["RANDOM", "KANTO"]),
+               ("r_trainers", "TRAINER TEAMS", ["RANDOM", "SAME"]),
+               ("r_types", "GYM TYPES", ["KEEP", "RANDOM"]),
+               ("r_legends", "WILD LEGENDS", ["NO", "YES"])]
+DIFFICULTY = {   # EXP multiplier, trainer level bonus, wild level bonus, AI step, shop prices
+    "EASY": {"exp": 0.9, "lv": -2, "wild": 0, "ai": -1, "price": 1.0},
+    "NORMAL": {"exp": 0.6, "lv": 2, "wild": 0, "ai": 0, "price": 1.0},
+    "HARD": {"exp": 0.5, "lv": 5, "wild": 2, "ai": 1, "price": 1.25},
+    "INSANE": {"exp": 0.42, "lv": 9, "wild": 4, "ai": 2, "price": 1.5},
+}
+AI_STEPS = ["easy", "normal", "hard", "insane"]
+OPTS = {}    # the options of the game being played (set by use_options)
+
+
+def default_options():
+    o = {k: vals[1 if k in ("difficulty", "text") else 0] for k, _, vals in OPTION_DEFS + RANDOM_DEFS}
+    o["rseed"] = random.randrange(1 << 30)
+    return o
+
+
+def use_options(game):
+    """Make this save's options the current ones (text speed, sound, the player's look...)."""
+    OPTS.clear()
+    OPTS.update(default_options())
+    OPTS.update(game.get("opts") or {"difficulty": "EASY"})   # saves from before options were easy-going
+    from . import cast, gbaui
+    from .audio import AUDIO
+    gbaui.TEXT_SPEED = {"SLOW": 30, "MID": 60, "FAST": 150}[OPTS["text"]]
+    on = OPTS["sound"] == "ON"
+    AUDIO.set_volumes(sfx=0.8 if on else 0.0, music=0.5 if on else 0.0, cry=0.8 if on else 0.0)
+    cast.set_player(OPTS["gender"])
+
+
+def diff():
+    return DIFFICULTY.get(OPTS.get("difficulty", "NORMAL"), DIFFICULTY["NORMAL"])
+
+
+def randomized(part=None):
+    if OPTS.get("random") != "ON":
+        return False
+    return part is None or OPTS.get(part) in ("RANDOM", "ANY", "SIMILAR")
+
+
+def starters(dex):
+    """The three starters for this game: Kanto's, or three random ones with the randomizer."""
+    if not randomized("r_starters"):
+        return STARTERS[1]
+    rng = random.Random(OPTS["rseed"] + 1)
+    pool = [e["id"] for e in dex.all.values() if e["default"] and not e["transform"] and e.get("lvl") and
+            not (e["legendary"] or e["mythical"]) and e["species"] not in SPECIAL_IDS and e.get("evo") and
+            sum(e["stats"].values()) <= 330]
+    return rng.sample(sorted(pool), 3)
+
 # shop: key -> (name, price, description)
 SHOP = {
     "poke-ball": ("Poke Ball", 200, "Catches wild Pokemon"),
@@ -159,10 +221,11 @@ def name_of(dex, mon):
 
 
 def xp_yield(dex, foe_species, foe_level, my_level, trainer=False):
-    """Experience for defeating a Pokemon (Gen 5 style: more for beating stronger Pokemon)."""
+    """Experience for defeating a Pokemon (Gen 5 style: more for beating stronger Pokemon), scaled by
+    the difficulty."""
     b = dex.all[foe_species].get("bxp", 60)
     gain = (b * foe_level / 5) * ((2 * foe_level + 10) / (foe_level + my_level + 10)) ** 2.5 + 1
-    return int(gain * (1.5 if trainer else 1.0))
+    return int(gain * (1.5 if trainer else 1.0) * diff()["exp"])
 
 
 def move_score(dex, mid):
@@ -373,7 +436,7 @@ def _theme(i, g, rng):
 
 def route_map(i, rng):
     """Route i (1-based): a winding path north with tall grass, trees, a pond and trainers."""
-    h = 34 + 4 * min(i, 6)
+    h = 48 + 6 * min(i, 6)
     g = _empty(h, "#")
     x = 7
     path = []
@@ -451,6 +514,15 @@ class World:
     def __init__(self, dex, seed=2024):
         self.dex = dex
         self.areas = []      # list of dicts: name, kind, rows, npcs, items, music, level range, pool
+        self._rcache = {}
+        self.rand_wild = randomized("r_wild")
+        self.rand_trainers = randomized("r_trainers")
+        self.rseed = OPTS.get("rseed", 0)
+        self.gym_types = [g[2] for g in GYMS]
+        if randomized() and OPTS.get("r_types") == "RANDOM":
+            types = ["normal", "fire", "water", "grass", "electric", "ice", "fighting", "poison", "ground", "flying",
+                     "psychic", "bug", "rock", "ghost", "dragon", "dark", "steel", "fairy"]
+            self.gym_types = random.Random(self.rseed + 7).sample(types, 8)
         rng = random.Random(seed)
         towns = ["Rootleaf Town"] + [g[0] for g in GYMS] + ["Pokemon League"]
         self._parents = {}
@@ -467,8 +539,10 @@ class World:
                 rname = f"Route {i + 1}" if i < 8 else "Victory Road"
                 lo, hi = self.route_levels(i + 1)
                 area = {"name": rname, "kind": "route", "rows": rows, "route": i + 1, "music": "route",
-                        "levels": (lo, hi), "pool": self._pool(i + 1, random.Random(seed * 31 + i))}
-                area["npcs"] = self._route_trainers(i + 1, rows, path, area, random.Random(seed * 17 + i))
+                        "levels": (lo, hi), "pool": self._pool(i + 1, random.Random(
+                            seed * 31 + i + (self.rseed if self.rand_wild else 0)))}
+                area["npcs"] = self._route_trainers(i + 1, rows, path, area, random.Random(
+                    seed * 17 + i + (self.rseed if self.rand_trainers else 0)))
                 area["items"] = self._route_items(i + 1, rows, path, random.Random(seed * 19 + i))
                 self.areas.append(area)
         # areas run south (index 0) to north: walking off the top goes to index + 1
@@ -504,16 +578,40 @@ class World:
             elif par[1] <= hi and self._parents.get(par[0]) is None and r >= 4:   # middle stages later on
                 cand.append(e["id"])
         rng.shuffle(cand)
-        pool = sorted(set(cand[:9 + r // 2]))
+        pool = sorted(set(cand[:16 + r]))
+        if self.rand_wild:   # the randomizer: every slot becomes something else
+            pool = sorted({self._random_species(p, rng) for p in pool})
         return pool or [16, 19]
+
+    # -------------------------------------------------------------- the randomizer
+    def _random_choices(self, legends):
+        key = ("rc", legends)
+        if key not in self._rcache:
+            self._rcache[key] = sorted(e["id"] for e in self.dex.all.values()
+                                       if e["default"] and not e["transform"] and e.get("lvl") and
+                                       e["species"] not in SPECIAL_IDS and
+                                       (legends or not (e["legendary"] or e["mythical"])))
+        return self._rcache[key]
+
+    def _random_species(self, pid, rng, legends=None):
+        """A random replacement: of similar strength (within about 12% total stats), or anything."""
+        legends = OPTS.get("r_legends") == "YES" if legends is None else legends
+        choices = self._random_choices(legends)
+        if OPTS.get("r_wild") == "ANY":
+            return rng.choice(choices)
+        bst = sum(self.dex.all[pid]["stats"].values())
+        near = [c for c in choices if abs(sum(self.dex.all[c]["stats"].values()) - bst) <= bst * 0.12]
+        return rng.choice(near or choices)
 
     def wild_species(self, area, rng):
         return rng.choice(area["pool"])
 
     def team_for(self, types, level, size, rng, strong=False):
         """A trainer's team of `size` Pokemon of these types, grown up to the right stage for their level."""
+        if self.rand_trainers:   # the randomizer: any type at all
+            types = None
         pool = [e for e in self.dex.all.values() if e["default"] and not e["transform"] and e.get("lvl") and
-                not (e["legendary"] or e["mythical"]) and any(t in types for t in e["types"]) and
+                not (e["legendary"] or e["mythical"]) and (types is None or any(t in types for t in e["types"])) and
                 self.base_form(e["id"]) == e["id"] and e["species"] not in SPECIAL_IDS]
         if strong:
             pool.sort(key=lambda e: -sum(grown_species(self.dex, e, 100)["stats"].values()))
@@ -530,7 +628,7 @@ class World:
         lo, hi = area["levels"]
         npcs = []
         h = len(rows)
-        ys = sorted(rng.sample(range(6, h - 6), min(h - 12, 2 + r // 2)))
+        ys = sorted(rng.sample(range(6, h - 6), min(h - 12, 5 + r)))
         last = -9
         for y in ys:
             if y - last < 4:
@@ -600,9 +698,9 @@ class World:
     # -------------------------------------------------------------- gyms / league
     def gym_team(self, k):
         town, leader, typ, ace, *_ = GYMS[k]
-        rng = random.Random(1000 + k)
-        size = min(6, 2 + k // 2 + (1 if k >= 6 else 0))
-        return self.team_for([typ], ace, size, rng, strong=True)
+        rng = random.Random(1000 + k + (self.rseed if self.rand_trainers else 0))
+        size = min(6, 3 + k // 2 + (1 if k >= 5 else 0))
+        return self.team_for([self.gym_types[k]], ace, size, rng, strong=True)
 
     def champion_team(self):
         rng = random.Random(4242)

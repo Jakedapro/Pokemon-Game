@@ -156,7 +156,13 @@ back to its own drawn art.
 **Controls:** arrow keys / WASD to walk, hold **X** (or Shift) to run, **Z** / Space to talk and confirm,
 **X** / Esc to go back, **Enter** for the START menu. The mouse works in menus too.
 
+- **New game options:** difficulty (EASY / NORMAL / HARD / INSANE - EXP, trainer levels, AI and prices), boy or
+  girl, text speed, battle scene and sound. Change them later from OPTION in the START menu.
+- **Randomizer:** unlocked once you become World Champion. Turn it on in a new game's OPTION screen and choose
+  what to mix up: wild Pokemon (similar strength or anything, legendaries or not), starters, trainer teams and
+  Gym types - from all 1,025 Pokemon.
 - **Start:** Professor Hazel introduces the world, you type your name and pick Bulbasaur, Charmander or Squirtle.
+  A secret Pikachu hides somewhere in Voltara City. Shinies are 1 in 200 and sparkle when they appear.
 - **Explore:** towns, routes with tall grass, Victory Road and the Pokemon League. Your lead Pokemon follows you.
   Walk into buildings: Pokemon Centers (the nurse heals your team; the PC holds your Box), Poke Marts (buy and
   sell), houses, the professor's lab, and gyms with trainers inside.

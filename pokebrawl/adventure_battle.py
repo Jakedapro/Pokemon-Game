@@ -19,6 +19,10 @@ class AdventureSession:
         self.trainer = trainer or {}
         self.my_side = self.me_index = 0
         self.party_idx = [i for i, m in enumerate(game["party"])]
+        d = A.diff()   # the difficulty: trainers are stronger (and smarter) on HARD and INSANE
+        bonus = d["wild"] if kind == "wild" else d["lv"]
+        if bonus:
+            foes = [dict(f, level=max(2, min(100, f["level"] + bonus)), cur_hp=None) for f in foes]
         self.foes = foes
         foe_name = (f"Wild {A.name_of(dex, foes[0])}" if kind == "wild" else self.trainer.get("name", "Trainer"))
         self.names = [game.get("name", "You"), foe_name]
@@ -31,6 +35,9 @@ class AdventureSession:
                                  self.seed, names=self.names, wild=kind == "wild", bag=True, gimmicks="mega")
         level = self.trainer.get("ai") or {"wild": "easy", "trainer": "normal", "gym": "hard",
                                            "champion": "insane"}.get(kind, "hard")
+        if kind != "wild":
+            step = A.AI_STEPS.index(level) + d["ai"] if level in A.AI_STEPS else 2
+            level = A.AI_STEPS[max(0, min(len(A.AI_STEPS) - 1, step))]
         self.bot = TurnBot(level, self.seed)
         self.out = []
         self.error = None

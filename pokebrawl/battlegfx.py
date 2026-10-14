@@ -53,7 +53,7 @@ def files():
     pics = set(FRONT_PICS.values()) | {c[1] for c in cast.CAST.values()}
     out += [f"graphics/trainers/front_pics/{n}_front_pic.png" for n in sorted(pics)]
     out += [f"graphics/object_events/pics/people/{c[0]}.png" for c in cast.CAST.values()]
-    out += ["graphics/trainers/back_pics/red_back_pic.png"]
+    out += ["graphics/trainers/back_pics/red_back_pic.png", "graphics/trainers/back_pics/leaf_back_pic.png"]
     out += [f"graphics/interface/ball/{n}.png" for n in BALLS.values()]
     out += ["graphics/fonts/latin_normal.png", "graphics/fonts/latin_small.png", "src/text.c"]
     out += [PARTY + n for n in ("bg.png", "bg.bin", "slot_main.bin", "slot_wide.bin", "slot_wide_empty.bin")]
@@ -165,11 +165,13 @@ def trainer_pic(look):
 def player_back(frame=0):
     """The player's back sprite (frame 0 standing, 1-4 the throw), 128x128 at 2x - in our colours."""
     from . import cast
+    look = cast.player_look()
 
     def make():
-        fr = frlg.frames("graphics/trainers/back_pics/red_back_pic.png", 64, 64, cast.CAST["player"][2])
+        fr = frlg.frames(f"graphics/trainers/back_pics/{cast.BACK_PICS[look]}_back_pic.png", 64, 64,
+                         cast.CAST[look][2])
         return pygame.transform.scale_by(fr[min(frame, len(fr) - 1)], S) if fr else None
-    return _cached(("back", frame), make)
+    return _cached(("back", look, frame), make)
 
 
 def ball(kind="poke-ball", frame=0):

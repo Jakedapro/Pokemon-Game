@@ -39,8 +39,20 @@ CAST = {
     "brutus": ("bruno", "elite_four_bruno", ((0, 60, 12, 1.2, 0.9),)),
     "morrow": ("agatha", "elite_four_agatha", _all(272, 1.0, 0.9)),
     "drakon": ("lance", "elite_four_lance", ((330, 30, 168, 1.0, 0.85),)),
-    "champ": ("green_normal", "leaf", ((150, 220, 45, 1.0, 1.05), (330, 20, 45, 1.0, 1.0))),
+    "champ": ("beauty", "beauty", _all(45, 1.0, 1.05)),
+    # the girl player: Leaf, as she is
+    "player_f": ("green_normal", "leaf", ()),
 }
+BACK_PICS = {"player": "red", "player_f": "leaf"}
+PLAYER = ["player"]
+
+
+def set_player(gender):
+    PLAYER[0] = "player_f" if gender == "GIRL" else "player"
+
+
+def player_look():
+    return PLAYER[0]
 
 LEADERS = {f"leader{k}" for k in range(8)}
 

@@ -536,6 +536,9 @@ def _frlg_person(look, face, frame):
 def person(look, face, frame=0, shirt=None):
     """A trainer sprite (32x64 on the canvas: 16x32 like the handhelds). face: up/down/left/right,
     frame 0 = standing, 1/2 = steps."""
+    if look == "player":
+        from . import cast
+        look = cast.player_look()
     key = ("p", look, face, frame, shirt)
     if key in _cache:
         return _cache[key]

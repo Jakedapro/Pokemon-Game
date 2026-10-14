@@ -118,6 +118,9 @@ def cursor(surf, pos, color=TEXT):
     F.draw(surf, "▶", pos, color, SHADOW)
 
 
+TEXT_SPEED = 60   # letters a second (the TEXT SPEED option)
+
+
 class TextBox:
     """The bottom message box: two lines, types out, waits for A (with the little bouncing arrow)."""
 
@@ -147,7 +150,7 @@ class TextBox:
     def update(self, dt):
         if self.done:
             return
-        self.shown = min(self._len(), self.shown + dt * 60)
+        self.shown = min(self._len(), self.shown + dt * TEXT_SPEED)
         if self.shown >= self._len():
             self.wait += dt
             if self.auto is not None and self.wait >= self.auto:

@@ -155,9 +155,7 @@ QUEST_STONES = {"q_letter": "venusaur-mega", "q_psyduck": "alakazam-mega", "q_ri
 def rival_team(world, game, level, size):
     dex = world.dex
     first = dex.all[game["party"][0]["species"]] if game.get("starter") is None else dex.all[game["starter"]]
-    gen = next((g for g, trio in A.STARTERS.items() if first["id"] in trio or
-                world.base_form(first["id"]) in trio), 1)
-    trio = A.STARTERS[gen]
+    trio = A.starters(dex)   # Kanto's three (or the randomizer's)
     mine = world.base_form(first["id"])
     i = trio.index(mine) if mine in trio else 0
     starter = dex.all[trio[(i + 1) % 3]]   # the one that beats yours

@@ -130,6 +130,125 @@ class AdventureTitle(GBAScene):
 
 
 # ====================================================================== new game
+def randomizer_unlocked():
+    from . import profile
+    return bool(profile.load().get("adventure_champion"))
+
+
+class OptionsPanel:
+    """FireRed's OPTION screen: one row per setting, LEFT / RIGHT to change it, START at the bottom."""
+
+    def __init__(self, opts, new_game=True):
+        self.opts = opts
+        self.new_game = new_game
+        self.index = 0
+
+    def rows(self):
+        out = list(A.OPTION_DEFS)
+        if self.new_game and randomizer_unlocked():
+            out += A.RANDOM_DEFS if self.opts.get("random") == "ON" else A.RANDOM_DEFS[:1]
+        if not self.new_game:   # mid-game: the world stays as it is
+            out = [r for r in out if r[0] not in ("gender",)]
+        return out + [("done", "START" if self.new_game else "CLOSE", [])]
+
+    def handle(self, ev, pos):
+        rows = self.rows()
+        d = U.direction(ev)
+        if d in ("up", "down"):
+            self.index = (self.index + (1 if d == "down" else -1)) % len(rows)
+            AUDIO.play("click", 0.25)
+            return None
+        key, _, vals = rows[self.index]
+        if d in ("left", "right") and vals:
+            i = vals.index(self.opts.get(key, vals[0])) if self.opts.get(key) in vals else 0
+            self.opts[key] = vals[(i + (1 if d == "right" else -1)) % len(vals)]
+            self.index = min(self.index, len(self.rows()) - 1)
+            AUDIO.play("select", 0.3)
+            return None
+        if U.is_a(ev) and key == "done":
+            return "done"
+        if U.is_a(ev) and vals:   # A also cycles
+            i = vals.index(self.opts.get(key, vals[0])) if self.opts.get(key) in vals else 0
+            self.opts[key] = vals[(i + 1) % len(vals)]
+            return None
+        if U.is_b(ev):
+            return "back"
+        return None
+
+    def draw(self, surf, t):
+        rows = self.rows()
+        bg(surf, (64, 104, 200), (152, 200, 240))
+        head = U.box(surf, (8, 6, VW - 16, 40))
+        F.draw(surf, "OPTION" if not self.new_game else "NEW GAME - OPTION", (head.x + 8, head.y + 2), U.TEXT,
+               U.SHADOW)
+        box = U.box(surf, (8, 50, VW - 16, min(VH - 124, 20 + 24 * len(rows))))
+        per = max(1, (box.h - 4) // 24)
+        top = max(0, min(self.index - per + 2, len(rows) - per))
+        if top > 0:
+            F.draw(surf, "^", (box.right - 14, box.y - 6), (120, 120, 136), None, scale=1)
+        if top + per < len(rows):
+            F.draw(surf, "v", (box.right - 14, box.bottom - 6), (120, 120, 136), None, scale=1)
+        for i, (key, label, vals) in enumerate(rows[top:top + per]):
+            y = box.y + 2 + i * 24
+            j = top + i
+            sel = j == self.index
+            if sel:
+                U.cursor(surf, (box.x + 2, y))
+            if key == "done":
+                F.draw(surf, label, (box.x + 22, y), (200, 64, 48), U.SHADOW)
+                continue
+            rnd = key.startswith("r_") or key == "random"
+            F.draw(surf, label, (box.x + 22, y), (64, 104, 176) if rnd else U.TEXT, U.SHADOW)
+            val = self.opts.get(key, vals[0])
+            F.draw(surf, ("< " + val + " >") if sel else val, (box.right - 10, y), (232, 96, 64), U.SHADOW,
+                   anchor="topright")
+        key = rows[self.index][0]
+        tip = OPTION_TIPS.get(key, "") if key != "difficulty" else DIFF_TIPS[self.opts.get("difficulty", "NORMAL")]
+        hint = U.box(surf, (8, VH - 66, VW - 16, 60))
+        F.draw(surf, tip, (hint.x + 8, hint.y + 4), U.TEXT, U.SHADOW, scale=1)
+        F.draw(surf, "UP/DOWN: choose   LEFT/RIGHT: change   Z: " + ("start" if self.new_game else "close"),
+               (hint.x + 8, hint.y + 26), (120, 120, 136), None, scale=1)
+
+
+DIFF_TIPS = {"EASY": "More EXP, gentler trainers. For relaxing.",
+             "NORMAL": "The intended journey. You'll need to train your team.",
+             "HARD": "Stronger, smarter trainers and less EXP. Pricier items.",
+             "INSANE": "Trainers far above you and very little EXP. Good luck."}
+OPTION_TIPS = {"gender": "Play as a boy or a girl.", "text": "How fast messages type out.",
+               "scene": "Battle animations like Mega Evolution and shiny sparkles.",
+               "sound": "Music, sound effects and cries.",
+               "random": "RANDOMIZER: unlocked for World Champions. Mixes up the Pokemon!",
+               "r_wild": "SIMILAR keeps wild Pokemon about as strong as before; ANY is anything.",
+               "r_starters": "Three random starters instead of Bulbasaur, Charmander and Squirtle.",
+               "r_trainers": "Trainers, leaders and the Elite Four use random Pokemon.",
+               "r_types": "Gym Leaders specialise in a random type.",
+               "r_legends": "Allow legendary Pokemon in the wild."}
+
+
+class OptionsScene(GBAScene):
+    """The START menu's OPTION screen (mid-game)."""
+
+    def __init__(self, app, game):
+        super().__init__(app)
+        self.game = game
+        self.t = 0.0
+        self.panel = OptionsPanel(dict(A.default_options(), **(game.get("opts") or {})), new_game=False)
+
+    def update(self, dt):
+        self.t += dt
+
+    def handle(self, ev, pos):
+        k = self.panel.handle(ev, pos)
+        if k in ("done", "back"):
+            self.game["opts"] = self.panel.opts
+            A.use_options(self.game)
+            A.save(self.game)
+            self.app.pop()
+
+    def draw(self, surf):
+        self.panel.draw(surf, self.t)
+
+
 class NewGame(GBAScene):
     def __init__(self, app):
         super().__init__(app)
@@ -139,6 +258,15 @@ class NewGame(GBAScene):
         self.gen = 1
         self.pick = 1
         self.confirm = None
+        self.opts = A.default_options()
+        self.panel = OptionsPanel(self.opts)
+        self.stage = "setup"
+        self.text = None
+
+    def _begin(self):
+        A.use_options({"opts": self.opts})
+        self.trio = A.starters(self.app.dex)
+        self.stage = "talk"
         self._talk(["Hello there! Welcome to the world of POKeMON!",
                     "My name is HAZEL. People call me the POKeMON PROF.",
                     "This world is inhabited by creatures called POKeMON!",
@@ -164,7 +292,7 @@ class NewGame(GBAScene):
     def _to_pick(self):
         self.stage = "pick"
         self.text = None
-        AUDIO.cry(A.STARTERS[self.gen][self.pick], 0.7)
+        AUDIO.cry(self.trio[self.pick], 0.7)
 
     def update(self, dt):
         self.t += dt
@@ -173,6 +301,13 @@ class NewGame(GBAScene):
             self.text.update(dt)
 
     def handle(self, ev, pos):
+        if self.stage == "setup":
+            k = self.panel.handle(ev, pos)
+            if k == "done":
+                self._begin()
+            elif k == "back":
+                self.app.pop()
+            return
         if self.stage == "talk" and self.text is not None:
             self.text.handle(ev)
             return
@@ -200,7 +335,7 @@ class NewGame(GBAScene):
             d = U.direction(ev)
             if d in ("left", "right"):
                 self.pick = (self.pick + (1 if d == "right" else -1)) % 3
-                AUDIO.cry(A.STARTERS[self.gen][self.pick], 0.6)
+                AUDIO.cry(self.trio[self.pick], 0.6)
             elif ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1 and pos:
                 for i in range(3):
                     if abs(pos[0] - (100 + i * 140)) < 60 and 120 < pos[1] < 240:
@@ -212,8 +347,9 @@ class NewGame(GBAScene):
 
     def _choose(self):
         from .overworld import OverworldScene
-        pid = A.STARTERS[self.gen][self.pick]
+        pid = self.trio[self.pick]
         game = A.new_game((self.name.strip() or "RED")[:10], pid, self.app.dex)
+        game["opts"] = dict(self.opts)
         lab = next((b for b in _lab_door(game, self.app)), None)
         if lab:
             game["area"], game["x"], game["y"] = 0, lab[0], lab[1] + 1
@@ -230,6 +366,9 @@ class NewGame(GBAScene):
 
     def draw(self, surf):
         t = self.t
+        if self.stage == "setup":
+            self.panel.draw(surf, t)
+            return
         bg(surf, (40, 48, 72), (88, 104, 152))
         if self.stage in ("talk", "name"):
             pygame.draw.ellipse(surf, (64, 80, 120), (170, 196, 140, 26))
@@ -247,7 +386,7 @@ class NewGame(GBAScene):
         elif self.stage == "pick":
             pygame.draw.rect(surf, (168, 120, 72), (40, 200, 400, 30), border_radius=6)
             pygame.draw.rect(surf, (128, 88, 56), (40, 226, 400, 8))
-            for i, pid in enumerate(A.STARTERS[self.gen]):
+            for i, pid in enumerate(self.trio):
                 x = 100 + i * 140
                 sel = i == self.pick
                 if sel:
@@ -255,7 +394,7 @@ class NewGame(GBAScene):
                     surf.blit(img, img.get_rect(midbottom=(x, 196 + int(math.sin(t * 5) * 2))))
                     U.cursor(surf, (x - 6, 104))
                 U.ball(surf, (x, 212), 9 if sel else 8)
-            e = self.app.dex.all[A.STARTERS[self.gen][self.pick]]
+            e = self.app.dex.all[self.trio[self.pick]]
             inner = U.box(surf, (4, 240, 472, 76))
             F.draw(surf, f"{e['name'].upper()}", (inner.x + 10, inner.y + 6), U.TEXT, U.SHADOW)
             x = inner.x + 10
@@ -868,7 +1007,7 @@ class MartScene(GBAScene):
                 self.stage = "qty_" + self.stage
         elif self.stage.startswith("qty_"):
             selling = self.stage == "qty_sell"
-            price = A.SHOP[self.item][1] // (2 if selling else 1)
+            price = int(A.SHOP[self.item][1] * (1 if selling else A.diff()["price"])) // (2 if selling else 1)
             cap = g["bag"].get(self.item, 0) if selling else max(1, min(99, g["money"] // max(1, price)))
             d = U.direction(ev)
             if d in ("up", "right"):
@@ -921,7 +1060,7 @@ class MartScene(GBAScene):
             self.list.draw(surf, (196, 4, 280, min(232, 20 + 26 * len(self.list.options))))
             for i, (k, *_) in enumerate(self.list.options[:8]):
                 if k in A.SHOP:
-                    price = A.SHOP[k][1] // (2 if selling else 1)
+                    price = int(A.SHOP[k][1] * (1 if selling else A.diff()["price"])) // (2 if selling else 1)
                     val = f"x{g['bag'].get(k, 0)}" if selling else f"{price}"
                     F.draw(surf, val, (466, 4 + 12 + i * 26), U.TEXT, U.SHADOW, anchor="topright")
             k = self.list.options[self.list.index][0]
@@ -931,7 +1070,7 @@ class MartScene(GBAScene):
             F.draw(surf, f"In bag: {g['bag'].get(k, 0)}" if k in A.SHOP else "", (box.x + 10, box.y + 32),
                    (120, 120, 136), None)
             if self.stage.startswith("qty_"):
-                price = A.SHOP[self.item][1] // (2 if selling else 1)
+                price = int(A.SHOP[self.item][1] * (1 if selling else A.diff()["price"])) // (2 if selling else 1)
                 q = U.box(surf, (240, 186, 236, 52))
                 F.draw(surf, f"x{self.qty:02d}", (q.x + 10, q.y + 6), U.TEXT, U.SHADOW)
                 F.draw(surf, f"{price * self.qty} coins", (q.right - 8, q.y + 6), U.TEXT, U.SHADOW, anchor="topright")
