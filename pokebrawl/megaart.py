@@ -222,37 +222,54 @@ def typhlosion(c):
 
 
 def snorlax(c):
-    """Mega Snorlax (Normal/Fighting): a sparring champion - headband, spiky tuft, wrapped fists and a title belt."""
-    c.recolor(((140, 200, 214, 0.9, 0.75),))
-    band, band_hi = (216, 48, 48), (248, 120, 104)
-    # headband with streaming tails
-    c.poly([(43, 10), (58, 12), (58, 14), (43, 12)], band, band_hi)
-    c.poly([(58, 12), (64, 6), (63, 10), (59, 15)], band, band_hi, layer="under")
-    # spiky tuft
-    for a, b, tip in (((46, 10), (50, 9), (47, 2)), ((51, 9), (55, 10), (55, 3))):
-        c.spike(a, b, tip, (40, 72, 88), (72, 112, 128), layer="under")
-    # wrapped fists
-    for y in (37, 42):
-        c.line((3, y), (12, y + 2), (240, 240, 232), 2)
-    # the championship belt
-    c.poly([(14, 37), (52, 37), (52, 41), (14, 41)], (216, 168, 48), (248, 224, 120))
-    c.poly([(28, 35), (38, 35), (38, 43), (28, 43)], (248, 216, 72), (255, 248, 176))
-    c.circle((33, 39), 2, (216, 48, 48))
+    """Mega Snorlax (Normal/Fighting): the Yokozuna - a sumo topknot and the champion's thick twisted rope round
+    its belly with zig-zag paper streamers."""
+    c.recolor(((140, 200, 205, 0.85, 0.8),))
+    # topknot
+    c.circle((52, 5), 4, (40, 40, 56), (96, 96, 120), layer="under")
+    c.poly([(49, 9), (55, 9), (54, 11), (50, 11)], (40, 40, 56), (72, 72, 96))
+    # the champion's rope: thick, twisted, white, round the middle of the belly
+    rope = [(9, 21), (20, 23), (32, 24), (44, 23), (53, 21)]
+    for a, b in zip(rope, rope[1:]):
+        c.line(a, b, (232, 232, 224), 5)
+    for a, b in zip(rope, rope[1:]):
+        c.line((a[0], a[1] - 2), (b[0], b[1] - 2), (255, 255, 255), 1)
+    for x in range(10, 53, 3):   # the twist
+        y = 21 + (2 if 15 < x < 48 else 1)
+        c.line((x, y - 2), (x + 2, y + 2), (152, 152, 160))
+    # zig-zag paper streamers hanging from it
+    for x in (18, 30, 42):
+        y = 26
+        zig = [(x, y), (x + 4, y), (x + 1, y + 3), (x + 5, y + 3), (x + 2, y + 7), (x - 1, y + 7), (x + 1, y + 4),
+               (x - 2, y + 4)]
+        c.poly(zig, (248, 248, 248), (255, 255, 255))
 
 
 def lapras(c):
-    """Mega Lapras (Water/Ice): a shell of ice crystals, a frozen horn and a frosty collar."""
-    c.recolor(((180, 240, 196, 0.55, 1.12), (40, 60, 200, 0.12, 1.1, 0.1)))
-    ice, ice_hi, ice_lo = (136, 216, 240), (232, 252, 255), (88, 160, 208)
-    for a, b, tip in (((34, 34), (40, 32), (36, 18)), ((40, 32), (46, 31), (44, 14)), ((46, 32), (52, 33), (52, 18)),
-                      ((52, 34), (56, 36), (60, 24)), ((30, 36), (34, 34), (28, 26))):
-        c.spike(a, b, tip, ice_lo, ice)
-        c.line(a, tip, ice_hi)
-    # the horn freezes into a long crystal
-    c.spike((22, 8), (26, 8), (25, 0), ice, ice_hi)
-    # frosty collar
-    for x in range(20, 34, 3):
-        c.spike((x, 24), (x + 3, 24), (x + 1, 29), ice, ice_hi)
+    """Mega Lapras (Water/Ice): a deep-ocean body carrying a whole glacier - big faceted ice crystals over its
+    shell, an icicle fringe and a crown of ice."""
+    c.recolor(((180, 245, 218, 1.0, 0.72),))
+    hi, mid, lo, ridge = (216, 244, 255), (136, 204, 236), (72, 136, 200), (255, 255, 255)
+
+    def crystal(x, y, w, h, lean=0):
+        l, r, t = (x - w // 2, y), (x + w // 2, y), (x + lean, y - h)
+        m = (x + lean // 2, y - 1)
+        c.poly([l, m, t], hi)
+        c.poly([m, r, t], lo)
+        c.poly([(m[0] - 1, m[1]), (m[0] + 2, m[1]), t], mid)
+        c.line(t, ((t[0] + l[0]) // 2, (t[1] + l[1]) // 2), ridge)
+    # the glacier's body over the shell
+    c.poly([(33, 46), (34, 38), (40, 33), (50, 32), (57, 36), (60, 44), (56, 50), (38, 50)], mid, hi)
+    c.poly([(46, 50), (56, 50), (60, 44), (57, 40)], lo)
+    for x, y, w, h, lean in ((36, 42, 8, 14, -2), (44, 38, 10, 24, 0), (52, 40, 9, 18, 2), (58, 45, 6, 10, 3),
+                             (40, 46, 6, 8, 0)):
+        crystal(x, y, w, h, lean)
+    # icicle fringe under the glacier
+    for x in range(36, 58, 4):
+        c.spike((x, 50), (x + 3, 50), (x + 1, 54), mid, hi)
+    # crown of ice
+    for a, b, tip in (((18, 10), (21, 9), (16, 1)), ((23, 8), (27, 8), (25, -1)), ((28, 9), (31, 10), (33, 2))):
+        c.spike(a, b, tip, mid, hi)
 
 
 def ninetales(c):
@@ -272,35 +289,80 @@ def ninetales(c):
 
 
 def machamp(c):
-    """Mega Machamp (Fighting/Steel): steel gauntlets on all four fists, steel shoulder spikes and a golden belt."""
-    c.recolor(((60, 170, 214, 0.35, 0.95, 0.1),))
-    steel, steel_hi, steel_lo = (152, 160, 184), (224, 232, 248), (96, 104, 128)
-    for x0, y0, x1, y1 in ((4, 14, 16, 20), (48, 14, 60, 20), (13, 36, 22, 41), (44, 36, 53, 41)):
-        # a steel cuff round the wrist, studs on the knuckles above it
-        c.poly([(x0, y0 + 1), (x0 + 1, y0), (x1 - 1, y0), (x1, y0 + 1), (x1, y1 - 1), (x1 - 1, y1), (x0 + 1, y1),
-                (x0, y1 - 1)], steel_lo, steel)
-        c.line((x0 + 1, y0 + 1), (x1 - 1, y0 + 1), steel_hi)
-        for x in range(x0 + 2, x1 - 1, 3):
-            c.px(x, y0 - 2, steel_hi)
-            c.px(x, y0 - 3, steel)
-    for a, b, tip in (((16, 20), (22, 18), (14, 12)), ((44, 18), (50, 20), (52, 12))):
-        c.spike(a, b, tip, steel, steel_hi)
+    """Mega Machamp (Fighting/Steel): a gunmetal body in armour - angular steel gauntlets with knuckle spikes on
+    all four fists, steel shoulder plates and a golden champion's belt."""
+    c.recolor(((60, 170, 214, 0.3, 0.9, 0.1),))
+    steel, hi, lo, rivet = (148, 156, 180), (224, 232, 248), (88, 96, 120), (248, 208, 80)
+
+    def mirror(pts):
+        return [(64 - x, y) for x, y in pts]
+
+    def plate(pts):
+        c.poly(pts, steel, hi)
+        ys = [y for _, y in pts]
+        bottom = max(ys)
+        low = [(x, y) for x, y in pts if y >= bottom - 2]
+        if len(low) >= 2:
+            c.line(low[0], low[-1], lo, 2)
+    shapes = [
+        [(3, 7), (6, 3), (14, 3), (17, 7), (17, 13), (3, 13)],                       # upper fist
+        [(13, 25), (15, 19), (23, 17), (27, 21), (24, 27), (16, 28)],                # shoulder
+        [(12, 35), (22, 34), (23, 41), (13, 42)],                                    # lower fist
+    ]
+    for pts in shapes:
+        for side in (pts, mirror(pts)):
+            plate(side)
+    for x0 in (4, 45):   # knuckle spikes
+        for k in range(3):
+            c.spike((x0 + k * 4, 4), (x0 + 3 + k * 4, 4), (x0 + 1 + k * 4, 0), steel, hi)
+    for x, y in ((10, 10), (20, 22), (17, 38)):
+        c.px(x, y, rivet)
+        c.px(64 - x, y, rivet)
+    # golden belt with a red jewel
     c.poly([(24, 43), (42, 43), (42, 47), (24, 47)], (216, 168, 48), (248, 224, 120))
-    c.circle((33, 45), 2, (232, 64, 64))
+    c.poly([(30, 42), (36, 42), (36, 48), (30, 48)], (248, 216, 72), (255, 248, 176))
+    c.circle((33, 45), 2, (232, 48, 64))
 
 
 def togekiss(c):
-    """Mega Togekiss (Fairy/Flying): a second pair of great wings raised high, golden markings and a halo."""
+    """Mega Togekiss (Fairy/Flying): two great angel wings raised high - layered feathers with a scalloped edge,
+    tipped in gold - and a little golden tiara."""
     c.swap(lambda r, g, b: r > 150 and g < 100 and b < 100, (248, 192, 48))   # red marks -> gold
     c.swap(lambda r, g, b: b > 180 and r < 120, (240, 120, 200))              # blue marks -> pink
-    wing, wing_hi, tip = (224, 228, 248), (255, 255, 255), (248, 200, 72)
+    white, shade, deep, gold, gold_hi = (248, 248, 255), (212, 220, 244), (168, 176, 216), (232, 176, 48), \
+        (255, 232, 128)
+    lead = [(0, 0), (-2, -12), (-8, -22), (-16, -28), (-25, -30)]
+    trail = [(-27, -26), (-22, -24), (-25, -20), (-19, -18), (-21, -13), (-15, -12), (-16, -7), (-10, -6),
+             (-10, -2), (-4, 1)]
+    inner = [(-6, -14), (-9, -12), (-8, -8), (-5, -5)]
     for side in (-1, 1):
-        x = 32 + side * 6
-        pts = [(x, 36), (x + side * 10, 18), (x + side * 22, 8), (x + side * 26, 14), (x + side * 18, 30),
-               (x + side * 6, 40)]
-        c.poly(pts, wing, wing_hi, layer="under")
-        c.spike((x + side * 20, 10), (x + side * 26, 14), (x + side * 30, 4), tip, (255, 240, 160), layer="under")
-    c.ring((24, 24, 16, 6), (248, 208, 72), 2)
+        bx, by = 32 + side * 3, 38
+
+        P = [(bx + (-p[0] if side > 0 else p[0]), by + p[1]) for p in lead + trail]
+        c.poly(P, white, layer="under")
+        # the lower (secondary) feathers a shade darker
+        sec = [(bx + (-p[0] if side > 0 else p[0]), by + p[1]) for p in [(0, 0)] + trail[3:]]
+        c.poly(sec, shade, layer="under")
+        # feather lines, from the wing's inner arm out to each scallop
+        for q, t in zip(inner + inner, trail[1::2] + trail[2::2]):
+            a = (bx + (-q[0] if side > 0 else q[0]), by + q[1])
+            b = (bx + (-t[0] if side > 0 else t[0]), by + t[1])
+            c.line(a, b, deep, 1, layer="under")
+        # gold on the long primary feathers
+        for t in [lead[-1]] + trail[:4]:   # each long feather dipped in gold at the end
+            x, y = bx + (-t[0] if side > 0 else t[0]), by + t[1]
+            dx, dy = bx - x, by - y
+            n = max(1.0, math.hypot(dx, dy))
+            ux, uy = dx / n, dy / n
+            base = (x + ux * 5, y + uy * 5)
+            c.poly([(x, y), (base[0] - uy * 2, base[1] + ux * 2), (base[0] + uy * 2, base[1] - ux * 2)], gold,
+                   layer="under")
+            c.line((x, y), base, gold_hi, 1, layer="under")
+    # golden tiara
+    for k, h in enumerate((3, 5, 3)):
+        x = 16 + k * 3
+        c.spike((x, 32), (x + 3, 32), (x + 1, 32 - h), gold, gold_hi)
+    c.px(18, 28, (240, 120, 200))
 
 
 DESIGNS = {"flygon": flygon, "luxray": luxray, "arcanine": arcanine, "milotic": milotic, "typhlosion": typhlosion,
