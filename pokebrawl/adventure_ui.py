@@ -105,10 +105,13 @@ class AdventureTitle(GBAScene):
         F.draw(surf, "POKeBRAWL", (34, 40), (248, 216, 64), (120, 56, 32), scale=5)
         F.draw(surf, "ADVENTURE", (40, 92), U.WHITE, (48, 64, 120), scale=3)
         F.draw(surf, "The Brawl Region", (42, 124), (232, 240, 248), (48, 64, 120))
-        from . import frlg
+        from . import fieldmap, frlg
         if not frlg.is_ready():
             F.draw(surf, "Downloading FireRed graphics" + "." * (int(t * 3) % 4), (8, VH - 16), U.WHITE,
                    (48, 48, 64), scale=1)
+        elif not fieldmap.available():
+            F.draw(surf, "Couldn't download the FireRed graphics - check your internet and reopen the game.",
+                   (8, VH - 16), (255, 200, 120), (48, 48, 64), scale=1)
         if self.stage == "press":
             if int(t * 2) % 2 == 0:
                 F.draw(surf, "PRESS Z / ENTER", (VW // 2, 288), U.WHITE, (48, 48, 64), anchor="center")

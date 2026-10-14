@@ -14,7 +14,6 @@ Formats (as in the decomp):
 import os
 import struct
 import threading
-import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
 import pygame
@@ -46,8 +45,8 @@ def fetch(path, timeout=8):
         return None
     try:
         os.makedirs(os.path.dirname(dest), exist_ok=True)
-        with urllib.request.urlopen(BASE + path, timeout=timeout) as r:
-            data = r.read()
+        from .pokedex import fetch as download   # handles Mac certificate trouble (keychain, certifi, curl)
+        data = download(BASE + path, timeout=max(timeout, 20))
         tmp = dest + ".part"
         with open(tmp, "wb") as f:
             f.write(data)
@@ -291,7 +290,8 @@ def tileset(primary, secondary, recolor=None):
 
 def _tileset_name(sym):
     import re
-    return re.sub(r"(?<!^)(?=[A-Z])", "_", sym.replace("gTileset_", "")).lower()
+    name = re.sub(r"(?<!^)(?=[A-Z])", "_", sym.replace("gTileset_", ""))
+    return re.sub(r"(?<=[A-Za-z])(?=[0-9])", "_", name).lower()   # GenericBuilding1 -> generic_building_1
 
 
 def layouts():

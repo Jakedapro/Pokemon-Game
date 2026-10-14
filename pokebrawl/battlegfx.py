@@ -209,13 +209,12 @@ def mon(pid, back=False, shiny=False):
     if key not in _mon_wait:
         _mon_wait.add(key)
         import threading
-        import urllib.request
 
         def get():
             try:
                 os.makedirs(os.path.dirname(path), exist_ok=True)
-                with urllib.request.urlopen(MON_URL + sub + f"{pid}.png", timeout=10) as r:
-                    data = r.read()
+                from .pokedex import fetch as download
+                data = download(MON_URL + sub + f"{pid}.png", timeout=20)
                 with open(path + ".part", "wb") as f:
                     f.write(data)
                 os.replace(path + ".part", path)
