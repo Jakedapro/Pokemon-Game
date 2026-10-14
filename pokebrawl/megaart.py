@@ -254,6 +254,37 @@ HAIR = ((24, 24, 40), (48, 48, 72), (72, 72, 104), (104, 104, 144), (152, 152, 1
 RED = ((96, 16, 24), (168, 32, 40), (216, 56, 56), (248, 112, 104), (255, 184, 176))
 
 
+DARKSTEEL = ((16, 16, 28), (52, 56, 76), (92, 98, 122), (150, 158, 184), (228, 236, 255))
+BLACKGOLD = ((16, 12, 8), (40, 32, 24), (72, 56, 32), (200, 152, 48), (255, 224, 112))
+HORN = ((16, 12, 20), (44, 36, 52), (80, 68, 92), (132, 120, 148), (200, 192, 216))
+DEEPICE = ((8, 32, 72), (32, 80, 152), (72, 152, 224), (160, 224, 255), (255, 255, 255))
+
+
+def glow_eye(c, pts, core, halo):
+    """Eyes that burn: the eye pixels in a hot colour, the face around them catching the light."""
+    for x, y in pts:
+        c.body.set_at((x, y), (*core, 255))
+    for x, y in pts:
+        for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            q = (x + dx, y + dy)
+            if q not in pts and c.opaque(*q):
+                col = c.body.get_at(q)
+                if col.r + col.g + col.b > 120:
+                    c.body.set_at(q, (*halo, 255))
+
+
+def scar(c, a, b):
+    """A healed battle scar cut into the body itself: a pale line with a dark edge under it."""
+    n = max(abs(b[0] - a[0]), abs(b[1] - a[1]))
+    for i in range(n + 1):
+        x = round(a[0] + (b[0] - a[0]) * i / n)
+        y = round(a[1] + (b[1] - a[1]) * i / n)
+        if c.opaque(x, y + 1):
+            c.body.set_at((x, y + 1), (72, 40, 48, 255))
+        if c.opaque(x, y):
+            c.body.set_at((x, y), (240, 208, 192, 255))
+
+
 def _bright(r, g, b):
     return r + g + b > 600
 
@@ -353,56 +384,60 @@ def typhlosion(c):
 
 
 def snorlax(c):
-    """Mega Snorlax (Normal/Fighting): the Yokozuna - a sumo topknot and the champion's thick twisted rope bent
-    round its belly, with zig-zag paper streamers."""
-    c.recolor(((140, 200, 205, 0.85, 0.8),))
-    # topknot: a shaded bun sitting behind the top of the head, tied off in red
-    bun = [(49, 7), (50, 4), (53, 3), (56, 4), (56, 7), (53, 9)]
-    c.shape(bun, HAIR, layer="under")
-    # the rope sags round the curve of the belly
+    """Mega Snorlax (Normal/Fighting): the Juggernaut - a black-armoured hide, curved horns, burning red eyes
+    under angry brows, battle scars, and the champion's black-and-gold rope bent round its belly."""
+    c.recolor(((140, 200, 228, 0.55, 0.42), (40, 70, 34, 0.6, 0.88, 0.1)))
+    # horns
+    for pts in ([(48, 9), (45, 4), (41, 1)], [(56, 9), (59, 4), (63, 2)]):
+        c.tube(pts, 4, 1, HORN, layer="under")
+    # burning eyes and angry brows
+    glow_eye(c, [(44, 13), (45, 13), (53, 11), (54, 11)], (255, 64, 32), (255, 160, 64))
+    c.line((42, 11), (46, 12), (16, 12, 20), 2)
+    c.line((57, 9), (53, 10), (16, 12, 20), 2)
+    # battle scars across the belly
+    scar(c, (17, 15), (25, 21))
+    scar(c, (21, 13), (27, 18))
+    # the champion's rope: black and gold, sagging round the curve of the belly
     rope = [(8, 25), (19, 30), (32, 32), (45, 30), (55, 24)]
-    pix = c.tube(rope, 6, 5, ROPE, clip_body=True)
+    pix = c.tube(rope, 6, 5, BLACKGOLD, clip_body=True)
     path = c.spline(rope, closed=False, steps=12)
-    for i in range(2, len(path) - 2, 4):   # the twist: dark strands crossing the rope
+    for i in range(2, len(path) - 2, 4):   # gold strands twisting round it
         x, y = path[i]
-        for k in range(-2, 3):
+        for k in (-2, -1, 1, 2):
             q = (round(x + k * 0.6 - 1), round(y + k))
-            if q in pix and k != 0:
-                c.s_over.set_at(q, (*ROPE[1], 255))
-    # paper streamers hanging from the rope, each with a lit and a shaded side
-    for t in (0.32, 0.5, 0.68):
+            if q in pix:
+                c.s_over.set_at(q, (*BLACKGOLD[3], 255))
+    for t in (0.32, 0.5, 0.68):   # red tassels
         x, y = path[int(t * (len(path) - 1))]
-        x, y = round(x), round(y) + 3
-        pts = [(x, y), (x + 3, y + 2), (x, y + 4), (x + 3, y + 6), (x + 1, y + 8)]
-        for a, b in zip(pts, pts[1:]):   # a folded paper strip: thin zig-zag, lit on top, shaded below
-            c.line(a, b, WHITE[2], 2)
-            c.line((a[0], a[1] + 1), (b[0], b[1] + 1), WHITE[1], 1)
-        c.line(pts[0], pts[1], WHITE[4], 1)
+        c.tube([(round(x), round(y) + 3), (round(x) + 1, round(y) + 6), (round(x), round(y) + 8)], 2, 1, RED)
 
 
 def lapras(c):
-    """Mega Lapras (Water/Ice): a deep-ocean body; its shell freezes into a glacier and grows big faceted
-    crystals; a crown of ice sweeps back from its head."""
+    """Mega Lapras (Water/Ice): the Glacier Leviathan - a black-blue hide, a shell that has become a jagged
+    glacier of glowing ice blades, a great ice horn and cold, burning eyes."""
     import colorsys
-    c.recolor(((180, 245, 222, 1.05, 0.72),))
+    c.recolor(((180, 245, 226, 1.0, 0.5), (40, 64, 205, 0.18, 0.92, 0.1)))
 
     def shell(r, g, b):
         h, sat, v = colorsys.rgb_to_hsv(r / 255, g / 255, b / 255)
-        return sat < 0.4 and not (0.12 < h < 0.2 and v > 0.8)
-    c.material([(32, 27), (61, 30), (61, 53), (34, 53)], ICE, shell)
-    lit = ((40, 88, 152), (152, 212, 244), (200, 236, 255), (232, 248, 255), (255, 255, 255))
-    dark = ((24, 56, 120), (64, 120, 192), (104, 172, 228), (152, 212, 244), (212, 242, 255))
+        return sat < 0.4 and v < 0.85
+    c.material([(32, 27), (61, 30), (61, 53), (34, 53)], DEEPICE, shell)
+    lit = ((8, 32, 72), (104, 188, 240), (176, 232, 255), (224, 248, 255), (255, 255, 255))
+    dark = ((8, 32, 72), (24, 64, 136), (48, 112, 196), (96, 168, 232), (176, 232, 255))
 
-    def crystal(x, y, w, h, lean):
+    def blade(x, y, w, h, lean):
         t = (x + lean, y - h)
         m = (x + lean * 0.4, y)
-        c.shape([(x - w / 2, y + 2), (x - w / 2 + 1, y - h * 0.45), t, m], lit, smooth=False)
-        c.shape([m, t, (x + w / 2 - 1, y - h * 0.4), (x + w / 2, y + 2)], dark, smooth=False)
-    for x, y, w, h, lean in ((58, 41, 6, 9, 3), (36, 38, 7, 12, -2), (52, 36, 8, 16, 2), (44, 34, 9, 21, 0)):
-        crystal(x, y, w, h, lean)
-    # crown of ice: three curved horns sweeping back
-    for pts in ([(20, 11), (17, 6), (13, 2)], [(24, 9), (24, 4), (26, 0)], [(28, 10), (31, 5), (35, 3)]):
-        c.tube(pts, 3.5, 1, ICE, layer="under")
+        c.shape([(x - w / 2, y + 2), (x - w / 2 + 1, y - h * 0.4), t, m], lit, smooth=False)
+        c.shape([m, t, (x + w / 2 - 1, y - h * 0.35), (x + w / 2, y + 2)], dark, smooth=False)
+    for x, y, w, h, lean in ((60, 42, 6, 12, 5), (34, 40, 6, 14, -5), (55, 37, 7, 21, 4), (39, 36, 7, 22, -3),
+                             (47, 34, 9, 29, 0)):
+        blade(x, y, w, h, lean)
+    # the great ice horn, sweeping back
+    c.tube([(25, 9), (27, 4), (32, 0), (38, -1)], 5, 1, DEEPICE, layer="under")
+    c.tube([(21, 10), (18, 6), (14, 4)], 3, 1, DEEPICE, layer="under")
+    glow_eye(c, [(24, 10), (23, 11), (24, 11), (25, 11), (25, 12), (26, 12)], (96, 255, 255), (64, 160, 220))
+    c.line((27, 8), (22, 10), (8, 16, 32), 2)
 
 
 def ninetales(c):
@@ -422,56 +457,63 @@ def ninetales(c):
 
 
 def machamp(c):
-    """Mega Machamp (Fighting/Steel): its four fists and forearms turn to polished steel (keeping every knuckle
-    and muscle), with knuckle spikes, domed shoulder plates and a golden belt slung round its hips."""
-    c.recolor(((75, 170, 186, 0.55, 0.78, 0.1),))
+    """Mega Machamp (Fighting/Steel): a gunmetal war-machine - black-steel fists and forearms with red-hot
+    knuckles and spikes, spiked shoulder plates, a crimson crest, burning eyes and a scarred chest."""
+    c.recolor(((75, 170, 214, 0.35, 0.6, 0.1),))
+    c.material([(18, 4), (46, 4), (46, 13), (18, 13)], RED, lambda r, g, b: r > 120 and g > 100 and b < 110)
     for region in ([(0, 0), (21, 0), (21, 17), (0, 17)], [(43, 0), (64, 0), (64, 19), (43, 19)],
                    [(9, 31), (25, 31), (25, 45), (9, 45)], [(40, 31), (57, 31), (57, 45), (40, 45)]):
-        c.material(region, STEEL)
-    for x0, x1 in ((4, 15), (47, 59)):   # knuckle spikes
+        c.material(region, DARKSTEEL)
+    for x0, x1 in ((4, 15), (47, 59)):   # spikes, glowing red-hot at the base
         for k in range(3):
             x = x0 + k * (x1 - x0) // 2
-            c.tube([(x, 4), (x - 1 if x < 32 else x + 1, 0)], 3, 1, STEEL, layer="under")
-    for side in (1, -1):   # domed shoulder plates
+            c.tube([(x, 5), (x - 1 if x < 32 else x + 1, -1)], 4, 1, DARKSTEEL, layer="under")
+            c.px(x, 4, (255, 96, 48))
+    for side in (1, -1):   # spiked shoulder plates
         pts = [(14, 22), (16, 18), (21, 16), (26, 18), (25, 21), (19, 22)]
+        spike = [(19, 18), (15, 11), (11, 7)]
         if side < 0:
             pts = [(65 - x, y) for x, y in pts]
-        c.shape(pts, STEEL)
-    c.tube([(22, 44), (33, 47), (44, 44)], 5, 5, GOLD, clip_body=True)
+            spike = [(65 - x, y) for x, y in spike]
+        c.tube(spike, 4, 1, DARKSTEEL, layer="under")
+        c.shape(pts, DARKSTEEL)
+    glow_eye(c, [(22, 17), (30, 17), (22, 16), (30, 16)], (255, 240, 96), (255, 128, 48))
+    scar(c, (27, 30), (37, 37))
+    c.tube([(22, 44), (33, 47), (44, 44)], 5, 5, BLACKGOLD, clip_body=True)
     c.shape([(30, 43), (36, 43), (37, 46), (33, 50), (29, 46)], GOLD)
     c.shape([(32, 45), (34, 45), (34, 47), (32, 47)], RED, smooth=False)
 
 
 def togekiss(c):
-    """Mega Togekiss (Fairy/Flying): two great angel wings raised high - every feather shaped, shaded and
-    overlapping, the long ones dipped in gold - and a golden tiara."""
+    """Mega Togekiss (Fairy/Flying): the Seraph - two great blade-wings raised high, every feather a sharp
+    gold-edged blade with a dark underside, and a golden war-crown."""
     c.swap(lambda r, g, b: r > 150 and g < 100 and b < 100, (248, 192, 48))   # red marks -> gold
-    c.swap(lambda r, g, b: b > 180 and r < 120, (240, 120, 200))              # blue marks -> pink
+    c.swap(lambda r, g, b: b > 180 and r < 120, (176, 40, 72))                # blue marks -> crimson
+    blade = ((48, 40, 88), (120, 120, 176), (220, 224, 244), (244, 246, 255), (255, 255, 255))
     for side in (-1, 1):
         bx, by = 32 + side * 4, 38
-        angles = [104, 120, 136, 151, 166]
-        lengths = [30, 31, 28, 24, 18]
-        for i in reversed(range(5)):   # back feathers first, so the front ones overlap them
+        angles = [100, 114, 128, 142, 156, 170]
+        lengths = [34, 35, 33, 29, 24, 18]
+        for i in reversed(range(6)):   # back feathers first, so the front ones overlap them
             a = math.radians(angles[i] if side < 0 else 180 - angles[i])
             dx, dy = math.cos(a), -math.sin(a)
             nx, ny = -dy * side, dx * side
             L = lengths[i]
             tip = (bx + dx * L, by + dy * L)
-            mid = (bx + dx * L * 0.55 + nx * 1.5, by + dy * L * 0.55 + ny * 1.5)   # a gentle curve
-            w = 3.6
-            pts = [(bx + nx * 1.5, by + ny * 1.5), (mid[0] + nx * w, mid[1] + ny * w), tip,
-                   (mid[0] - nx * w * 0.7, mid[1] - ny * w * 0.7), (bx - nx * 1.5, by - ny * 1.5)]
+            mid = (bx + dx * L * 0.6 + nx * 1.0, by + dy * L * 0.6 + ny * 1.0)
+            w = 2.6
+            pts = [(bx + nx * 1.2, by + ny * 1.2), (mid[0] + nx * w, mid[1] + ny * w), tip,
+                   (mid[0] - nx * w * 0.5, mid[1] - ny * w * 0.5), (bx - nx * 1.2, by - ny * 1.2)]
 
             def gold_tip(x, y, bx=bx, by=by, dx=dx, dy=dy, L=L):
-                return ((x - bx) * dx + (y - by) * dy) / L > 0.78
-            c.shape(pts, WHITE, layer="under", alt=(GOLD, gold_tip))
-        # the soft coverts over the feathers' roots
+                return ((x - bx) * dx + (y - by) * dy) / L > 0.82
+            c.shape(pts, blade, smooth=False, layer="under", alt=(GOLD, gold_tip))
         cov = [(bx, by + 1), (bx + side * 3, by - 9), (bx + side * 9, by - 13), (bx + side * 14, by - 9),
                (bx + side * 11, by - 2)]
-        c.shape(cov, WHITE, layer="under")
-    # golden tiara
-    c.shape([(15, 32), (16, 28), (18, 30), (19, 26), (20, 30), (22, 28), (23, 32)], GOLD, smooth=False)
-    c.px(19, 29, (240, 120, 200))
+        c.shape(cov, blade, layer="under")
+    # golden war-crown
+    c.shape([(15, 32), (16, 28), (17, 30), (19, 25), (21, 30), (22, 28), (23, 32)], GOLD, smooth=False)
+    c.px(19, 28, (176, 40, 72))
 
 
 DESIGNS = {"flygon": flygon, "luxray": luxray, "arcanine": arcanine, "milotic": milotic, "typhlosion": typhlosion,
