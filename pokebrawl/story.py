@@ -313,6 +313,16 @@ def npcs_for(world, index, game):
         add(id="egg_joke", kind="talk", look="Biker", x=12, y=20, face="left",
             lines=["My Electric Pokemon stopped working yesterday.",
                    "Have you tried turning it off and on again? ...It worked."])
+        add(id="pika_hint", kind="talk", look="old_man_1", x=3, y=14, face="right", name="Old Man",
+            lines=["When I was a boy, a little yellow mouse lived behind the fence by the Gym.",
+                   "It only ever came out for trainers who'd beaten this town's Gym Leader.",
+                   "...I wonder if it's still back there."])
+        # the secret Pikachu: squeezed behind the power-lot fence next to the Gym
+        add(id="pikachu", kind="static", pokemon="pikachu", level=0, x=12, y=7, face="down",
+            **{"if": ["badges>=3", "!pikachu"]}, script=[
+                ("say", "", ["Something yellow is hiding behind the fence...", "Pika? Pika-pi!",
+                             "The Pikachu sniffs your hand. It looks like it wants to come with you!"]),
+                ("gift", 25, 18), ("flag", "pikachu")])
     if route == 4:
         add(id="q_ranger", kind="quest", quest="q_route4", look="Ace Trainer", x=2, y=len(area["rows"]) - 4,
             face="right", name="Ranger")
@@ -590,7 +600,8 @@ def hidden_items(world, area_index):
 # ====================================================================== the quest log
 SECRETS = {"chatterbox": "The Chatterbox", "red_gyarados": "The Red Gyarados", "snorlax": "The Sleeping Giant",
            "shiny_charm": "Shiny Charm", "mom_gift": "Mom's Gift", "mew": "The Giggle in the Trees",
-           "arceus": "The Origin", "creator_beaten": "The Creator", "rift_zero": "The First Rift"}
+           "arceus": "The Origin", "creator_beaten": "The Creator", "rift_zero": "The First Rift",
+           "pikachu": "The Mouse Behind the Fence"}
 
 
 def rifts_sealed(game):

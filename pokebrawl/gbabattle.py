@@ -141,6 +141,8 @@ class GBABattle(Scene):
                     AUDIO.cry(self.s.battle.sides[1].mons[0].entry["id"], 0.9)
                     shiny = " shiny" if m.get("shiny") else ""
                     self.queue.insert(0, [f"Wild{shiny} {A.name_of(self.dex, m).upper()} appeared!", None])
+                    if m.get("shiny"):
+                        self._shine(1)
                 else:
                     self.queue.insert(0, [f"{self.trainer.get('name', 'Trainer')} would like to battle!", None])
             return
@@ -208,6 +210,8 @@ class GBABattle(Scene):
             if side == 0:
                 self.exp_shown = [idx, self._exp_frac(idx)]
             self.anim = {"kind": "switch", "t": 0, "dur": 0.5}
+            if src.get("shiny") and not (side == 1 and self.s.kind == "wild"):
+                self._shine(side)
         elif kind == "move":
             side = a[1]
             self.lunge[side] = 0.25
@@ -482,6 +486,7 @@ class GBABattle(Scene):
         if self.catch is not None:
             self._draw_catch(surf)
         self._draw_mega(surf)
+        self._draw_shine(surf)
         for x, y, vx, vy, life, col in self.fx:
             pygame.draw.circle(surf, col, (int(x), int(y)), max(1, int(life * 10)))
         if self.mode != "intro":
@@ -512,6 +517,7 @@ class GBABattle(Scene):
         if self.catch is not None:
             self._draw_catch(surf)
         self._draw_mega(surf)
+        self._draw_shine(surf)
         for x, y, vx, vy, life, col in self.fx:
             pygame.draw.circle(surf, col, (int(x), int(y)), max(1, int(life * 10)))
         if self.mode != "intro":
@@ -527,6 +533,8 @@ class GBABattle(Scene):
         ink, shade = (64, 64, 64), (216, 208, 176)
         surf.blit(BG.healthbox(1), (x, y))
         self._mega_mark(surf, v, x + 166, y + 19)
+        if v.get("shiny"):   # a shiny gets a star on its box
+            self._star(surf, x + 8, y + 22)
         F.draw(surf, self._short(v["name"]).upper()[:9], (x + 16, y + 10), ink, shade, small=True)
         F.draw(surf, str(v["level"]), (x + 128, y + 10), ink, shade, small=True)   # right after the box's own "Lv"
         if self.s.kind == "wild" and self.s.foes[0]["species"] in self.g["caught"]:
@@ -540,6 +548,8 @@ class GBABattle(Scene):
         ink, shade = (64, 64, 64), (216, 208, 176)
         surf.blit(BG.healthbox(0), (x, y))
         self._mega_mark(surf, v, x + 182, y + 19)
+        if v.get("shiny"):   # a shiny gets a star on its box
+            self._star(surf, x + 24, y + 22)
         F.draw(surf, self._short(v["name"]).upper()[:9], (x + 32, y + 10), ink, shade, small=True)
         F.draw(surf, str(v["level"]), (x + 144, y + 10), ink, shade, small=True)
         frac = self.frac.get((0, v["idx"]), 1.0)
@@ -602,6 +612,38 @@ class GBABattle(Scene):
         kind = self.trainer.get("arena") or {"gym": "gym", "champion": "league"}.get(self.s.kind, "grass")
         img = G.platform(kind, mine=rx > 100)
         surf.blit(img, img.get_rect(center=(x, y + 4)))
+
+    # ------------------------------------------------------------------ shinies
+    def _shine(self, side):
+        """The shiny sparkle: stars burst around it, with the chime."""
+        self.__dict__.setdefault("shines", {})[side] = self.t
+        AUDIO.play("tera", 0.5)
+
+    def _draw_shine(self, surf):
+        for side, t0 in list(self.__dict__.get("shines", {}).items()):
+            k = self.t - t0 - 0.35
+            if k < 0:
+                continue
+            if k > 1.3:
+                del self.shines[side]
+                continue
+            x, y = self.foe_at if side == 1 else self.me_at
+            cy = y - 64
+            for i in range(8):
+                ang = i * math.tau / 8 + k * 2
+                r = 20 + k * 60
+                px, py = int(x + math.cos(ang) * r), int(cy + math.sin(ang) * r * 0.8)
+                size = max(1, int(7 * (1 - k / 1.3)))
+                col = (255, 248, 168) if i % 2 else (255, 255, 255)
+                pygame.draw.line(surf, col, (px - size, py), (px + size, py), 2)
+                pygame.draw.line(surf, col, (px, py - size), (px, py + size), 2)
+
+    @staticmethod
+    def _star(surf, cx, cy):
+        pts = [(cx + math.cos(a) * (6 if i % 2 == 0 else 3), cy + math.sin(a) * (6 if i % 2 == 0 else 3))
+               for i, a in enumerate(-math.pi / 2 + k * math.pi / 5 for k in range(10))]
+        pygame.draw.polygon(surf, (248, 200, 48), pts)
+        pygame.draw.polygon(surf, (152, 96, 16), pts, 1)
 
     # ------------------------------------------------------------------ Mega Evolution
     def _mega_line(self, a):

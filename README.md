@@ -156,7 +156,7 @@ back to its own drawn art.
 **Controls:** arrow keys / WASD to walk, hold **X** (or Shift) to run, **Z** / Space to talk and confirm,
 **X** / Esc to go back, **Enter** for the START menu. The mouse works in menus too.
 
-- **Start:** Professor Hazel introduces the world, you type your name and pick a starter from any generation.
+- **Start:** Professor Hazel introduces the world, you type your name and pick Bulbasaur, Charmander or Squirtle.
 - **Explore:** towns, routes with tall grass, Victory Road and the Pokemon League. Your lead Pokemon follows you.
   Walk into buildings: Pokemon Centers (the nurse heals your team; the PC holds your Box), Poke Marts (buy and
   sell), houses, the professor's lab, and gyms with trainers inside.

@@ -201,9 +201,6 @@ class NewGame(GBAScene):
             if d in ("left", "right"):
                 self.pick = (self.pick + (1 if d == "right" else -1)) % 3
                 AUDIO.cry(A.STARTERS[self.gen][self.pick], 0.6)
-            elif d in ("up", "down"):
-                self.gen = (self.gen % 9) + 1 if d == "up" else (self.gen - 2) % 9 + 1
-                AUDIO.cry(A.STARTERS[self.gen][self.pick], 0.6)
             elif ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1 and pos:
                 for i in range(3):
                     if abs(pos[0] - (100 + i * 140)) < 60 and 120 < pos[1] < 240:
@@ -264,8 +261,6 @@ class NewGame(GBAScene):
             x = inner.x + 10
             for typ in e["types"]:
                 x += type_tag(surf, typ, x, inner.y + 32)
-            F.draw(surf, f"GEN {self.gen}  (up/down: other regions)", (inner.right - 8, inner.y + 6), (120, 120, 136),
-                   None, anchor="topright")
             if self.confirm is not None:
                 F.draw(surf, "Choose this one?", (inner.x + 160, inner.y + 34), U.TEXT, U.SHADOW)
                 self.confirm.draw(surf, (370, 160, 104, 76))
@@ -407,6 +402,9 @@ class PartyScene(GBAScene):
                 F.draw(surf, f"Lv{m['level']}", (r.x + 64, r.y + 28), white, shade, small=True)
                 bar = pygame.Rect(r.x + 178, r.y + 22, 92, 6)
                 F.draw(surf, f"{hp}/ {mx}", (r.right - 14, r.y + 30), white, shade, anchor="topright", small=True)
+            if m.get("shiny"):   # shinies get their star
+                from .gbabattle import GBABattle
+                GBABattle._star(surf, r.x + 12, r.y + 12) if i == 0 else GBABattle._star(surf, r.x + 40, r.y + 38)
             w = int(bar.w * max(0.0, min(1.0, frac)))
             if w:
                 pygame.draw.rect(surf, cols[0], (bar.x, bar.y, w, bar.h))

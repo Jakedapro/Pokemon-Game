@@ -547,6 +547,17 @@ class OverworldScene(Scene):
             if st[1].startswith(("e4_", "final", "creator")):
                 trainer["arena"] = "league"
             self._battle(team, "story", trainer, then=self._step)
+        elif op == "gift":   # a Pokemon that joins you
+            _, species, level = st
+            mon = A.make_mon(dex, dex.all[species], level, self.rng, shiny=self.rng.randrange(32) == 0)
+            where = A.add_caught(g, dex, mon)
+            AUDIO.play("win")
+            AUDIO.cry(species, 0.9)
+            nm = A.name_of(dex, mon)
+            lines = [f"{nm} joined your team!" if where != "box" else f"{nm} was sent to the Box!"]
+            if mon.get("shiny"):
+                lines.insert(0, f"...Wait, its fur is shimmering! It's a SHINY {nm.upper()}!")
+            self.say(lines, self._step)
         elif op == "rift":   # a raging Mega Pokemon inside a rift
             _, fid, level = st
             form = dex.all[fid]
@@ -724,7 +735,7 @@ class OverworldScene(Scene):
             lv = rng.randint(lo, hi)
             charm = S.has(self.game, "shiny_charm")
             foe = A.make_mon(dex, A.grown_species(dex, dex.all[self.world.wild_species(area, rng)], lv - 4), lv, rng,
-                             shiny=rng.randrange(128 if charm else A.SHINY_ODDS) == 0)
+                             shiny=rng.randrange(50 if charm else A.SHINY_ODDS) == 0)
         self.cool = 3
         self._battle([foe], "wild", None)
 
