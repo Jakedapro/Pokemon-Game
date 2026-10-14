@@ -163,7 +163,9 @@ back to its own drawn art.
 - **Randomizer:** unlocked once you become World Champion. Turn it on in a new game's OPTION screen and choose
   what to mix up: wild Pokemon (similar strength or anything, legendaries or not), starters, trainer teams and
   Gym types - from all 1,025 Pokemon.
-- **Start:** Professor Hazel introduces the world, you type your name and pick Bulbasaur, Charmander or Squirtle.
+- **Start:** Professor Hazel's speech on FireRed's real intro screen, then you wake up in her lab. Check the three
+  Poke Balls on her table to choose Bulbasaur, Charmander or Squirtle - your rival Blake grabs the one with the type
+  advantage and battles you on the spot.
   A secret Pikachu hides somewhere in Voltara City. Shinies are 1 in 200 and sparkle when they appear.
 - **Explore:** towns, routes with tall grass, Victory Road and the Pokemon League. Your lead Pokemon follows you.
   Walk into buildings: Pokemon Centers (the nurse heals your team; the PC holds your Box), Poke Marts (buy and

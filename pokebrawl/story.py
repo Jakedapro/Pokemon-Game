@@ -434,8 +434,27 @@ def _quiet_spot(area):
     return (7, len(rows) // 2)
 
 
+LAB_BALLS = [(8, 4), (9, 4), (10, 4)]   # the table in Hazel's lab (PalletTown_ProfessorOaksLab)
+LAB_RIVAL = (5, 4)
+
+
 def _room_npcs(world, kind, area, door, game):
     out = []
+    if kind == "lab" and area == 0 and (game.get("starter") or not game.get("party")):   # chosen in the lab
+        trio = A.starters(world.dex)
+        mine = game.get("starter")
+        theirs = trio[(trio.index(mine) + 1) % 3] if mine in trio else None
+        for i, (x, y) in enumerate(LAB_BALLS):
+            if trio[i] in (mine, theirs):
+                continue
+            out.append({"id": f"starter_ball{i}", "kind": "ball", "x": x, "y": y, "face": "down", "fixed": True,
+                        "pokemon": trio[i], "name": ""})
+        if has(game, "rival1"):
+            return out
+        out.append({"id": "rival_lab", "kind": "talk", "look": "rival", "x": LAB_RIVAL[0], "y": LAB_RIVAL[1],
+                    "face": "down", "fixed": True, "name": RIVAL,
+                    "lines": (["Go on, hurry up and pick one! I'm taking whichever's best against yours."]
+                              if not mine else ["Heh. My Pokemon looks way tougher than yours."])})
     if kind == "house" and area == 0 and door == creator_door(world):
         out.append({"id": "creator", "kind": "story", "look": "creator", "x": 7, "y": 4, "face": "down",
                     "name": "The Creator", "script": [
@@ -623,6 +642,8 @@ def next_goal(game, dex):
         stones = len(game.get("megastones", []))
         return (f"You're the World Champion! Mega Stones: {stones}/{len(all_stones(dex))}. "
                 "Secrets still hide out there...")
+    if not game.get("party"):
+        return "Choose your first Pokemon from the three Poke Balls on Prof. Hazel's table."
     if not has(game, "rival1"):
         return f"Your rival {RIVAL} is waiting for you in Rootleaf Town."
     if b == 0 and not has(game, "grunt1"):

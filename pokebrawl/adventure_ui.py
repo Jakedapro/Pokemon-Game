@@ -6,6 +6,8 @@ import math
 import pygame
 
 from . import adventure as A
+from . import battlegfx as BG
+from . import story as S
 from . import gbaart as G
 from . import gbaui as U
 from . import pixelfont as F
@@ -283,55 +285,98 @@ class OptionsScene(GBAScene):
 
 
 class NewGame(GBAScene):
+    """Prof. Hazel's speech on FireRed's intro backdrop, then you walk into her lab to choose a Pokemon."""
+    SPEECH_MON = 133   # Eevee hops onto the platform while Hazel talks about Pokemon
+
     def __init__(self, app):
         super().__init__(app)
         self.t = 0.0
-        self.stage = "talk"
         self.name = app.settings.get("name", "")[:10]
-        self.gen = 1
-        self.pick = 1
-        self.confirm = None
         self.opts = A.default_options()
         self.panel = OptionsPanel(self.opts)
         self.stage = "setup"
+        self.scene = "prof"       # who's on screen: prof, mon, player, rival
+        self.scene_t = 0.0
         self.text = None
+        self.go_t = None          # the player shrinking away into the world
 
     def _begin(self):
         A.use_options({"opts": self.opts})
-        self.trio = A.starters(self.app.dex)
         self.stage = "talk"
-        self._talk(["Hello there! Welcome to the world of POKeMON!",
-                    "My name is HAZEL. People call me the POKeMON PROF.",
-                    "This world is inhabited by creatures called POKeMON!",
-                    "For some people, POKeMON are pets. Others use them for battles.",
-                    "Myself... I study POKeMON as a profession.",
-                    "But first, tell me a little about yourself. What is your name?"], self._to_name)
+        self._talk("prof", ["Hello there! Glad to meet you! Welcome to the world of POKeMON!",
+                            "My name is HAZEL. Everyone around here calls me the POKeMON PROF."], self._part2)
 
-    def _talk(self, lines, then):
-        self.text = U.TextBox(lines, then)
+    def _part2(self):
+        AUDIO.cry(self.SPEECH_MON, 0.8)
+        self._talk("mon", ["This world is inhabited far and wide by creatures called POKeMON.",
+                           "People live alongside them - some as friends, some as partners in battle.",
+                           "But lately, something strange has been happening...",
+                           "Pokemon all over the region have begun to MEGA EVOLVE. That's what I study."], self._part3)
+
+    def _part3(self):
+        self._talk("player", ["Now, tell me a little about yourself.", "Let's begin with your name. What is it?"],
+                   self._to_name)
+
+    def _talk(self, scene, lines, then):
+        if scene != self.scene:
+            self.scene, self.scene_t = scene, 0.0
+        self.stage = "talk"
+        self.text = U.TextBox(lines, then, speaker="")
 
     def _to_name(self):
         self.stage = "name"
         self.text = None
 
     def _after_name(self):
-        nm = self.name.strip() or "RED"
-        self.stage = "talk"
-        self._talk([f"Right... So your name is {nm.upper()}.",
-                    "Your very own POKeMON legend is about to unfold!",
-                    "A world of dreams and adventures with POKeMON awaits!",
-                    "But you'll need a partner. Pick one of these POKeMON!"], self._to_pick)
+        nm = (self.name.strip() or "RED").upper()
+        self._talk("player", [f"Right... So your name is {nm}."], lambda: self._talk(
+            "rival", ["This is my grandson. He's been your rival since you were both babies.",
+                      f"His name is {S.RIVAL.upper()}. He's waiting for you at my lab."],
+            lambda: self._talk("player", [f"{nm}! Your very own POKeMON legend is about to unfold!",
+                                          "A world of dreams and adventures with POKeMON awaits! Let's go!"],
+                               self._leave)))
 
-    def _to_pick(self):
-        self.stage = "pick"
+    def _leave(self):
+        self.stage = "go"
         self.text = None
-        AUDIO.cry(self.trio[self.pick], 0.7)
+        self.go_t = 0.0
+
+    def _start(self):
+        """The new save begins inside Hazel's lab with no Pokemon: the three Poke Balls are on her table."""
+        from .overworld import OverworldScene
+        game = A.new_game((self.name.strip() or "RED")[:10], None, self.app.dex)
+        game["opts"] = dict(self.opts)
+        game["bag"] = {}
+        lab = next((b for b in _lab_door(game, self.app)), (7, 12))
+        game["area"] = 0
+        game["center"] = [0, lab[0], lab[1] + 1]
+        game["room"] = {"kind": "lab", "area": 0, "door": list(lab)}
+        game["x"], game["y"] = 6, 4   # right in front of Hazel
+        A.save(game)
+        ow = OverworldScene(self.app, game)
+        game["face"] = "up"
+        nm = game["name"].upper()
+        ow.run_script([
+            ("say", S.RIVAL, [f"{nm}! There you are! Gramps! I'm fed up with waiting!"]),
+            ("say", "Prof. Hazel", [f"{S.RIVAL}? Patience! I asked you both here, didn't I?",
+                                    f"{nm}, there are three POKeMON on that table.",
+                                    "They're inside these POKe BALLS. When I was young, I was a serious trainer.",
+                                    "Now I only have these three left. You can have one. Go on, choose!"]),
+            ("say", S.RIVAL, ["Hey! Gramps! What about me?"]),
+            ("say", "Prof. Hazel", [f"Be patient, {S.RIVAL}! You can have one too, after {nm} chooses."])])
+        self.app.replace(ow)
 
     def update(self, dt):
         self.t += dt
+        self.scene_t += dt
         AUDIO.music("town")
         if self.text is not None:
             self.text.update(dt)
+        if self.go_t is not None:
+            self.go_t += dt
+            if self.go_t >= 1.6:
+                self.go_t = None
+                self._start()
 
     def handle(self, ev, pos):
         if self.stage == "setup":
@@ -346,7 +391,7 @@ class NewGame(GBAScene):
             return
         if self.stage == "name":
             if ev.type == pygame.TEXTINPUT and len(self.name) < 10:
-                self.name += "".join(c for c in ev.text if c.isalnum() or c == " ")
+                self.name += "".join(c for c in ev.text if c.isalnum() or c == " ")[:10 - len(self.name)]
             elif ev.type == pygame.KEYDOWN:
                 if ev.key == pygame.K_BACKSPACE:
                     self.name = self.name[:-1]
@@ -356,86 +401,59 @@ class NewGame(GBAScene):
                     self.app.pop()
             elif ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1 and self.name.strip():
                 self._after_name()
-            return
-        if self.stage == "pick":
-            if self.confirm is not None:
-                k = self.confirm.handle(ev, pos)
-                if k == "yes":
-                    self._choose()
-                elif k in ("no", "back"):
-                    self.confirm = None
-                return
-            d = U.direction(ev)
-            if d in ("left", "right"):
-                self.pick = (self.pick + (1 if d == "right" else -1)) % 3
-                AUDIO.cry(self.trio[self.pick], 0.6)
-            elif ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1 and pos:
-                for i in range(3):
-                    if abs(pos[0] - (100 + i * 140)) < 60 and 120 < pos[1] < 240:
-                        if self.pick == i:
-                            self.confirm = U.Menu([("yes", "YES"), ("no", "NO")])
-                        self.pick = i
-            elif U.is_a(ev):
-                self.confirm = U.Menu([("yes", "YES"), ("no", "NO")])
 
-    def _choose(self):
-        from .overworld import OverworldScene
-        pid = self.trio[self.pick]
-        game = A.new_game((self.name.strip() or "RED")[:10], pid, self.app.dex)
-        game["opts"] = dict(self.opts)
-        lab = next((b for b in _lab_door(game, self.app)), None)
-        if lab:
-            game["area"], game["x"], game["y"] = 0, lab[0], lab[1] + 1
-            game["center"] = [0, lab[0], lab[1] + 1]
-        game["face"] = "down"
-        A.save(game)
-        AUDIO.cry(pid, 1.0)
-        ow = OverworldScene(self.app, game)
-        nm = A.name_of(self.app.dex, game["party"][0]).upper()
-        ow.say([f"{game['name'].upper()} received {nm}!", "HAZEL: Take these too. 5 POKe BALLS and 3 POTIONS.",
-                "Catch POKeMON in the tall grass on ROUTE 1, north of here.",
-                "The first GYM is in PEBBLECREST CITY. Good luck!"])
-        self.app.replace(ow)
+    def _portrait(self, who):
+        from . import cast
+        if who == "player":
+            who = cast.player_look()
+        return BG.intro_pic(who)
 
     def draw(self, surf):
         t = self.t
         if self.stage == "setup":
             self.panel.draw(surf, t)
             return
-        bg(surf, (40, 48, 72), (88, 104, 152))
-        if self.stage in ("talk", "name"):
-            pygame.draw.ellipse(surf, (64, 80, 120), (170, 196, 140, 26))
-            prof = pygame.transform.scale_by(G.person("prof", "down", 0), 3)
-            surf.blit(prof, prof.get_rect(midbottom=(240, 210)))
+        back = BG.intro_bg()
+        if back is not None:
+            surf.blit(back, (0, 0))
+        else:
+            bg(surf, (232, 232, 224), (96, 168, 160), stripes=False)
+        k = min(1.0, self.scene_t / 0.35)   # each new face fades in
+        cx, floor = VW // 2, 236
+        if self.scene == "mon":
+            plat = BG.intro_platform()
+            if plat is not None:
+                surf.blit(plat, plat.get_rect(center=(cx, floor - 44)))
+            img = G.battle_sprite(self.SPEECH_MON, max_h=128)
+            hop = int(abs(math.sin(min(self.scene_t, 0.6) * math.pi / 0.6)) * 10) if self.scene_t < 0.6 else 0
+            img = img.copy()
+            img.set_alpha(int(255 * k))
+            surf.blit(img, img.get_rect(midbottom=(cx, floor - 40 - hop)))
+        else:
+            pic = self._portrait(self.scene)
+            if pic is not None:
+                pic = pic.copy()
+                x = cx
+                if self.stage == "name":
+                    x = 120
+                if self.go_t is not None:   # FireRed: you shrink away into the world
+                    s = max(0.05, 1.0 - self.go_t / 1.0)
+                    pic = pygame.transform.scale_by(pic, s)
+                pic.set_alpha(int(255 * k))
+                surf.blit(pic, pic.get_rect(midbottom=(x, floor + 10 if self.go_t is None else
+                                                       floor - 60 + int(70 * max(0.05, 1 - self.go_t)))))
+        if self.go_t is not None:
+            U.fade(surf, max(0.0, min(1.0, (self.go_t - 0.9) / 0.6)))
+            return
         if self.stage == "talk" and self.text is not None:
             self.text.draw(surf, t)
         elif self.stage == "name":
-            inner = U.box(surf, (60, 40, 360, 120))
+            inner = U.box(surf, (236, 64, 232, 118))
             F.draw(surf, "YOUR NAME?", (inner.x + 12, inner.y + 6), U.TEXT, U.SHADOW)
-            pygame.draw.rect(surf, (216, 224, 240), (inner.x + 12, inner.y + 40, inner.w - 24, 34), border_radius=4)
+            pygame.draw.rect(surf, (216, 224, 240), (inner.x + 10, inner.y + 38, inner.w - 20, 34), border_radius=4)
             caret = "_" if int(t * 3) % 2 else " "
-            F.draw(surf, self.name.upper() + caret, (inner.x + 22, inner.y + 46), U.TEXT, U.SHADOW, scale=3)
-            F.draw(surf, "Type it, then press ENTER", (inner.x + 12, inner.y + 84), (120, 120, 136), None)
-        elif self.stage == "pick":
-            pygame.draw.rect(surf, (168, 120, 72), (40, 200, 400, 30), border_radius=6)
-            pygame.draw.rect(surf, (128, 88, 56), (40, 226, 400, 8))
-            for i, pid in enumerate(self.trio):
-                x = 100 + i * 140
-                sel = i == self.pick
-                if sel:
-                    img = G.battle_sprite(pid, max_h=96)
-                    surf.blit(img, img.get_rect(midbottom=(x, 196 + int(math.sin(t * 5) * 2))))
-                    U.cursor(surf, (x - 6, 104))
-                U.ball(surf, (x, 212), 9 if sel else 8)
-            e = self.app.dex.all[self.trio[self.pick]]
-            inner = U.box(surf, (4, 240, 472, 76))
-            F.draw(surf, f"{e['name'].upper()}", (inner.x + 10, inner.y + 6), U.TEXT, U.SHADOW)
-            x = inner.x + 10
-            for typ in e["types"]:
-                x += type_tag(surf, typ, x, inner.y + 32)
-            if self.confirm is not None:
-                F.draw(surf, "Choose this one?", (inner.x + 160, inner.y + 34), U.TEXT, U.SHADOW)
-                self.confirm.draw(surf, (370, 160, 104, 76))
+            F.draw(surf, self.name.upper() + caret, (inner.x + 18, inner.y + 42), U.TEXT, U.SHADOW, scale=2)
+            F.draw(surf, "Type it, then ENTER", (inner.x + 12, inner.y + 84), (120, 120, 136), None, scale=1)
 
 
 def _lab_door(game, app):

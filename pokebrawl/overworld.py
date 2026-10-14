@@ -245,7 +245,8 @@ class OverworldScene(Scene):
         for n in extra:
             if isinstance(n.get("x"), tuple):
                 n["x"], n["y"] = n["x"]
-            n["x"], n["y"] = self._free_spot(n["x"], n["y"])
+            if not n.get("fixed"):
+                n["x"], n["y"] = self._free_spot(n["x"], n["y"])
             self.npcs.append(n)
 
     def _free_spot(self, x, y):
@@ -338,7 +339,10 @@ class OverworldScene(Scene):
             if self.text.done:
                 self.text = None
             return
-        if self.menu is not None or self.choice is not None:
+        if self.choice is not None:
+            self.choice["q"].update(dt)
+            return
+        if self.menu is not None:
             return
         if self.move is not None:
             fx, fy, tx, ty, p = self.move
@@ -372,6 +376,11 @@ class OverworldScene(Scene):
         nx, ny = x + dx, y + dy
         rows = self.rows()
         if self.inside and self.tile(x, y) == "x" and d == "down":
+            if not g["party"]:   # FireRed: Oak won't let you leave without a Pokemon
+                self.say(["Wait! Don't go out without a Pokemon of your own!",
+                          "Wild Pokemon live in the tall grass. Choose one from the table first."],
+                         speaker="Prof. Hazel")
+                return
             AUDIO.play("ball", 0.3)
             self.warp = {"t": 0.0, "go": self._exit_room}
             return
@@ -481,6 +490,11 @@ class OverworldScene(Scene):
         elif k == "clerk":
             from .adventure_ui import MartScene
             self.say(["Hi there! May I help you?"], lambda: self.app.push(MartScene(self.app, g)))
+        elif k == "prof" and not g["party"]:
+            self.say(["Those three Poke Balls on the table each hold a Pokemon.",
+                      "Go on - check them and choose your partner!"], speaker="Prof. Hazel")
+        elif k == "ball":
+            self._starter_ask(n)
         elif k == "prof":
             c = len(g["caught"])
             self.say(["Hazel: Ah, you're back!", f"Your Pokedex has {c} Pokemon caught.",
@@ -528,6 +542,68 @@ class OverworldScene(Scene):
                 return
             self.say(n["lines"], speaker=n.get("name", ""))
 
+    # ------------------------------------------------------------------ the first Pokemon
+    def _starter_ask(self, n):
+        g = self.game
+        e = self.app.dex.all[n["pokemon"]]
+        if g["party"]:
+            self.say(["That's Prof. Hazel's last Pokemon. It's staying here in the lab."])
+            return
+        AUDIO.cry(e["id"], 0.7)
+        self.choice = {"menu": U.Menu([("yes", "YES"), ("no", "NO")]), "pid": e["id"],
+                       "q": U.TextBox([f"So, {g['name'].upper()}, you want the {e['types'][0].upper()} Pokemon, "
+                                       f"{e['name'].upper()}?"])}
+
+    def _choice_handle(self, ev, pos):
+        c = self.choice
+        q = c["q"]
+        if q.shown < q._len():
+            if U.is_a(ev) or U.is_b(ev):
+                q.shown = q._len()
+            return
+        k = c["menu"].handle(ev, pos)
+        if k == "yes":
+            self.choice = None
+            self._take_starter(c["pid"])
+        elif k in ("no", "back"):
+            self.choice = None
+
+    def _take_starter(self, pid):
+        g = self.game
+        dex = self.app.dex
+        trio = A.starters(dex)
+        mon = A.make_mon(dex, dex.all[pid], 5, self.rng, origin="Rootleaf Town",
+                         shiny=self.rng.randrange(A.SHINY_ODDS) == 0)
+        g["party"] = [mon]
+        g["starter"] = pid
+        for lst in (g["seen"], g["caught"]):
+            if pid not in lst:
+                lst.append(pid)
+        rival = dex.all[trio[(trio.index(pid) + 1) % 3]] if pid in trio else None
+        nm = A.name_of(dex, mon).upper()
+        AUDIO.play("win")
+        AUDIO.cry(pid, 1.0)
+        got = [f"{g['name'].upper()} received the {nm} from PROF. HAZEL!"]
+        if mon.get("shiny"):
+            got.insert(0, f"...Wait, it's sparkling! It's a SHINY {nm}!")
+        steps = [("say", "Prof. Hazel", ["This Pokemon is really energetic!"]), ("say", "", got)]
+        if rival:
+            steps += [("say", S.RIVAL, ["I'll take this one, then!"]),
+                      ("say", "", [f"{S.RIVAL.upper()} received the {rival['name'].upper()} from PROF. HAZEL!"])]
+        steps += [("say", S.RIVAL, [f"Wait, {g['name']}! Let's check out our Pokemon!", "Come on, I'll take you on!"]),
+                  ("battle", "rival1"),
+                  ("say", S.RIVAL, ["Okay! I'll make my Pokemon fight to toughen it up!",
+                                    f"{g['name']}! Gramps! Smell you later! See you at the World Tournament!"]),
+                  ("flag", "rival1"), ("heal",),
+                  ("say", "Prof. Hazel", [f"{g['name']}, take these for your journey.",
+                                          "Poke Balls catch wild Pokemon, and Potions heal them."]),
+                  ("give", "poke-ball", 5), ("give", "potion", 3),
+                  ("say", "Prof. Hazel", ["Catch Pokemon in the tall grass on ROUTE 1, north of town.",
+                                          "The first Gym is in PEBBLECREST CITY. Off you go!"])]
+        A.save(g)
+        self._refresh()   # both balls leave the table
+        self.run_script(steps)
+
     # ------------------------------------------------------------------ story scripts
     def run_script(self, steps, npc=None):
         self.script = list(steps)
@@ -552,6 +628,8 @@ class OverworldScene(Scene):
             trainer = dict(trainer, id=st[1])
             if st[1].startswith(("e4_", "final", "creator")):
                 trainer["arena"] = "league"
+            if st[1] == "rival1":
+                trainer["practice"] = True   # the first battle goes on win or lose
             self._battle(team, "story", trainer, then=self._step)
         elif op == "gift":   # a Pokemon that joins you
             _, species, level = st
@@ -774,6 +852,10 @@ class OverworldScene(Scene):
         g = self.game
         r = s.results()
         then, self.battle_then = getattr(self, "battle_then", None), None
+        if r["lost"] and (r.get("trainer") or {}).get("practice") and then:
+            self._heal_all()
+            then()
+            return
         if r["lost"]:
             self.script = None
             lost = g["money"] // 2
@@ -852,6 +934,9 @@ class OverworldScene(Scene):
         if self.menu is not None:
             self._menu_handle(ev, pos)
             return
+        if self.choice is not None:
+            self._choice_handle(ev, pos)
+            return
         if ev.type == pygame.KEYDOWN:
             if ev.key in (pygame.K_RETURN, pygame.K_ESCAPE, pygame.K_TAB) and self.move is None:
                 self._open_menu()
@@ -879,6 +964,9 @@ class OverworldScene(Scene):
             self.menu = None
         elif k == "dex":
             self.app.push(UI.DexScene(self.app, self.game))
+        elif k == "party" and not self.game["party"]:
+            self.menu = None
+            self.say(["You don't have any Pokemon yet!"])
         elif k == "party":
             self.app.push(UI.PartyScene(self.app, self.game))
         elif k == "bag":
@@ -1025,6 +1113,9 @@ class OverworldScene(Scene):
                         a = self.t * 3 + k * 2.1
                         pygame.draw.circle(surf, (255, 240, 160), (int(cx + math.cos(a) * 18), int(cy + math.sin(a) * 14)), 2)
                     continue
+                if n["kind"] == "ball":   # a starter's Poke Ball on Hazel's table
+                    surf.blit(G.hitem(), (nx, ny + oy))
+                    continue
                 if n["kind"] == "static":   # a Pokemon standing in the world
                     e = self.app.dex.get(n["pokemon"])
                     img = pygame.transform.scale_by(G.icon(e["id"] if e else 25, n.get("shiny", False)), 1.5)
@@ -1061,6 +1152,15 @@ class OverworldScene(Scene):
         self._draw_hud(surf)
         if self.text is not None:
             self.text.draw(surf, self.t)
+        if self.choice is not None:   # FireRed: the Pokemon in a window, the question and YES/NO
+            win = pygame.Rect(VW // 2 - 76, 40, 152, 152)
+            U.std_frame(surf, win) or U.box(surf, win)
+            img = G.battle_sprite(self.choice["pid"], max_h=128)
+            surf.blit(img, img.get_rect(center=win.center))
+            q = self.choice["q"]
+            q.draw(surf, self.t)
+            if q.shown >= q._len():
+                self.choice["menu"].draw(surf, (VW - 110, 160, 100, 70))
         if self.menu is not None:
             self.menu.draw(surf, (VW - 140, 6, 134, 20 + 26 * len(self.menu.options)))   # FireRed: right side, tiles (22,1)
         if self.trans is not None:

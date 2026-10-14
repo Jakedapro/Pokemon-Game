@@ -58,6 +58,7 @@ def files():
     out += ["graphics/fonts/latin_normal.png", "graphics/fonts/latin_small.png", "src/text.c"]
     out += [PARTY + n for n in ("bg.png", "bg.bin", "slot_main.bin", "slot_wide.bin", "slot_wide_empty.bin")]
     out += [f"graphics/text_window/{n}.png" for n in ("std", "menu_message")]
+    out += INTRO_FILES
     return out
 
 
@@ -353,3 +354,78 @@ def demake(src, size=64, colors=14):
                 c = out.get_at((x, y))
                 out.set_at(q, (c.r // 4 + 16, c.g // 4 + 16, c.b // 4 + 24))
     return out
+
+
+# ====================================================================== the professor's speech (graphics/oak_speech)
+INTRO = "graphics/oak_speech/"
+INTRO_FILES = [INTRO + n for n in ("bg_tiles.png", "oak_speech_bg.png", "oak_speech_bg.bin", "platform.png",
+                                   "platform.pal", "oak/pic.png", "oak/pal.pal", "red/pic.png", "red/pal.pal",
+                                   "leaf/pic.png", "leaf/pal.pal", "rival/pic.png", "rival/pal.pal")]
+
+
+def intro_bg():
+    """The backdrop of FireRed's professor speech (480x320)."""
+    def make():
+        f = frlg.fetch(INTRO + "bg_tiles.png")
+        if not f:
+            return None
+        pal = [tuple(c)[:3] for c in pygame.image.load(f).get_palette()]
+        img = frlg.tilemap(INTRO + "oak_speech_bg.png", INTRO + "oak_speech_bg.bin",
+                           [pal[i:i + 16] for i in range(0, len(pal), 16)], 0)
+        if img is None:
+            return None
+        out = pygame.Surface((240, 160))
+        out.fill(pal[1])
+        out.blit(img, (0, 0), (0, 0, 240, 160))
+        return pygame.transform.scale_by(out, S)
+    return _cached(("introbg",), make)
+
+
+def intro_pic(who):
+    """The big speech portraits (128x192): 'prof', 'player', 'player_f', 'rival' - in our cast's colours."""
+    from . import cast
+    folder = {"prof": "oak", "player": "red", "player_f": "leaf", "rival": "rival"}[who]
+    rules = cast.CAST[who][2] if who in cast.CAST else ()
+    if who == "rival":   # his intro picture has one trouser leg in a second (lilac) palette: match the other
+        rules = tuple(rules) + ((285, 315, 20, 1.45, 0.8, 0.1),)
+
+    def make():
+        f = frlg.fetch(INTRO + folder + "/pic.png")
+        if not f:
+            return None
+        img = pygame.image.load(f)
+        idx = pygame.image.tobytes(img, "P")
+        w, h = img.get_size()
+        pal = [tuple(c)[:3] for c in img.get_palette()]   # some pics use two 16-colour banks
+        while len(pal) > 16 and pal[-1] == (0, 0, 0):
+            pal.pop()
+        cols = frlg.recolor_palette(pal, rules) if rules else pal
+        out = pygame.Surface((w, h), pygame.SRCALPHA)
+        for y in range(h):
+            for x in range(w):
+                c = idx[y * w + x]
+                if c % 16:
+                    out.set_at((x, y), cols[c % len(cols)])
+        return pygame.transform.scale_by(out, S)
+    return _cached(("intropic", who), make)
+
+
+def intro_platform():
+    """The little platform a Pokemon stands on during the speech (192x64)."""
+    def make():
+        f = frlg.fetch(INTRO + "platform.png")
+        pal = frlg.read_pal(INTRO + "platform.pal")
+        if not f or not pal:
+            return None
+        img = pygame.image.load(f)
+        idx = pygame.image.tobytes(img, "P")
+        w, h = img.get_size()
+        out = pygame.Surface((96, 32), pygame.SRCALPHA)
+        for part in range(3):   # three 32x32 pieces, stacked in the file, side by side on screen
+            for y in range(32):
+                for x in range(32):
+                    c = idx[(part * 32 + y) * w + x] & 15
+                    if c:
+                        out.set_at((part * 32 + x, y), pal[c])
+        return pygame.transform.scale_by(out, S)
+    return _cached(("platform",), make)

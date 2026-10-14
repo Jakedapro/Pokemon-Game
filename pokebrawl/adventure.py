@@ -812,11 +812,13 @@ class World:
 
 # ====================================================================== the save file
 def new_game(name, starter_id, dex):
+    """A fresh save. starter_id None: you choose your first Pokemon in Hazel's lab."""
     rng = random.Random()
-    starter = make_mon(dex, dex.all[starter_id], 5, rng, origin="Rootleaf Town")
-    return {"v": 1, "world": 2, "name": name or "Trainer", "party": [starter], "box": [], "money": 3000,
+    party = [make_mon(dex, dex.all[starter_id], 5, rng, origin="Rootleaf Town")] if starter_id else []
+    got = [starter_id] if starter_id else []
+    return {"v": 1, "world": 2, "name": name or "Trainer", "party": party, "box": [], "money": 3000,
             "bag": {"poke-ball": 5, "potion": 3}, "badges": [], "area": 0, "x": 7, "y": 12, "face": "up",
-            "center": [0, 7, 12], "seen": [starter_id], "caught": [starter_id], "beaten": [], "picked": [],
+            "center": [0, 7, 12], "seen": list(got), "caught": list(got), "beaten": [], "picked": [],
             "playtime": 0.0, "started": int(time.time()), "champion": False}
 
 
@@ -824,7 +826,7 @@ def load():
     try:
         with open(SAVE_FILE) as f:
             data = json.load(f)
-        return data if data.get("party") else None
+        return data if data.get("name") and isinstance(data.get("party"), list) else None
     except (OSError, ValueError):
         return None
 

@@ -60,7 +60,7 @@ def fetch(path, timeout=8):
 
 PROGRESS = [0, 0]   # files done, files to get (for the title screen's progress bar)
 MARKER = os.path.join(DIR, "complete.json")
-FILESET = 1         # bump when an update needs more files: everyone downloads just the new ones, once
+FILESET = 2         # bump when an update needs more files: everyone downloads just the new ones, once
 
 
 def prefetch(paths, workers=8):
