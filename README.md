@@ -164,7 +164,7 @@ back to its own drawn art.
   Experience is given right after each knockout, with level-ups and new moves mid-battle, and evolutions after.
 - **Catching:** throw Poke Balls from the BAG - the ball wobbles and clicks shut, or the Pokemon breaks free.
   Rare legendaries hide on the later routes (they also go into your Legend collection). Shinies are 1 in 512.
-- **Story:** your rival Blake, Team Rocket (grunts, Admin Morga and Boss Vex) stealing Mega Stones, and
+- **Story:** your rival Blake, Team Rocket (grunts, Admin Morga and Boss Giovanni) stealing Mega Stones, and
   Prof. Hazel's Key Stone after your second badge.
 - **Mega Stones:** gym leaders give one with each badge, story fights and quests give more, and some sparkle on the
   routes. With the Key Stone, press **M** in the move menu to Mega Evolve. The BAG has a Mega Stone case.

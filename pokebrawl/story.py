@@ -3,7 +3,7 @@
 The plot: Professor Hazel gives you your first Pokemon. Your rival Blake picks the one that beats yours. Team Rocket
 is stealing Mega Stones across the Brawl region to power their machine and rig the Pokemon World Tournament.
 Hazel gives you a Key Stone so your Pokemon can Mega Evolve - collect the stones (gym leaders, hidden spots,
-side quests, stones won back from Team Rocket), stop Team Rocket's boss Vex on Victory Road, then win the World
+side quests, stones won back from Team Rocket), stop Team Rocket's boss Giovanni on Victory Road, then win the World
 Tournament: the Elite Four back to back and the Grand Final against the World Champion.
 
 Everything here is data: NPCs with a 'script' (a list of steps run by the overworld), quests and secrets.
@@ -23,7 +23,7 @@ import random
 from . import adventure as A
 
 RIVAL = "Blake"
-BOSS = "Vex"
+BOSS = "Giovanni"
 ADMIN = "Morga"
 E4 = [  # (name, type, title, intro, lose, ace level)
     ("Frost", "ice", "Elite Four", "Welcome to the World Tournament! I'm Frost. Let's see if you can handle the cold!",
@@ -325,7 +325,7 @@ def npcs_for(world, index, game):
         add(id="admin", kind="story", look="admin", x=7, y=9, face="down", sight=5, auto=True,
             name=f"Admin {ADMIN}", **{"if": "!admin"}, script=[
                 ("say", f"Admin {ADMIN}", ["So you're the brat who keeps beating our grunts.",
-                                            "These Mega Stones will power Boss Vex's machine.",
+                                            "These Mega Stones will power Boss Giovanni's machine.",
                                             "With it, Team Rocket will control every battle at the World Tournament!"]),
                 ("battle", "admin"),
                 ("say", f"Admin {ADMIN}", ["Grr... Here, take it! The boss has plenty more in Mindspire City!"]),
@@ -335,10 +335,10 @@ def npcs_for(world, index, game):
             **{"if": ["q_psyduck_started", "!q_psyduck_found"]},
             script=[("say", "", ["It's a Psyduck with a little bow on its head. It looks lost.",
                                  "Psyduck started following you!"]), ("flag", "q_psyduck_found")])
-    if town == 6:   # Mindspire: Boss Vex
+    if town == 6:   # Mindspire: Boss Giovanni
         add(id="vex1", kind="story", look="boss", x=7, y=12, face="down", sight=5, auto=True, name=f"Boss {BOSS}",
             **{"if": ["admin", "!vex1"]}, script=[
-                ("say", f"Boss {BOSS}", ["I am Vex, leader of Team Rocket.",
+                ("say", f"Boss {BOSS}", ["I am Giovanni, leader of Team Rocket.",
                                          "Mega Evolution is the ultimate power. Why should it belong to children?",
                                          "My machine tears the world open. Every Pokemon in a rift Mega Evolves...",
                                          "...and every stone it leaves behind comes to me.",
