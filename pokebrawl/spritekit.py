@@ -382,3 +382,46 @@ def transform(img, scale=1.0, angle=0.0, pivot=None):
             if 0 <= bx < big.w and 0 <= by < big.h:
                 out.px[oy][ox] = big.px[by][bx]
     return out, (x0, y0)
+
+
+# ---------------------------------------------------------------------------------------------- drawn effects
+def _spine(points, step=0.25):
+    out = []
+    for (x1, y1), (x2, y2) in zip(points, points[1:]):
+        n = max(1, int(math.hypot(x2 - x1, y2 - y1) / step))
+        for i in range(n):
+            t = i / n
+            out.append((x1 + (x2 - x1) * t, y1 + (y2 - y1) * t))
+    out.append(points[-1])
+    return out
+
+
+def flame(img, spine, width, colors, outline=None, under=False):
+    """A tongue of fire drawn the pixel-art way: a tapered shape along `spine` (base -> tip, picture coords),
+    filled in nested layers - colors = (outer, middle, inner, core) - with a dark outline round it."""
+    pts = _spine(spine)
+    n = len(pts)
+    layers = [{} for _ in colors]
+    frac = (1.0, 0.68, 0.42, 0.22)
+    for i, (cx, cy) in enumerate(pts):
+        t = i / max(1, n - 1)
+        w = width * (1 - t) ** 0.8 + 0.3
+        for li in range(len(colors)):
+            r = w * frac[li] * (1 - 0.5 * t * li / 3)
+            if li == len(colors) - 1 and t > 0.55:
+                continue
+            for y in range(int(cy - r) - 1, int(cy + r) + 2):
+                for x in range(int(cx - r) - 1, int(cx + r) + 2):
+                    if (x + 0.5 - cx) ** 2 + (y + 0.5 - cy) ** 2 <= r * r:
+                        layers[li][(x, y)] = colors[li]
+    shape = set(layers[0])
+    if outline:
+        ring = {(x + dx, y + dy) for x, y in shape for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1))} - shape
+        for p in ring:
+            if not under or img.get(*p) is None:
+                img.set(p[0], p[1], outline)
+    for layer in layers:
+        for (x, y), c in layer.items():
+            if not under or img.get(x, y) is None:
+                img.set(x, y, c)
+    return img

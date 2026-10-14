@@ -150,8 +150,78 @@ def machamp(L):
     return out, back
 
 
-RECIPES = {"snorlax": snorlax, "lapras": lapras, "machamp": machamp}
-NEEDS = {"snorlax": ["snorlax"], "lapras": ["lapras", "crabominable/mega"], "machamp": ["machamp"]}
+# ---------------------------------------------------------------------------------------------- Mega Arcanine
+NAVY = [(20, 22, 60), (36, 46, 110), (52, 76, 164), (84, 122, 214), (140, 180, 240)]
+
+
+BF = [(40, 72, 208), (72, 144, 248), (150, 214, 255), (240, 252, 255)]
+BF_OUT = (16, 24, 88)
+# blue fire off the mane and the tail: (spine base -> tip, width)
+ARC_FIRE = [([(34, 12), (36, 6), (34, 2), (38, -2)], 4.2), ([(41, 11), (44, 5), (43, 0), (48, -3)], 4.8),
+            ([(48, 12), (52, 7), (52, 2), (57, -1)], 4.8), ([(54, 16), (58, 11), (59, 6), (64, 3)], 4.2),
+            ([(57, 22), (61, 18), (63, 13), (66, 11)], 3.4)]
+ARC_BACK_FIRE = [([(18, 14), (17, 8), (20, 3), (19, -1)], 4.4), ([(28, 10), (30, 5), (28, 1), (31, -3)], 5.0),
+                 ([(39, 10), (42, 5), (41, 0), (45, -3)], 5.0), ([(49, 14), (53, 9), (53, 4), (57, 1)], 4.4)]
+
+
+def arcanine(L):
+    """Mega Arcanine - Fire/Dragon, Tough Claws: its coat turns to dark dragon-blue, blue fire roars off its
+    mane and tail, and it grows a pair of horns."""
+    orange = {(255, 156, 106), (238, 115, 49), (197, 82, 90), (255, 98, 65), (197, 49, 32)}
+    omap = K.ramp_map(list(orange), NAVY[1:])
+    recol = lambda c: omap.get(c, c)
+    out = L("arcanine")
+    out.map_colors(recol)
+    fire = K.Img(64, 64)
+    for spine, w in ARC_FIRE:
+        K.flame(fire, spine, w, BF, BF_OUT)
+    out.paste(fire, 0, 0, under=True)
+    out.paste(part("arcanine_over"), 0, 0)
+    back = L("arcanine", back=True)
+    back.map_colors(recol)
+    bfire = K.Img(64, 64)
+    for spine, w in ARC_BACK_FIRE:
+        K.flame(bfire, spine, w, BF, BF_OUT)
+    back.paste(bfire, 0, 0, under=True)
+    return out, back
+
+
+# ---------------------------------------------------------------------------------------------- Mega Typhlosion
+TY_FUR = {(8, 32, 90): (14, 8, 30), (32, 65, 106): (34, 20, 60), (65, 90, 148): (58, 38, 100),
+          (65, 131, 164): (96, 68, 150)}
+TY_FIRE = {(222, 0, 0): (100, 20, 168), (255, 98, 0): (164, 56, 232), (255, 156, 0): (212, 120, 255),
+           (255, 222, 0): (246, 214, 255)}
+GHOSTFIRE = [(100, 20, 168), (164, 56, 232), (212, 120, 255), (246, 220, 255)]
+GF_OUT = (40, 8, 72)
+TY_BLAZE = [([(40, 12), (42, 6), (40, 1), (44, -3)], 4.6), ([(47, 14), (51, 8), (51, 3), (56, -1)], 4.8),
+            ([(50, 20), (55, 15), (57, 10), (63, 7)], 4.6), ([(51, 27), (57, 24), (61, 20), (66, 19)], 3.8),
+            ([(32, 9), (31, 4), (33, -1), (31, -4)], 4.0), ([(24, 11), (21, 6), (22, 2), (18, -2)], 3.6)]
+TY_BACK_BLAZE = [([(14, 30), (10, 24), (11, 18), (6, 13)], 4.6), ([(22, 22), (21, 15), (24, 9), (21, 3)], 5.2),
+                 ([(32, 22), (34, 15), (32, 9), (35, 3)], 5.0), ([(42, 28), (47, 22), (48, 16), (53, 12)], 4.4)]
+
+
+def typhlosion(L):
+    """Mega Typhlosion - Fire/Ghost, Drought: its fur goes shadow-dark, and its fire turns to a roaring corona of
+    violet ghost-flame - even its eyes burn purple."""
+    recol = lambda c: TY_FUR.get(c, TY_FIRE.get(c, c))
+    out = L("typhlosion")
+    out.map_colors(recol)
+    fire = K.Img(64, 64)
+    for spine, w in TY_BLAZE:
+        K.flame(fire, spine, w, GHOSTFIRE, GF_OUT)
+    out.paste(fire, 0, 0, under=True)
+    back = L("typhlosion", back=True)
+    back.map_colors(recol)
+    bfire = K.Img(64, 64)
+    for spine, w in TY_BACK_BLAZE:
+        K.flame(bfire, spine, w, GHOSTFIRE, GF_OUT)
+    back.paste(bfire, 0, 0, under=True)
+    return out, back
+
+
+RECIPES = {"snorlax": snorlax, "lapras": lapras, "machamp": machamp, "arcanine": arcanine, "typhlosion": typhlosion}
+NEEDS = {"snorlax": ["snorlax"], "lapras": ["lapras", "crabominable/mega"], "machamp": ["machamp"],
+         "arcanine": ["arcanine"], "typhlosion": ["typhlosion"]}
 
 
 # ---------------------------------------------------------------------------------------------- loading / building
