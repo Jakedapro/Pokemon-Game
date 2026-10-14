@@ -18,6 +18,8 @@ class Canvas:
         self.body = body.copy()
         self.under = pygame.Surface(body.get_size(), pygame.SRCALPHA)
         self.over = pygame.Surface(body.get_size(), pygame.SRCALPHA)
+        self.s_under = pygame.Surface(body.get_size(), pygame.SRCALPHA)   # sculpted parts (own outlines)
+        self.s_over = pygame.Surface(body.get_size(), pygame.SRCALPHA)
 
     # -- recolouring the body ------------------------------------------------------------------
     def recolor(self, rules):
@@ -113,14 +115,143 @@ class Canvas:
         for p in out:
             layer.set_at(p, (*OUTLINE, 255))
 
+    # -- sculpting: curved, shaded parts that sit in the sprite like they were always there ------------------
+    def opaque(self, x, y):
+        return 0 <= x < 64 and 0 <= y < 64 and self.body.get_at((x, y)).a > 0
+
+    def sculpt(self, pix, ramp, layer="over", clip_body=False, alt=None):
+        """Shade a set of pixels as a rounded form lit from the top-left, with an outline in its own darkest
+        tone. ramp = (outline, shadow, base, light, highlight). alt = (ramp2, test(x, y)) paints some pixels with
+        a second ramp (e.g. gold feather tips) using the same light."""
+        pix = {(x, y) for x, y in pix if 0 <= x < 64 and 0 <= y < 64}
+        if clip_body:
+            pix = {p for p in pix if self.opaque(*p)}
+        if not pix:
+            return
+        surf = self.s_under if layer == "under" else self.s_over
+
+        def run(x, y, dx, dy):
+            n = 0
+            while (x + dx * (n + 1), y + dy * (n + 1)) in pix and n < 4:
+                n += 1
+            return n
+        for x, y in pix:
+            up, left = (x, y - 1) not in pix, (x - 1, y) not in pix
+            down, right = (x, y + 1) not in pix, (x + 1, y) not in pix
+            tl, br = run(x, y, -1, -1), run(x, y, 1, 1)
+            if down or right or br == 0:
+                tier = 1
+            elif (up or left) and br >= 2:
+                tier = 4 if tl == 0 and br >= 3 else 3
+            elif tl <= 1 and br >= 3:
+                tier = 3
+            elif br <= 1:
+                tier = 1
+            else:
+                tier = 2
+            r = ramp
+            if alt and alt[1](x, y):
+                r = alt[0]
+            surf.set_at((x, y), (*r[tier], 255))
+        for x, y in pix:   # the outline, in the part's own darkest tone
+            for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                q = (x + dx, y + dy)
+                if q in pix or not (0 <= q[0] < 64 and 0 <= q[1] < 64):
+                    continue
+                if clip_body and not self.opaque(*q):
+                    continue
+                if layer == "under" and self.opaque(*q):
+                    continue
+                r = alt[0] if alt and alt[1](*q) else ramp
+                surf.set_at(q, (*r[0], 255))
+
+    def material(self, region, ramp, test=None):
+        """Turn part of the body into another material, keeping its own shading (so muscles stay muscles, bumps
+        stay bumps): pixels by brightness onto ramp (darkest = outline)."""
+        mask = pygame.Surface((64, 64), pygame.SRCALPHA)
+        pygame.draw.polygon(mask, (255, 255, 255), region)
+        pts = []
+        for y in range(64):
+            for x in range(64):
+                if mask.get_at((x, y)).a and self.opaque(x, y):
+                    c = self.body.get_at((x, y))
+                    if test is None or test(c.r, c.g, c.b):
+                        pts.append((x, y, 0.3 * c.r + 0.59 * c.g + 0.11 * c.b))
+        if not pts:
+            return
+        lums = sorted(p[2] for p in pts if p[2] > 60)
+        for x, y, lum in pts:
+            if lum <= 60:
+                col = ramp[0]
+            else:
+                k = sum(1 for v in lums if v < lum) / max(1, len(lums))
+                col = ramp[1 + min(len(ramp) - 2, int(k * (len(ramp) - 1)))]
+            self.body.set_at((x, y), (*col, 255))
+
+    @staticmethod
+    def spline(pts, closed=True, steps=8):
+        """A smooth Catmull-Rom curve through the points."""
+        out = []
+        n = len(pts)
+        rng = range(n) if closed else range(n - 1)
+        for i in rng:
+            p0 = pts[(i - 1) % n] if closed or i > 0 else pts[0]
+            p1, p2 = pts[i], pts[(i + 1) % n]
+            p3 = pts[(i + 2) % n] if closed or i + 2 < n else pts[-1]
+            for k in range(steps):
+                t = k / steps
+                t2, t3 = t * t, t * t * t
+                out.append(tuple(0.5 * (2 * p1[j] + (-p0[j] + p2[j]) * t + (2 * p0[j] - 5 * p1[j] + 4 * p2[j] - p3[j]) * t2
+                                        + (-p0[j] + 3 * p1[j] - 3 * p2[j] + p3[j]) * t3) for j in (0, 1)))
+        if not closed:
+            out.append(pts[-1])
+        return out
+
+    @staticmethod
+    def fill(poly):
+        m = pygame.Surface((64, 64), pygame.SRCALPHA)
+        pygame.draw.polygon(m, (255, 255, 255), [(round(x), round(y)) for x, y in poly])
+        return {(x, y) for y in range(64) for x in range(64) if m.get_at((x, y)).a}
+
+    def shape(self, pts, ramp, smooth=True, **kw):
+        poly = self.spline(pts) if smooth else pts
+        pix = self.fill(poly)
+        self.sculpt(pix, ramp, **kw)
+        return pix
+
+    def tube(self, pts, w0, w1, ramp, **kw):
+        """A tapering curved tube along the points (horns, ropes, tails)."""
+        path = self.spline(pts, closed=False, steps=10)
+        pix = set()
+        for i, (x, y) in enumerate(path):
+            r = (w0 + (w1 - w0) * i / max(1, len(path) - 1)) / 2
+            for yy in range(int(y - r) - 1, int(y + r) + 2):
+                for xx in range(int(x - r) - 1, int(x + r) + 2):
+                    if (xx + 0.5 - x - 0.5) ** 2 + (yy + 0.5 - y - 0.5) ** 2 <= r * r + 0.25:
+                        pix.add((xx, yy))
+        self.sculpt(pix, ramp, **kw)
+        return pix
+
     def finish(self):
         self._outline(self.under, keep_clear=self.body)
         self._outline(self.over)
         out = pygame.Surface(self.body.get_size(), pygame.SRCALPHA)
         out.blit(self.under, (0, 0))
+        out.blit(self.s_under, (0, 0))
         out.blit(self.body, (0, 0))
         out.blit(self.over, (0, 0))
+        out.blit(self.s_over, (0, 0))
         return out
+
+
+# material ramps: (outline, shadow, base, light, highlight)
+STEEL = ((40, 44, 64), (96, 104, 128), (152, 160, 184), (208, 216, 232), (255, 255, 255))
+GOLD = ((112, 72, 24), (192, 136, 40), (236, 184, 56), (255, 222, 112), (255, 248, 208))
+ICE = ((40, 88, 152), (96, 160, 216), (152, 212, 244), (212, 242, 255), (255, 255, 255))
+WHITE = ((128, 136, 176), (192, 200, 228), (232, 236, 250), (246, 248, 255), (255, 255, 255))
+ROPE = ((112, 112, 120), (176, 176, 184), (224, 224, 228), (244, 244, 246), (255, 255, 255))
+HAIR = ((24, 24, 40), (48, 48, 72), (72, 72, 104), (104, 104, 144), (152, 152, 192))
+RED = ((96, 16, 24), (168, 32, 40), (216, 56, 56), (248, 112, 104), (255, 184, 176))
 
 
 def _bright(r, g, b):
@@ -222,54 +353,56 @@ def typhlosion(c):
 
 
 def snorlax(c):
-    """Mega Snorlax (Normal/Fighting): the Yokozuna - a sumo topknot and the champion's thick twisted rope round
-    its belly with zig-zag paper streamers."""
+    """Mega Snorlax (Normal/Fighting): the Yokozuna - a sumo topknot and the champion's thick twisted rope bent
+    round its belly, with zig-zag paper streamers."""
     c.recolor(((140, 200, 205, 0.85, 0.8),))
-    # topknot
-    c.circle((52, 5), 4, (40, 40, 56), (96, 96, 120), layer="under")
-    c.poly([(49, 9), (55, 9), (54, 11), (50, 11)], (40, 40, 56), (72, 72, 96))
-    # the champion's rope: thick, twisted, white, round the middle of the belly
-    rope = [(9, 21), (20, 23), (32, 24), (44, 23), (53, 21)]
-    for a, b in zip(rope, rope[1:]):
-        c.line(a, b, (232, 232, 224), 5)
-    for a, b in zip(rope, rope[1:]):
-        c.line((a[0], a[1] - 2), (b[0], b[1] - 2), (255, 255, 255), 1)
-    for x in range(10, 53, 3):   # the twist
-        y = 21 + (2 if 15 < x < 48 else 1)
-        c.line((x, y - 2), (x + 2, y + 2), (152, 152, 160))
-    # zig-zag paper streamers hanging from it
-    for x in (18, 30, 42):
-        y = 26
-        zig = [(x, y), (x + 4, y), (x + 1, y + 3), (x + 5, y + 3), (x + 2, y + 7), (x - 1, y + 7), (x + 1, y + 4),
-               (x - 2, y + 4)]
-        c.poly(zig, (248, 248, 248), (255, 255, 255))
+    # topknot: a shaded bun sitting behind the top of the head, tied off in red
+    bun = [(49, 7), (50, 4), (53, 3), (56, 4), (56, 7), (53, 9)]
+    c.shape(bun, HAIR, layer="under")
+    # the rope sags round the curve of the belly
+    rope = [(8, 25), (19, 30), (32, 32), (45, 30), (55, 24)]
+    pix = c.tube(rope, 6, 5, ROPE, clip_body=True)
+    path = c.spline(rope, closed=False, steps=12)
+    for i in range(2, len(path) - 2, 4):   # the twist: dark strands crossing the rope
+        x, y = path[i]
+        for k in range(-2, 3):
+            q = (round(x + k * 0.6 - 1), round(y + k))
+            if q in pix and k != 0:
+                c.s_over.set_at(q, (*ROPE[1], 255))
+    # paper streamers hanging from the rope, each with a lit and a shaded side
+    for t in (0.32, 0.5, 0.68):
+        x, y = path[int(t * (len(path) - 1))]
+        x, y = round(x), round(y) + 3
+        pts = [(x, y), (x + 3, y + 2), (x, y + 4), (x + 3, y + 6), (x + 1, y + 8)]
+        for a, b in zip(pts, pts[1:]):   # a folded paper strip: thin zig-zag, lit on top, shaded below
+            c.line(a, b, WHITE[2], 2)
+            c.line((a[0], a[1] + 1), (b[0], b[1] + 1), WHITE[1], 1)
+        c.line(pts[0], pts[1], WHITE[4], 1)
 
 
 def lapras(c):
-    """Mega Lapras (Water/Ice): a deep-ocean body carrying a whole glacier - big faceted ice crystals over its
-    shell, an icicle fringe and a crown of ice."""
-    c.recolor(((180, 245, 218, 1.0, 0.72),))
-    hi, mid, lo, ridge = (216, 244, 255), (136, 204, 236), (72, 136, 200), (255, 255, 255)
+    """Mega Lapras (Water/Ice): a deep-ocean body; its shell freezes into a glacier and grows big faceted
+    crystals; a crown of ice sweeps back from its head."""
+    import colorsys
+    c.recolor(((180, 245, 222, 1.05, 0.72),))
 
-    def crystal(x, y, w, h, lean=0):
-        l, r, t = (x - w // 2, y), (x + w // 2, y), (x + lean, y - h)
-        m = (x + lean // 2, y - 1)
-        c.poly([l, m, t], hi)
-        c.poly([m, r, t], lo)
-        c.poly([(m[0] - 1, m[1]), (m[0] + 2, m[1]), t], mid)
-        c.line(t, ((t[0] + l[0]) // 2, (t[1] + l[1]) // 2), ridge)
-    # the glacier's body over the shell
-    c.poly([(33, 46), (34, 38), (40, 33), (50, 32), (57, 36), (60, 44), (56, 50), (38, 50)], mid, hi)
-    c.poly([(46, 50), (56, 50), (60, 44), (57, 40)], lo)
-    for x, y, w, h, lean in ((36, 42, 8, 14, -2), (44, 38, 10, 24, 0), (52, 40, 9, 18, 2), (58, 45, 6, 10, 3),
-                             (40, 46, 6, 8, 0)):
+    def shell(r, g, b):
+        h, sat, v = colorsys.rgb_to_hsv(r / 255, g / 255, b / 255)
+        return sat < 0.4 and not (0.12 < h < 0.2 and v > 0.8)
+    c.material([(32, 27), (61, 30), (61, 53), (34, 53)], ICE, shell)
+    lit = ((40, 88, 152), (152, 212, 244), (200, 236, 255), (232, 248, 255), (255, 255, 255))
+    dark = ((24, 56, 120), (64, 120, 192), (104, 172, 228), (152, 212, 244), (212, 242, 255))
+
+    def crystal(x, y, w, h, lean):
+        t = (x + lean, y - h)
+        m = (x + lean * 0.4, y)
+        c.shape([(x - w / 2, y + 2), (x - w / 2 + 1, y - h * 0.45), t, m], lit, smooth=False)
+        c.shape([m, t, (x + w / 2 - 1, y - h * 0.4), (x + w / 2, y + 2)], dark, smooth=False)
+    for x, y, w, h, lean in ((58, 41, 6, 9, 3), (36, 38, 7, 12, -2), (52, 36, 8, 16, 2), (44, 34, 9, 21, 0)):
         crystal(x, y, w, h, lean)
-    # icicle fringe under the glacier
-    for x in range(36, 58, 4):
-        c.spike((x, 50), (x + 3, 50), (x + 1, 54), mid, hi)
-    # crown of ice
-    for a, b, tip in (((18, 10), (21, 9), (16, 1)), ((23, 8), (27, 8), (25, -1)), ((28, 9), (31, 10), (33, 2))):
-        c.spike(a, b, tip, mid, hi)
+    # crown of ice: three curved horns sweeping back
+    for pts in ([(20, 11), (17, 6), (13, 2)], [(24, 9), (24, 4), (26, 0)], [(28, 10), (31, 5), (35, 3)]):
+        c.tube(pts, 3.5, 1, ICE, layer="under")
 
 
 def ninetales(c):
@@ -289,80 +422,56 @@ def ninetales(c):
 
 
 def machamp(c):
-    """Mega Machamp (Fighting/Steel): a gunmetal body in armour - angular steel gauntlets with knuckle spikes on
-    all four fists, steel shoulder plates and a golden champion's belt."""
-    c.recolor(((60, 170, 214, 0.3, 0.9, 0.1),))
-    steel, hi, lo, rivet = (148, 156, 180), (224, 232, 248), (88, 96, 120), (248, 208, 80)
-
-    def mirror(pts):
-        return [(64 - x, y) for x, y in pts]
-
-    def plate(pts):
-        c.poly(pts, steel, hi)
-        ys = [y for _, y in pts]
-        bottom = max(ys)
-        low = [(x, y) for x, y in pts if y >= bottom - 2]
-        if len(low) >= 2:
-            c.line(low[0], low[-1], lo, 2)
-    shapes = [
-        [(3, 7), (6, 3), (14, 3), (17, 7), (17, 13), (3, 13)],                       # upper fist
-        [(13, 25), (15, 19), (23, 17), (27, 21), (24, 27), (16, 28)],                # shoulder
-        [(12, 35), (22, 34), (23, 41), (13, 42)],                                    # lower fist
-    ]
-    for pts in shapes:
-        for side in (pts, mirror(pts)):
-            plate(side)
-    for x0 in (4, 45):   # knuckle spikes
+    """Mega Machamp (Fighting/Steel): its four fists and forearms turn to polished steel (keeping every knuckle
+    and muscle), with knuckle spikes, domed shoulder plates and a golden belt slung round its hips."""
+    c.recolor(((75, 170, 186, 0.55, 0.78, 0.1),))
+    for region in ([(0, 0), (21, 0), (21, 17), (0, 17)], [(43, 0), (64, 0), (64, 19), (43, 19)],
+                   [(9, 31), (25, 31), (25, 45), (9, 45)], [(40, 31), (57, 31), (57, 45), (40, 45)]):
+        c.material(region, STEEL)
+    for x0, x1 in ((4, 15), (47, 59)):   # knuckle spikes
         for k in range(3):
-            c.spike((x0 + k * 4, 4), (x0 + 3 + k * 4, 4), (x0 + 1 + k * 4, 0), steel, hi)
-    for x, y in ((10, 10), (20, 22), (17, 38)):
-        c.px(x, y, rivet)
-        c.px(64 - x, y, rivet)
-    # golden belt with a red jewel
-    c.poly([(24, 43), (42, 43), (42, 47), (24, 47)], (216, 168, 48), (248, 224, 120))
-    c.poly([(30, 42), (36, 42), (36, 48), (30, 48)], (248, 216, 72), (255, 248, 176))
-    c.circle((33, 45), 2, (232, 48, 64))
+            x = x0 + k * (x1 - x0) // 2
+            c.tube([(x, 4), (x - 1 if x < 32 else x + 1, 0)], 3, 1, STEEL, layer="under")
+    for side in (1, -1):   # domed shoulder plates
+        pts = [(14, 22), (16, 18), (21, 16), (26, 18), (25, 21), (19, 22)]
+        if side < 0:
+            pts = [(65 - x, y) for x, y in pts]
+        c.shape(pts, STEEL)
+    c.tube([(22, 44), (33, 47), (44, 44)], 5, 5, GOLD, clip_body=True)
+    c.shape([(30, 43), (36, 43), (37, 46), (33, 50), (29, 46)], GOLD)
+    c.shape([(32, 45), (34, 45), (34, 47), (32, 47)], RED, smooth=False)
 
 
 def togekiss(c):
-    """Mega Togekiss (Fairy/Flying): two great angel wings raised high - layered feathers with a scalloped edge,
-    tipped in gold - and a little golden tiara."""
+    """Mega Togekiss (Fairy/Flying): two great angel wings raised high - every feather shaped, shaded and
+    overlapping, the long ones dipped in gold - and a golden tiara."""
     c.swap(lambda r, g, b: r > 150 and g < 100 and b < 100, (248, 192, 48))   # red marks -> gold
     c.swap(lambda r, g, b: b > 180 and r < 120, (240, 120, 200))              # blue marks -> pink
-    white, shade, deep, gold, gold_hi = (248, 248, 255), (212, 220, 244), (168, 176, 216), (232, 176, 48), \
-        (255, 232, 128)
-    lead = [(0, 0), (-2, -12), (-8, -22), (-16, -28), (-25, -30)]
-    trail = [(-27, -26), (-22, -24), (-25, -20), (-19, -18), (-21, -13), (-15, -12), (-16, -7), (-10, -6),
-             (-10, -2), (-4, 1)]
-    inner = [(-6, -14), (-9, -12), (-8, -8), (-5, -5)]
     for side in (-1, 1):
-        bx, by = 32 + side * 3, 38
+        bx, by = 32 + side * 4, 38
+        angles = [104, 120, 136, 151, 166]
+        lengths = [30, 31, 28, 24, 18]
+        for i in reversed(range(5)):   # back feathers first, so the front ones overlap them
+            a = math.radians(angles[i] if side < 0 else 180 - angles[i])
+            dx, dy = math.cos(a), -math.sin(a)
+            nx, ny = -dy * side, dx * side
+            L = lengths[i]
+            tip = (bx + dx * L, by + dy * L)
+            mid = (bx + dx * L * 0.55 + nx * 1.5, by + dy * L * 0.55 + ny * 1.5)   # a gentle curve
+            w = 3.6
+            pts = [(bx + nx * 1.5, by + ny * 1.5), (mid[0] + nx * w, mid[1] + ny * w), tip,
+                   (mid[0] - nx * w * 0.7, mid[1] - ny * w * 0.7), (bx - nx * 1.5, by - ny * 1.5)]
 
-        P = [(bx + (-p[0] if side > 0 else p[0]), by + p[1]) for p in lead + trail]
-        c.poly(P, white, layer="under")
-        # the lower (secondary) feathers a shade darker
-        sec = [(bx + (-p[0] if side > 0 else p[0]), by + p[1]) for p in [(0, 0)] + trail[3:]]
-        c.poly(sec, shade, layer="under")
-        # feather lines, from the wing's inner arm out to each scallop
-        for q, t in zip(inner + inner, trail[1::2] + trail[2::2]):
-            a = (bx + (-q[0] if side > 0 else q[0]), by + q[1])
-            b = (bx + (-t[0] if side > 0 else t[0]), by + t[1])
-            c.line(a, b, deep, 1, layer="under")
-        # gold on the long primary feathers
-        for t in [lead[-1]] + trail[:4]:   # each long feather dipped in gold at the end
-            x, y = bx + (-t[0] if side > 0 else t[0]), by + t[1]
-            dx, dy = bx - x, by - y
-            n = max(1.0, math.hypot(dx, dy))
-            ux, uy = dx / n, dy / n
-            base = (x + ux * 5, y + uy * 5)
-            c.poly([(x, y), (base[0] - uy * 2, base[1] + ux * 2), (base[0] + uy * 2, base[1] - ux * 2)], gold,
-                   layer="under")
-            c.line((x, y), base, gold_hi, 1, layer="under")
+            def gold_tip(x, y, bx=bx, by=by, dx=dx, dy=dy, L=L):
+                return ((x - bx) * dx + (y - by) * dy) / L > 0.78
+            c.shape(pts, WHITE, layer="under", alt=(GOLD, gold_tip))
+        # the soft coverts over the feathers' roots
+        cov = [(bx, by + 1), (bx + side * 3, by - 9), (bx + side * 9, by - 13), (bx + side * 14, by - 9),
+               (bx + side * 11, by - 2)]
+        c.shape(cov, WHITE, layer="under")
     # golden tiara
-    for k, h in enumerate((3, 5, 3)):
-        x = 16 + k * 3
-        c.spike((x, 32), (x + 3, 32), (x + 1, 32 - h), gold, gold_hi)
-    c.px(18, 28, (240, 120, 200))
+    c.shape([(15, 32), (16, 28), (18, 30), (19, 26), (20, 30), (22, 28), (23, 32)], GOLD, smooth=False)
+    c.px(19, 29, (240, 120, 200))
 
 
 DESIGNS = {"flygon": flygon, "luxray": luxray, "arcanine": arcanine, "milotic": milotic, "typhlosion": typhlosion,
