@@ -341,7 +341,7 @@ def scar(c, a, b):
             c.body.set_at((x, y), (240, 208, 192, 255))
 
 
-def rim(c, col, k=0.55):
+def rim(c, col, k=0.55, test=None):
     """A coloured rim light along the sprite's own top-left edges - the energy of a Mega Evolution."""
     w, h = c.body.get_size()
     hits = []
@@ -350,7 +350,7 @@ def rim(c, col, k=0.55):
             if not c.opaque(x, y):
                 continue
             p = c.body.get_at((x, y))
-            if p.r + p.g + p.b < 90:   # leave the outline alone
+            if p.r + p.g + p.b < 90 or (test and not test(p)):   # leave the outline (and anything excluded) alone
                 continue
             for dx, dy in ((-1, 0), (0, -1), (-1, -1)):   # only the outer silhouette, not inner lines
                 if not c.opaque(x + 2 * dx, y + 2 * dy) or not c.opaque(x + dx, y + dy):
@@ -479,41 +479,64 @@ def typhlosion(c):
     c.swap(lambda r, g, b: r > 200 and 40 < g < 140 and b < 80, (255, 96, 200))   # glowing eyes
 
 
+FUR = ((20, 36, 40), (36, 66, 64), (52, 96, 90), (80, 128, 118), (120, 164, 152))
+
+
+def shaggy(c, line, depth, normal, ramp=FUR, teeth=3, layer="over", seed=0):
+    """A shaggy mass of fur: one solid band along a line whose outer edge is torn into pointed clumps, shaded as
+    one form, with a few darker strands running down each clump."""
+    import random
+    rng = random.Random(seed)
+    path = c.spline(line, closed=False, steps=12)
+    nx, ny = normal
+    outer = []
+    for i in range(0, len(path), teeth):
+        x, y = path[i]
+        k = 1.0 if (i // teeth) % 2 else 0.35
+        d = depth * k * rng.uniform(0.85, 1.15)
+        outer.append((x + nx * d, y + ny * d))
+    inner = [(x - nx, y - ny) for x, y in path[::teeth]]
+    c.shape(inner + list(reversed(outer)), ramp, smooth=False, layer=layer)
+    surf = c.s_over if layer == "over" else c.s_under
+    for i in range(1, len(outer) - 1, 2):   # strands down the long clumps
+        bx, by = inner[i]
+        tx, ty = outer[i]
+        for t in (0.3, 0.5, 0.7):
+            q = (round(bx + (tx - bx) * t), round(by + (ty - by) * t))
+            if surf.get_at(q).a:
+                surf.set_at(q, (*ramp[1], 255))
+
+
 def snorlax(c):
-    """Mega Snorlax (Normal/Fighting): the Juggernaut. Its own ears grow into tall horns, its claws lengthen,
-    its hide goes jet-black, its belly hardens to stone, and the champion's rope is dyed into its belly."""
-    c.recolor(((140, 200, 228, 0.55, 0.42), (40, 70, 34, 0.6, 0.88, 0.1)))
-    hide = lambda x, y, col: col.r + col.g + col.b < 200   # the dark hide and outline, not the face
-    c.stretch((43, 4, 7, 7), 1.0, 2.2, "bottom", hide)     # ears -> horns
-    c.stretch((57, 10, 7, 10), 1.5, 1.0, "left", hide)
-    claws = lambda x, y, col: col.r + col.g + col.b > 600 or col.r + col.g + col.b < 120
-    for rect in ((0, 30, 10, 8), (12, 43, 10, 8), (36, 40, 12, 8)):
-        c.stretch(rect, 1.2, 1.3, "center", claws)
-    glow_eye(c, [(44, 13), (45, 13), (53, 11), (54, 11)], (255, 64, 32), (255, 160, 64))
-    for crack in ([(16, 19), (20, 22), (18, 26)], [(31, 15), (34, 20), (31, 25), (35, 29)]):   # magma glowing through cracks in its stone belly
-        glow_line(c, crack, (255, 200, 72), (176, 64, 40))
-    rim(c, (255, 96, 48))
+    """Mega Snorlax (Normal/Fighting): a wild, shaggy brawler - a thick fur mane bristling round its neck, a
+    ragged fur fringe along its underside, long white claws, fangs and a fierce scowl."""
+    c.recolor(((140, 200, 182, 1.0, 0.8),))
+    shaggy(c, [(39, 6), (41, 14), (45, 21), (51, 27), (56, 30)], 8, (-0.75, 0.65), seed=1)   # the mane
+    shaggy(c, [(13, 42), (19, 45), (25, 46), (30, 45)], 8, (0.0, 1.0), teeth=3, layer="under", seed=2)   # fringe
+    claws = lambda x, y, col: col.r + col.g + col.b > 600
+    for rect in ((0, 30, 10, 8), (12, 43, 10, 8), (36, 40, 12, 8), (58, 36, 6, 6)):
+        c.stretch(rect, 1.2, 1.6, "center", claws)
+    for x0 in (45, 49):   # fangs over the lip
+        c.body.set_at((x0, 15), (255, 255, 255, 255))
+        c.body.set_at((x0, 16), (255, 255, 255, 255))
+        c.body.set_at((x0 + 1, 15), (200, 200, 216, 255))
 
 
 def lapras(c):
     """Mega Lapras (Water/Ice): the Glacier Leviathan. Its own shell knobs grow into tall jagged peaks of ice,
     its horn lengthens into a spear, its fins sharpen, and its hide turns black-blue."""
     import colorsys
-    c.recolor(((180, 245, 226, 1.0, 0.5), (40, 64, 205, 0.18, 0.92, 0.1)))
+    c.recolor(((180, 245, 226, 1.0, 0.5),))
 
     def shell(r, g, b):
         h, sat, v = colorsys.rgb_to_hsv(r / 255, g / 255, b / 255)
-        return sat < 0.4 and v < 0.85
+        return (sat < 0.36 and v > 0.25) or (r > 190 and g > 160 and b > 150 and r >= b)
     knobs = lambda x, y, col: shell(col.r, col.g, col.b) or col.r + col.g + col.b < 90
     c.stretch((34, 27, 24, 12), 1.0, 2.1, "bottom", knobs)    # the shell's knobs grow into peaks
     c.material([(30, 0), (62, 0), (62, 53), (34, 53)], DEEPICE, shell)
     c.stretch((21, 2, 7, 8), 1.0, 1.8, "bottom")               # the horn becomes a spear
-    c.stretch((13, 8, 7, 8), 1.8, 1.0, "right")                # the head fins sweep back
     glow_eye(c, [(24, 10), (23, 11), (24, 11), (25, 11), (25, 12), (26, 12)], (96, 255, 255), (64, 160, 220))
-    dark = lambda col: col.b > col.r   # only on the blue hide, not the belly
-    glow_line(c, [(30, 14), (31, 22), (30, 30), (31, 38)], (128, 255, 255), (32, 120, 200), dark)   # runes down the neck
-    glow_line(c, [(43, 50), (49, 52), (55, 50)], (128, 255, 255), (32, 120, 200), dark)
-    rim(c, (120, 240, 255))
+    rim(c, (120, 240, 255), test=lambda p: p.b > p.r + 20)   # light the dark hide and ice, not the mouth or belly
 
 
 def ninetales(c):
@@ -536,29 +559,23 @@ def machamp(c):
     """Mega Machamp (Fighting/Steel): the War Machine. Its own fists swell bigger and turn to black steel, its
     crest grows tall and crimson, its body goes gunmetal and its eyes burn."""
     c.recolor(((75, 170, 214, 0.35, 0.6, 0.1),))
-    c.stretch((20, 5, 24, 9), 1.15, 1.7, "bottom")             # a taller crest
     c.material([(16, 0), (48, 0), (48, 13), (16, 13)], RED, lambda r, g, b: r > 120 and g > 100 and b < 110)
     for region in ([(0, 0), (22, 0), (22, 17), (0, 17)], [(42, 0), (64, 0), (64, 19), (42, 19)],
-                   [(7, 31), (27, 31), (27, 48), (7, 48)], [(38, 31), (59, 31), (59, 48), (38, 48)]):
-        c.material(region, STEEL)
+                   [(8, 31), (21, 31), (21, 46), (8, 46)], [(43, 31), (58, 31), (58, 46), (43, 46)]):
+        c.material(region, STEEL[:4] + ((232, 236, 248),))
     glow_eye(c, [(22, 17), (30, 17), (22, 16), (30, 16)], (255, 240, 96), (255, 128, 48))
     for x, y in ((7, 6), (11, 5), (52, 5), (56, 6), (15, 37), (19, 37), (45, 37), (49, 37)):   # red-hot knuckles
         if c.opaque(x, y):
             c.body.set_at((x, y), (255, 200, 80, 255))
-    rim(c, (255, 96, 72), 0.5)
 
 
 def togekiss(c):
-    """Mega Togekiss (Fairy/Flying): the Seraph. Its own wings are doubled - a second, bigger pair grown out of
-    the first and raised high - and its crest grows into a crown."""
+    """Mega Togekiss (Fairy/Flying): the Seraph. A second, bigger pair of its own wings grows out behind the
+    first, raised high, and its markings turn gold and crimson."""
     c.swap(lambda r, g, b: r > 150 and g < 100 and b < 100, (248, 192, 48))   # red marks -> gold
     c.swap(lambda r, g, b: b > 180 and r < 120, (176, 40, 72))                # blue marks -> crimson
-    c.clone((0, 31, 22, 16), (14, 22), scale=1.5, angle=-38)     # left wing, grown and raised
-    c.clone((42, 31, 22, 14), (50, 22), scale=1.5, angle=38)     # right wing
-    c.clone((0, 31, 22, 16), (20, 28), scale=1.2, angle=-18)
-    c.clone((42, 31, 22, 14), (44, 28), scale=1.2, angle=18)
-    c.stretch((15, 29, 10, 7), 1.0, 2.0, "bottom")               # crest -> crown
-    rim(c, (255, 208, 80), 0.7)
+    c.clone((0, 31, 22, 16), (13, 23), scale=1.45, angle=-30)     # left wing, grown and raised
+    c.clone((42, 31, 22, 14), (51, 23), scale=1.45, angle=30)     # right wing
 
 
 DESIGNS = {"flygon": flygon, "luxray": luxray, "arcanine": arcanine, "milotic": milotic, "typhlosion": typhlosion,
