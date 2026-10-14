@@ -159,9 +159,9 @@ class MqttConn(BaseConn):
 class RoomHost:
     """Opens a room and waits for a friend. Same interface as net.Host (conn / error / status / close)."""
 
-    def __init__(self, name, style, public=False, code=None):
+    def __init__(self, name, style, public=False, code=None, ranked=False):
         self.code = (code or new_code()).upper()
-        self.name, self.style, self.public = name, style, public
+        self.name, self.style, self.public, self.ranked = name, style, public, ranked
         self.conn = None
         self.error = None
         self.status = "Opening room..."
@@ -171,7 +171,10 @@ class RoomHost:
         threading.Thread(target=self._run, daemon=True).start()
 
     def _info(self):
-        return {"name": self.name, "style": self.style, "code": self.code, "v": PROTO, "ts": time.time()}
+        from . import profile
+        r = profile.my_rating()
+        return {"name": self.name, "style": self.style, "code": self.code, "v": PROTO, "ts": time.time(),
+                "ranked": self.ranked, "mmr": r["mmr"], "games": r["games"]}
 
     def _run(self):
         # the real-time MQTT servers first (fast, no rate limits); the HTTPS relay only if they're all blocked
@@ -350,6 +353,77 @@ def list_public_rooms(wait=2.5):
     for t in threads:
         t.join(wait + 5)
     return sorted(rooms.values(), key=lambda r: -r.get("ts", 0))
+
+
+# ---------------------------------------------------------------------------- the global ladder
+LADDER = f"{PREFIX}/ladder"
+
+
+def publish_ladder(name, wait=3.0):
+    """Put this player's ranked rating on the public ladder (a retained message per player). Runs in the
+    background; quietly does nothing offline."""
+    from . import profile
+    r = profile.my_rating()
+    if r["games"] == 0:
+        return
+    entry = {"name": str(name)[:16], "mmr": r["mmr"], "w": r["w"], "l": r["l"], "v": PROTO, "ts": time.time()}
+
+    def run():
+        for host, port in brokers():
+            try:
+                c = _connect(host, port, timeout=wait)
+            except Exception:  # noqa: BLE001
+                continue
+            try:
+                c.publish(f"{LADDER}/{r['id']}", _pack(entry), qos=1, retain=True).wait_for_publish(wait)
+            except Exception:  # noqa: BLE001
+                pass
+            c.disconnect()
+            c.loop_stop()
+    threading.Thread(target=run, daemon=True).start()
+
+
+def fetch_ladder(wait=2.5):
+    """Every player on the ladder (from all reachable servers), best first: [{name, mmr, w, l, id}]."""
+    found = {}
+    lock = threading.Lock()
+
+    def scan(host, port):
+        try:
+            c = _connect(host, port, timeout=4.0)
+        except Exception:  # noqa: BLE001
+            return
+
+        def on_message(client, userdata, msg):
+            d = _unpack(msg.payload)
+            if not isinstance(d, dict) or not isinstance(d.get("mmr"), (int, float)):
+                return
+            if time.time() - d.get("ts", 0) > 90 * 86400:   # inactive for 3 months: off the ladder
+                return
+            pid = msg.topic.rsplit("/", 1)[-1]
+            d = {"name": str(d.get("name", "?"))[:16], "mmr": int(d["mmr"]), "w": int(d.get("w", 0)),
+                 "l": int(d.get("l", 0)), "id": pid, "ts": d.get("ts", 0)}
+            with lock:
+                if pid not in found or found[pid]["ts"] < d["ts"]:
+                    found[pid] = d
+        c.on_message = on_message
+        c.subscribe(f"{LADDER}/+", qos=1)
+        time.sleep(wait)
+        c.disconnect()
+        c.loop_stop()
+    threads = [threading.Thread(target=scan, args=b, daemon=True) for b in brokers()]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(wait + 6)
+    return sorted(found.values(), key=lambda d: (-d["mmr"], -(d["w"] + d["l"])))
+
+
+def best_match(rooms, mmr, window=250):
+    """The open ranked 1v1 room whose host is closest to this rating (within the window), or None."""
+    cands = [r for r in rooms if r.get("ranked") and r.get("style") == "turn" and
+             abs(int(r.get("mmr", 1000)) - mmr) <= window]
+    return min(cands, key=lambda r: abs(int(r.get("mmr", 1000)) - mmr)) if cands else None
 
 
 # ---------------------------------------------------------------------------- LAN discovery

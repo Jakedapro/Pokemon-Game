@@ -19,6 +19,9 @@ class _Online:
     """Emotes, rematches and the replay hand-off for online sessions."""
     online = True
 
+    ranked = False
+    ratings = (None, None)   # each side's skill rating {mmr, games, w, l, id} (online 1v1)
+
     def _online_init(self, conn):
         self.conn = conn
         self.emotes = []          # [(team/side, text, time)]
@@ -37,7 +40,8 @@ class _Online:
 
     def request_rematch(self):
         self.rematch_me = True
-        self.conn.send({"t": "rematch"})
+        from . import profile
+        self.conn.send({"t": "rematch", "rating": profile.my_rating()})   # our rating after the last game
 
     def _control(self, msg):
         """Handle a non-game message. Returns True if consumed."""
@@ -46,6 +50,10 @@ class _Online:
             self.emotes.append((1 - self.me_index, str(msg.get("e", ""))[:12], time.time()))
         elif t == "rematch":
             self.rematch_them = True
+            if isinstance(msg.get("rating"), dict):
+                r = list(self.ratings)
+                r[1 - self.me_index] = msg["rating"]
+                self.ratings = tuple(r)
         elif t == "replay":
             self.replay_data = msg.get("r")
         else:
@@ -107,8 +115,9 @@ class TurnLocal:
 
 
 class TurnHost(_Online, TurnLocal):
-    def __init__(self, dex, conn, my_team, their_team, names, seed=None):
+    def __init__(self, dex, conn, my_team, their_team, names, seed=None, ratings=(None, None), ranked=False):
         self._online_init(conn)
+        self.ratings, self.ranked = tuple(ratings), ranked
         self.dex = dex
         self.my_side = self.me_index = 0
         self.names = names
@@ -118,7 +127,8 @@ class TurnHost(_Online, TurnLocal):
         self.out = []
         self.error = None
         self.sent_replay = False
-        conn.send({"t": "start", "style": "turn", "you": 1, "names": names})
+        conn.send({"t": "start", "style": "turn", "you": 1, "names": names, "ratings": list(self.ratings),
+                   "ranked": ranked})
         self._broadcast([])
 
     def _broadcast(self, log):
@@ -154,7 +164,9 @@ class TurnHost(_Online, TurnLocal):
         if self.conn.closed and not self.battle.over:
             self.error = self.conn.error or "Your opponent disconnected"
         if self.rematch_me and self.rematch_them and self.next_session is None:
-            self.next_session = TurnHost(self.dex, self.conn, self.teams[0], self.teams[1], self.names)
+            from . import profile
+            self.next_session = TurnHost(self.dex, self.conn, self.teams[0], self.teams[1], self.names,
+                                         ratings=(profile.my_rating(), self.ratings[1]), ranked=self.ranked)
         out, self.out = self.out, []
         return out
 
@@ -164,6 +176,9 @@ class TurnClient(_Online):
         self._online_init(conn)
         self.my_side = self.me_index = start["you"]
         self.names = start["names"]
+        r = start.get("ratings") or [None, None]
+        self.ratings = (r[0], r[1]) if len(r) == 2 else (None, None)
+        self.ranked = bool(start.get("ranked"))
         self.error = None
 
     def choose(self, choice):
@@ -199,7 +214,10 @@ def make_client(conn, start):
 class Lobby:
     """Runs the hello/start handshake once a connection exists. Call poll() each frame."""
 
-    def __init__(self, dex, conn, role, style, my_team, my_name):
+    def __init__(self, dex, conn, role, style, my_team, my_name, ranked=False):
+        from . import profile
+        self.ranked = ranked
+        self.rating = profile.my_rating()
         self.dex = dex
         self.conn = conn
         self.role = role
@@ -209,7 +227,7 @@ class Lobby:
         self.session = None
         self.error = None
         conn.send({"t": "hello", "v": PROTO, "name": my_name, "team": [m.to_dict() for m in my_team],
-                   "style": style})
+                   "style": style, "rating": self.rating, "ranked": ranked})
 
     def poll(self):
         if self.session or self.error:
@@ -232,7 +250,12 @@ class Lobby:
                     return None
                 names = [self.my_name, msg.get("name", "Friend")]
                 seed = random.randrange(1 << 30)
-                self.session = TurnHost(self.dex, self.conn, self.my_team, their, names, seed)
+                theirs = msg.get("rating") if isinstance(msg.get("rating"), dict) else None
+                # ranked only when both want it, and never against yourself
+                ranked = self.ranked and bool(msg.get("ranked")) and \
+                    (theirs or {}).get("id") != self.rating.get("id")
+                self.session = TurnHost(self.dex, self.conn, self.my_team, their, names, seed,
+                                        ratings=(self.rating, theirs), ranked=ranked)
             elif t == "badteam" and self.role == "join":
                 self.error = f"The host says your team isn't legal: {msg.get('why', '')}"
                 return None

@@ -108,3 +108,76 @@ def add_legend(entry, shiny=False):
 def summary(kind, opponent):
     w, l_ = load().get(kind, {}).get(opponent, [0, 0])
     return f"{w}-{l_}"
+
+
+# ====================================================================== ranked 1v1 (skill rating)
+# A true skill rating for online 1v1s: Elo, starting at 1000. The first PLACEMENTS games move it fast; after that
+# it settles. It maps onto the same ball tiers as the rank points, so a trainer's ball shows how good they are.
+MMR_START = 1000
+PLACEMENTS = 5
+MMR_TIERS = [("Poke Ball", 0), ("Great Ball", 1100), ("Ultra Ball", 1250), ("Master Ball", 1400), ("Champion", 1600)]
+UNRANKED_COLOR = (150, 150, 165)
+
+
+def player_id(data=None):
+    """A random id for this player (so the global ladder knows it's you), made once."""
+    data = data if data is not None else load()
+    if not data.get("pid"):
+        data["pid"] = "%012x" % random.getrandbits(48)
+        save(data)
+    return data["pid"]
+
+
+def mmr_rank(mmr, games):
+    """A ranked tier for a skill rating: {tier, name, div, color, label, mmr, games}."""
+    if games < PLACEMENTS:
+        return {"tier": 0, "name": "Unranked", "div": "", "color": UNRANKED_COLOR, "mmr": mmr, "games": games,
+                "label": f"Placement {games}/{PLACEMENTS}", "placing": True}
+    for i in range(len(MMR_TIERS) - 1, -1, -1):
+        if mmr >= MMR_TIERS[i][1]:
+            break
+    name, floor = MMR_TIERS[i]
+    col = RANKS[i][2]
+    if i == len(MMR_TIERS) - 1:
+        return {"tier": i, "name": name, "div": "", "color": col, "label": f"{name}", "mmr": mmr, "games": games}
+    step = (MMR_TIERS[i + 1][1] - floor) / 3
+    d = min(2, max(0, int((mmr - floor) // step)))
+    return {"tier": i, "name": name, "div": DIVISIONS[d], "color": col, "label": f"{name} {DIVISIONS[d]}",
+            "mmr": mmr, "games": games}
+
+
+def my_rating(data=None):
+    """What we tell an opponent about ourselves: {mmr, games, w, l, id}."""
+    data = data or load()
+    w, l_ = data.get("ranked", [0, 0])
+    return {"mmr": int(data.get("mmr", MMR_START)), "games": w + l_, "w": w, "l": l_, "id": player_id(data)}
+
+
+def expected(me, them):
+    return 1 / (1 + 10 ** ((them - me) / 400))
+
+
+def record_ranked(opp_name, opp_rating, won):
+    """Update the skill rating after a ranked 1v1. Returns {mmr, delta, old_rank, rank, games, promoted}."""
+    data = load()
+    player_id(data)
+    old = int(data.get("mmr", MMR_START))
+    w, l_ = data.get("ranked", [0, 0])
+    games = w + l_
+    opp = int((opp_rating or {}).get("mmr", MMR_START))
+    k = 48 if games < PLACEMENTS else 32 if games < 30 else 24
+    delta = round(k * ((1 if won else 0) - expected(old, opp)))
+    if won:
+        delta = max(delta, 1)
+    new = max(100, old + delta)
+    data["mmr"] = new
+    data["ranked"] = [w + (1 if won else 0), l_ + (0 if won else 1)]
+    data["peak_mmr"] = max(data.get("peak_mmr", MMR_START), new)
+    hist = data.setdefault("ranked_history", [])
+    hist.append({"vs": str(opp_name)[:16], "opp": opp, "won": bool(won), "mmr": new, "t": int(time.time())})
+    del hist[:-20]
+    save(data)
+    r_old, r_new = mmr_rank(old, games), mmr_rank(new, games + 1)
+    return {"mmr": new, "delta": new - old, "old_rank": r_old, "rank": r_new, "games": games + 1,
+            "promoted": bool(r_new["tier"] > r_old["tier"] or (r_old.get("placing") and not r_new.get("placing"))),
+            "demoted": bool(r_new["tier"] < r_old["tier"] and not r_old.get("placing"))}

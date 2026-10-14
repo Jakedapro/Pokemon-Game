@@ -6,7 +6,7 @@ import pygame
 from . import gfx, ui
 from .app import Scene
 from .audio import AUDIO
-from .battle_common import BattleExtras, draw_rank_change
+from .battle_common import BattleExtras, draw_mmr_change, draw_rank_change, draw_vs_card, rank_tag, rating_of
 from .weather import WeatherFX
 from .battlecore import STATUS_NAMES
 from .cinematics import ARCEUS_JUDGMENT, AttackFX, Finisher, Gigantamax, Judgment, MegaEvolution
@@ -738,7 +738,10 @@ class TurnBattleScene(Scene):
                 gfx.text(surf, self.x.result_text, (W / 2, 360), 22)
                 if self.s.online and self.s.rematch_them and not self.s.rematch_me:
                     gfx.text(surf, f"{self.s.names[self.foe]} wants a rematch!", (W / 2, 396), 22, (255, 230, 120))
-                draw_rank_change(surf, self.x.outcome, (W / 2, 466), self.x.outcome_t)
+                if self.x.ranked_out:   # ranked online 1v1: the skill rating is what matters
+                    draw_mmr_change(surf, self.x.ranked_out, (W / 2, 466), self.x.outcome_t)
+                else:
+                    draw_rank_change(surf, self.x.outcome, (W / 2, 466), self.x.outcome_t)
             for b in self.end_btns:
                 b.draw(surf)
         if self.bag_open:
@@ -756,6 +759,7 @@ class TurnBattleScene(Scene):
             self.finisher.draw(surf)
             gfx.text(surf, "click to skip", (W - 16, H - 16), 14, (200, 200, 210), anchor="midright", ow=1,
                      chunky=False)
+        draw_vs_card(surf, self.s, self.me, self.t)
 
     def _foe_types(self):
         v = self.vis.get(self.foe)
@@ -796,6 +800,9 @@ class TurnBattleScene(Scene):
                  ow=1, chunky=False)
         names = self.s.names
         gfx.text(surf, f"{names[self.foe]}", (W - 20, 70), 20, gfx.TEAM_COLORS[1], anchor="midright", ow=1)
+        if getattr(self.s, "online", False):   # how good each trainer is
+            rank_tag(surf, rating_of(self.s, self.foe), (W - 20, 96))
+            rank_tag(surf, rating_of(self.s, self.me), (20, 70), anchor="midleft")
 
     def _draw_mon(self, surf, side):
         v = self.vis.get(side)

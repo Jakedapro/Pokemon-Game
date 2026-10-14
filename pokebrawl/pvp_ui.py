@@ -4,7 +4,7 @@ import threading
 
 import pygame
 
-from . import gfx, net, online, ui
+from . import gfx, net, online, profile, ui
 from .app import STYLE_NAMES, PrefetchScene, Scene, pick_team, save_settings, team_options
 from .gfx import W
 from .session import Lobby
@@ -36,6 +36,9 @@ class PvPSetup(Scene):
         self.conn.set(s.get("pvp_conn2", "room"))
         self.public = ui.Cycle((60, 346, 600, 64), "List room publicly", ["No", "Yes"])
         self.public.set(s.get("pvp_public", "No"))
+        self.ranked = ui.Cycle((60, 424, 600, 64), "Match type", ["Ranked", "Casual"])
+        self.ranked.set(s.get("pvp_ranked", "Ranked"))
+        self.rating = profile.my_rating()
         self.name = ui.TextInput((60, 530, 290, 56), "Your name", s.get("name", os.environ.get("USER", "Trainer")))
         self.code = ui.TextInput((370, 530, 290, 56), "Room code (to join)", "", "ABCDE")
         self.addr = ui.TextInput((370, 530, 290, 56), "Friend's address", s.get("join_addr", ""), "192.168.1.20")
@@ -52,7 +55,9 @@ class PvPSetup(Scene):
                                    "relay": "enter the room"}[self.conn.value]),
                         ui.Button((60, 1150, 200, 70), "Back", ui.PANEL2, 24)]
         if self.conn.value == "room":
-            self.buttons.append(ui.Button((60, 850, 600, 70), "Browse open rooms", (150, 80, 200), 26))
+            self.buttons.append(ui.Button((60, 850, 290, 70), "Browse open rooms", (150, 80, 200), 22))
+            self.buttons.append(ui.Button((370, 850, 290, 70), "Quick Match", (200, 120, 30), 26, "ranked, near you"))
+        self.buttons.append(ui.Button((460, 1150, 200, 70), "Ladder", (60, 90, 160), 24))
 
     def inputs(self):
         c = self.conn.value
@@ -67,7 +72,7 @@ class PvPSetup(Scene):
             self.app.pop()
         if ev.type != pygame.MOUSEBUTTONDOWN or ev.button != 1:
             return
-        for c in (self.team, self.conn) + ((self.public,) if self.conn.value == "room" else ()):
+        for c in (self.team, self.conn, self.ranked) + ((self.public,) if self.conn.value == "room" else ()):
             if c.click(pos):
                 self._layout()
         b = self.buttons
@@ -77,8 +82,12 @@ class PvPSetup(Scene):
             self.go("host")
         elif b[1].hit(pos):
             self.go("join")
-        elif len(b) > 3 and b[3].hit(pos):
+        elif b[-1].hit(pos):
+            self.app.push(LadderScene(self.app))
+        elif len(b) > 4 and b[3].hit(pos):
             self.go("browse")
+        elif len(b) > 4 and b[4].hit(pos):
+            self.go("quick")
 
     def _team(self):
         team = pick_team(self.app, self.team.value, self.saved)
@@ -90,7 +99,7 @@ class PvPSetup(Scene):
 
     def go(self, role):
         app = self.app
-        app.settings.update(pvp_team=self.team.value, pvp_conn2=self.conn.value,
+        app.settings.update(pvp_team=self.team.value, pvp_conn2=self.conn.value, pvp_ranked=self.ranked.value,
                             pvp_public=self.public.value, name=self.name.value or "Trainer",
                             join_addr=self.addr.value, relay=self.relay.value, room=self.room.value)
         save_settings(app.settings)
@@ -99,8 +108,12 @@ class PvPSetup(Scene):
             return
         name = (self.name.value or "Trainer")[:16]
         c = self.conn.value
+        ranked = self.ranked.value == "Ranked"
         if role == "browse":
-            app.push(RoomBrowser(app, team, name))
+            app.push(RoomBrowser(app, team, name, ranked))
+            return
+        if role == "quick":
+            app.push(QuickMatch(app, team, name))
             return
         if c == "lan" and role == "join":
             app.push(LanBrowser(app, team, name, "turn"))
@@ -116,12 +129,17 @@ class PvPSetup(Scene):
             return
         app.push(LobbyScene(app, role, c, "turn", team, name, code=self.code.value,
                             addr=self.addr.value, relay=self.relay.value, room=self.room.value,
-                            public=self.public.value == "Yes"))
+                            public=self.public.value == "Yes", ranked=ranked))
 
     def draw(self, surf):
         ui.menu_background(surf, self.app.t)
         ui.header(surf, "PvP", "Battle your friends online")
-        for c in (self.team, self.conn):
+        rk = profile.mmr_rank(self.rating["mmr"], self.rating["games"])
+        ui.rank_badge(surf, (420, 165), 14, rk, self.app.t)
+        gfx.text(surf, (f"{rk['label']}  {rk['mmr']}" if not rk.get("placing") else rk["label"]) +
+                 f"   {self.rating['w']}W {self.rating['l']}L", (442, 165), 17, rk["color"], gfx.INK, 1,
+                 anchor="midleft", chunky=False)
+        for c in (self.team, self.conn, self.ranked):
             c.draw(surf)
         if self.conn.value == "room":
             self.public.draw(surf)
@@ -139,9 +157,9 @@ class PvPSetup(Scene):
 class RoomBrowser(Scene):
     """Lists public rooms from the online servers."""
 
-    def __init__(self, app, team, name):
+    def __init__(self, app, team, name, ranked=True):
         super().__init__(app)
-        self.team, self.name = team, name
+        self.team, self.name, self.ranked = team, name, ranked
         self.list = ui.ListView((40, 170, 640, 860), 84)
         self.rooms = []
         self.loading = True
@@ -162,8 +180,12 @@ class RoomBrowser(Scene):
             for r in self.rooms:
                 def draw(surf, rect, sel, r=r):
                     gfx.text(surf, r.get("name", "?"), (rect.x + 16, rect.y + 26), 24, anchor="midleft", ow=1)
-                    gfx.text(surf, STYLE_NAMES.get(r.get("style"), r.get("style", "")),
-                             (rect.x + 16, rect.y + 56), 16, ui.MUTED, anchor="midleft", ow=1, chunky=False)
+                    rk = profile.mmr_rank(int(r.get("mmr", 1000)), int(r.get("games", 0)))
+                    sub = STYLE_NAMES.get(r.get("style"), r.get("style", "")) + \
+                        ("   RANKED" if r.get("ranked") else "   casual") + \
+                        (f"   {rk['label']} {rk['mmr']}" if "mmr" in r and not rk.get("placing") else "")
+                    gfx.text(surf, sub, (rect.x + 16, rect.y + 56), 16, rk["color"] if r.get("ranked") else ui.MUTED,
+                             anchor="midleft", ow=1, chunky=False)
                     gfx.text(surf, r["code"], (rect.right - 16, rect.centery), 30, (255, 240, 150), anchor="midright")
                 rows.append((r["code"], draw))
             self.list.set_rows(rows)
@@ -176,7 +198,9 @@ class RoomBrowser(Scene):
         if picked:
             r = next(x for x in self.rooms if x["code"] == picked)
             self.app.replace(LobbyScene(self.app, "join", "room", r.get("style", "turn"), self.team, self.name,
-                                        code=r["code"], broker=r["broker"] if r["broker"] == "https" else tuple(r["broker"])))
+                                        code=r["code"],
+                                        broker=r["broker"] if r["broker"] == "https" else tuple(r["broker"]),
+                                        ranked=self.ranked))
             return
         if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
             if self.buttons[0].hit(pos):
@@ -259,8 +283,9 @@ class LanBrowser(Scene):
 
 class LobbyScene(Scene):
     def __init__(self, app, role, conn_type, style, team, name, code="", addr="", relay="", room="",
-                 public=False, broker=None):
+                 public=False, broker=None, ranked=False, searching=False):
         super().__init__(app)
+        self.ranked, self.searching = ranked, searching
         self.role, self.conn_type, self.style, self.team, self.name = role, conn_type, style, team, name
         self.host = None
         self.beacon = None
@@ -274,7 +299,7 @@ class LobbyScene(Scene):
         if role == "host":
             try:
                 if conn_type == "room":
-                    self.host = online.RoomHost(name, style, public)
+                    self.host = online.RoomHost(name, style, public, ranked=ranked)
                     self.code = self.host.code
                 elif conn_type == "relay":
                     self.host = net.Host(net.DEFAULT_PORT, relay=relay, room=room)
@@ -325,7 +350,8 @@ class LobbyScene(Scene):
                 self.conn = self.host.conn
         if self.conn and not self.lobby:
             self.status = "Connected! Exchanging teams..."
-            self.lobby = Lobby(self.app.dex, self.conn, self.role, self.style, self.team, self.name)
+            self.lobby = Lobby(self.app.dex, self.conn, self.role, self.style, self.team, self.name,
+                               ranked=self.ranked)
         if self.lobby:
             session = self.lobby.poll()
             if self.lobby.error:
@@ -350,7 +376,15 @@ class LobbyScene(Scene):
         else:
             gfx.text(surf, self.status, (W / 2, 300), 24)
             gfx.text(surf, "." * (int(self.app.t * 2) % 4), (W / 2, 335), 30)
-            if self.code:
+            if self.searching:
+                r = profile.my_rating()
+                rk = profile.mmr_rank(r["mmr"], r["games"])
+                ui.rank_badge(surf, (W / 2, 470), 44, rk, self.app.t)
+                gfx.text(surf, "Searching for a ranked opponent near you...", (W / 2, 560), 22, chunky=False)
+                gfx.text(surf, f"{rk['label']}  -  rating {r['mmr']}", (W / 2, 600), 20, rk["color"], chunky=False)
+                gfx.text(surf, f"Anyone can also join with code {self.code}", (W / 2, 660), 17, ui.MUTED,
+                         chunky=False)
+            elif self.code:
                 gfx.text(surf, "Room code", (W / 2, 420), 22, ui.MUTED)
                 gfx.title_text(surf, " ".join(self.code), (W / 2, 500), 84, color=(255, 240, 150))
                 if self.role == "host":
@@ -377,3 +411,125 @@ def start_battle(app, session, team=None, replace=False):
         app.replace(nxt)
     else:
         app.push(nxt)
+
+
+class QuickMatch(Scene):
+    """Ranked matchmaking: join the open ranked room closest to your rating, or open one and wait."""
+
+    def __init__(self, app, team, name):
+        super().__init__(app)
+        self.team, self.name = team, name
+        self.rating = profile.my_rating()
+        self.done = False
+        self.buttons = [ui.Button((260, 1100, 200, 70), "Cancel", ui.PANEL2, 24)]
+        threading.Thread(target=self._find, daemon=True).start()
+
+    def _find(self):
+        try:
+            rooms = online.list_public_rooms()
+        except Exception:  # noqa: BLE001
+            rooms = []
+        self.match = online.best_match(rooms, self.rating["mmr"]) or online.best_match(rooms, self.rating["mmr"], 600)
+        self.done = True
+
+    def update(self, dt):
+        if not self.done or self.app.stack[-1] is not self:
+            return
+        m = self.match
+        if m:
+            self.app.replace(LobbyScene(self.app, "join", "room", "turn", self.team, self.name, code=m["code"],
+                                        broker=m["broker"] if m["broker"] == "https" else tuple(m["broker"]),
+                                        ranked=True))
+        else:
+            self.app.replace(LobbyScene(self.app, "host", "room", "turn", self.team, self.name, public=True,
+                                        ranked=True, searching=True))
+
+    def handle(self, ev, pos):
+        if (ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1 and self.buttons[0].hit(pos)) or \
+                (ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE):
+            self.app.pop()
+
+    def draw(self, surf):
+        ui.menu_background(surf, self.app.t)
+        ui.header(surf, "Quick Match", "Ranked 1v1")
+        rk = profile.mmr_rank(self.rating["mmr"], self.rating["games"])
+        ui.rank_badge(surf, (W / 2, 470), 50, rk, self.app.t)
+        gfx.text(surf, "Looking for an opponent" + "." * (int(self.app.t * 2) % 4), (W / 2, 580), 26)
+        gfx.text(surf, f"{rk['label']}  -  rating {self.rating['mmr']}", (W / 2, 625), 20, rk["color"],
+                 chunky=False)
+        for b in self.buttons:
+            b.draw(surf)
+
+
+class LadderScene(Scene):
+    """The global ranked ladder: every PokeBrawl trainer's skill rating, best first."""
+
+    def __init__(self, app):
+        super().__init__(app)
+        self.me = profile.my_rating()
+        self.rows = []
+        self.loading = True
+        self.list = ui.ListView((40, 250, 640, 860), 70)
+        self.buttons = [ui.Button((40, 1150, 200, 70), "Back", ui.PANEL2, 24),
+                        ui.Button((480, 1150, 200, 70), "Refresh", (38, 104, 188), 24)]
+        self.refresh()
+
+    def refresh(self):
+        self.loading = True
+
+        def go():
+            if self.me["games"]:
+                online.publish_ladder(self.app.settings.get("name", "Trainer"))
+            try:
+                self.rows = online.fetch_ladder()
+            except Exception:  # noqa: BLE001
+                self.rows = []
+            rows = []
+            for i, r in enumerate(self.rows):
+                def draw(surf, rect, sel, r=r, i=i):
+                    mine = r["id"] == self.me["id"]
+                    rk = profile.mmr_rank(r["mmr"], r["w"] + r["l"])
+                    if mine:
+                        pygame.draw.rect(surf, (90, 70, 20), rect.inflate(-4, -4), border_radius=10)
+                    gfx.text(surf, f"#{i + 1}", (rect.x + 14, rect.centery), 24,
+                             (255, 215, 90) if i < 3 else (220, 220, 230), anchor="midleft", ow=1)
+                    ui.rank_badge(surf, (rect.x + 100, rect.centery), 16, rk)
+                    gfx.text(surf, r["name"] + ("  (you)" if mine else ""), (rect.x + 128, rect.y + 24), 22,
+                             anchor="midleft", ow=1)
+                    gfx.text(surf, f"{rk['label']}   {r['w']}W {r['l']}L", (rect.x + 128, rect.y + 50), 15, rk["color"],
+                             anchor="midleft", ow=1, chunky=False)
+                    gfx.text(surf, str(r["mmr"]), (rect.right - 16, rect.centery), 28, (255, 240, 150),
+                             anchor="midright")
+                rows.append((r["id"], draw))
+            self.list.set_rows(rows)
+            self.loading = False
+        threading.Thread(target=go, daemon=True).start()
+
+    def handle(self, ev, pos):
+        if ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE:
+            self.app.pop()
+        self.list.handle(ev, pos)
+        if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
+            if self.buttons[0].hit(pos):
+                self.app.pop()
+            elif self.buttons[1].hit(pos) and not self.loading:
+                self.refresh()
+
+    def draw(self, surf):
+        ui.menu_background(surf, self.app.t)
+        ui.header(surf, "Ladder", "Ranked 1v1 - every trainer, best first")
+        rk = profile.mmr_rank(self.me["mmr"], self.me["games"])
+        place = next((i + 1 for i, r in enumerate(self.rows) if r["id"] == self.me["id"]), None)
+        ui.rank_badge(surf, (80, 200), 26, rk, self.app.t)
+        gfx.text(surf, rk["label"] + (f"  -  rating {self.me['mmr']}" if not rk.get("placing") else ""),
+                 (120, 188), 24, rk["color"], gfx.INK, 2, anchor="midleft")
+        gfx.text(surf, (f"You're #{place} of {len(self.rows)}" if place else
+                        "Play a ranked match to join the ladder") + f"   ({self.me['w']}W {self.me['l']}L)",
+                 (120, 218), 17, (220, 220, 235), gfx.INK, 1, anchor="midleft", chunky=False)
+        self.list.draw(surf)
+        if self.loading:
+            gfx.text(surf, "Loading the ladder...", (W / 2, 520), 26)
+        elif not self.rows:
+            gfx.text(surf, "Nobody on the ladder yet - be the first!", (W / 2, 520), 24, ui.MUTED)
+        for b in self.buttons:
+            b.draw(surf)

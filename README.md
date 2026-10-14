@@ -249,6 +249,13 @@ back to its own drawn art.
 
 ## Ranks, legends and the Pokedex
 
+- **Ranked 1v1:** online battles are Ranked by default (switch to Casual on the PvP screen). Every trainer has
+  a skill rating (Elo, starting at 1000; your first 5 games are placements) shown as a ball rank - Poke Ball up to
+  Champion. Each match opens on a VS card with both trainers' ranks, ratings, records and the odds; ranks stay
+  next to the names during the battle and the rating change shows at the end.
+- **Quick Match** finds an open ranked room close to your rating, or opens one and waits. **Ladder** shows every
+  ranked PokeBrawl trainer worldwide, best first, and where you stand.
+
 - **Ranks:** every battle earns or costs rank points (more for harder bots and PvP, bonus for win streaks).
   Climb Poke Ball, Great Ball, Ultra Ball and Master Ball (three divisions each) up to Champion. Your badge sits
   in the corner of the main menu; **TRAINER** shows your card, the ladder, record and streaks.
