@@ -254,6 +254,21 @@ class PrefetchScene(Scene):
 
 
 # ---------------------------------------------------------------------------- main menu
+_megas_started = False
+
+
+def _build_megas_once():
+    """Build PokeBrawl's own Mega sprites in the background if any are missing (after an update, say)."""
+    global _megas_started
+    if _megas_started or os.environ.get("POKEBRAWL_NO_MEGA_BUILD"):
+        return
+    _megas_started = True
+    from . import megas
+    if all(megas.built_path(k) for k in megas.RECIPES) and not megas._stale():
+        return
+    threading.Thread(target=megas.build_all, kwargs={"log": lambda m: None}, daemon=True).start()
+
+
 class MainMenu(Scene):
     def __init__(self, app):
         super().__init__(app)
@@ -264,12 +279,13 @@ class MainMenu(Scene):
         from .version import current
         self.version = current()
         self.updater = AutoUpdater(auto=app.settings.get("auto_update", "On") == "On")
+        _build_megas_once()
         self.restart_btn = ui.Button((60, 1100, 600, 72), "Restart to update", (34, 140, 88), 26,
                                      "or it installs next time you open the game")
 
     def _build(self):
         x, w = 60, 600
-        big = [("Adventure", (232, 150, 40), "Catch Pokemon, beat 8 gyms, become Champion", "adventure", 25),
+        big = [("Adventure", (232, 150, 40), "Catch Pokemon, beat 18 gyms, become Champion", "adventure", 25),
                ("Practice", ui.SHELL, "Turn-based battles against a bot", "practice", 6)]
         if creator_unlocked(self.app.settings):
             big.append(("Showcase", (38, 104, 188), "Mass battles and royales for your videos", "showcase", 384))
