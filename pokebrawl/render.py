@@ -18,8 +18,10 @@ _GLOWS = {}
 
 def glow(surf, x, y, r, color, strength=1.0):
     """Additive light: a soft radial glow added onto whatever is underneath (cached per size and color)."""
-    r = max(4, int(r) // 4 * 4)
-    key = (r, color, round(strength, 1))
+    r = min(320, int(r))                              # huge glows (a mass blast) cost hundreds of circles each
+    r = max(8, r // 8 * 8 if r < 128 else r // 32 * 32)   # coarse sizes and strengths, so the cache actually hits
+    strength = max(0.25, round(strength * 4) / 4)
+    key = (r, color, strength)
     g = _GLOWS.get(key)
     if g is None:
         g = pygame.Surface((r * 2, r * 2))
@@ -27,8 +29,9 @@ def glow(surf, x, y, r, color, strength=1.0):
         for i in range(r, 0, -2):
             k = (1 - i / r) ** 1.6 * 0.55 * strength
             pygame.draw.circle(g, tuple(min(255, int(c * k)) for c in color), (r, r), i)
-        if len(_GLOWS) > 400:
-            _GLOWS.clear()
+        if len(_GLOWS) > 1500:   # drop the oldest few instead of everything (rebuilding them all is the lag)
+            for old in list(_GLOWS)[:200]:
+                del _GLOWS[old]
         _GLOWS[key] = g
     surf.blit(g, (int(x) - r, int(y) - r), special_flags=pygame.BLEND_RGB_ADD)
 
@@ -313,7 +316,7 @@ class ArenaRenderer:
             u.y += (u.ty - u.y) * k_move
         for d in self.dead:
             d[4] += dt
-        self.dead = [d for d in self.dead if d[4] < 0.7]
+        self.dead = [d for d in self.dead if d[4] < 0.7][-60:]   # a mass KO (Judgment) fades the newest 60
         keep = []
         self.labels_alive = 0
         for f in self.fx:
@@ -322,6 +325,10 @@ class ArenaRenderer:
                 keep.append(f)
                 if f.kind == "label":
                     self.labels_alive += 1
+        if len(keep) > 260:   # a mass hit spawns hundreds of effects: keep the big moments, drop the oldest small ones
+            big = [f for f in keep if f.kind in ("mega", "tera", "banner", "godbeam", "gmax")]
+            small = [f for f in keep if f.kind not in ("mega", "tera", "banner", "godbeam", "gmax")]
+            keep = big + small[-(260 - len(big)):]
         self.fx = keep
         ps = []
         for p in self.particles:
@@ -333,7 +340,7 @@ class ArenaRenderer:
                 p.vx *= 0.96
                 p.vy *= 0.96 if p.grav == 0 else 1
                 ps.append(p)
-        self.particles = ps[-1500:]
+        self.particles = ps[-700:]
         # camera
         tx, ty, tz = self.W / 2, self.H / 2, 1.0
         if self.cam_target:
