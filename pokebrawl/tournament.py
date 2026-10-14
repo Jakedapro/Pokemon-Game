@@ -50,8 +50,8 @@ def pick_entrants(dex, cfg, rng):
 
 
 class TournamentScene:
-    BRACKET_T = 3.2      # seconds on the bracket before each match
-    AFTER_WIN = 2.6      # seconds of a match's win screen before going back to the bracket
+    BRACKET_T = 2.2      # seconds on the bracket before each match
+    AFTER_WIN = 1.8      # seconds of a match's win screen before going back to the bracket
     max_ff = 24.0        # auto-edit may fast-forward early rounds harder than a normal showcase
 
     def __init__(self, dex, cfg, progress=None, wide=False):
@@ -87,11 +87,10 @@ class TournamentScene:
     def _start_match(self):
         a, b = self.pair
         ea, eb = self.entrants[a], self.entrants[b]
-        final = len(self.rounds[self.round]) == 2
         mcfg = load_config({
             "title": f"{short_name(ea)} vs {short_name(eb)}", "subtitle": "",
             "teams": [{"name": short_name(ea), "pokemon": [ea["key"]]}, {"name": short_name(eb), "pokemon": [eb["key"]]}],
-            "megas": self.cfg.get("megas", True), "events": "none", "bosses": "none", "hp_mult": 6, "finale": final, "quick_intro": True,
+            "megas": self.cfg.get("megas", True), "events": "none", "bosses": "none", "hp_mult": 6, "finale": False, "quick_intro": True,
             "seed": self.seed * 31 + self.round * 7 + self.match, "speed": self.speed,
             "level": self.cfg.get("level", 50)})
         self.match_scene = ShowcaseScene(self.dex, mcfg)
@@ -142,8 +141,7 @@ class TournamentScene:
         elif self.phase == "match":
             sc = self.match_scene
             sc.update(dt)
-            final = len(self.rounds[self.round]) == 2
-            if sc.done or (not final and sc.phase in ("won", "outro") and sc.t - sc.end_t > self.AFTER_WIN):
+            if sc.done or (sc.phase in ("won", "outro") and sc.t - sc.end_t > self.AFTER_WIN):   # the final too: no movie finale
                 self._finish_match()
         elif self.phase == "champion":
             for c in self.confetti:

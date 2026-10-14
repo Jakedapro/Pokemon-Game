@@ -203,7 +203,7 @@ back to its own drawn art.
   more. **QUESTS** in the START menu shows your next story goal and every quest.
 - **Secrets:** a few hidden things to find (there's a counter in the quest log). Hidden items too: check the ground.
 - **The World Tournament:** with all 18 badges, enter the League and face the Elite Four back to back with no
-  healing. Beat all four to become World Champion - the best trainer in the world.
+  healing, then World Champion Aurelia in the Grand Final. Win to become the best trainer in the world.
 - **Trainers** spot you and walk over. **Gym leaders** give badges, and the road north stays closed until you
   have a town's badge.
 - **START menu:** Pokedex, party, quests (summary pages, switching order), bag, trainer card with badges, save.

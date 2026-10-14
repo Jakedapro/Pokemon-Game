@@ -785,9 +785,13 @@ class OverworldScene(Scene):
                                        f"Pokemon, enters the arena!"]),
                       ("say", name, [intro]), ("battle", f"e4_{k}"), ("say", name, [lose])]
         steps += [("say", "Host", ["The Elite Four has fallen! The crowd is on its feet!",
-                                   f"IT'S OVER! {self.game['name'].upper()} IS THE NEW WORLD CHAMPION!",
+                                   f"Ladies and gentlemen... the GRAND FINAL! The {S.CHAMP[1].upper()},",
+                                   f"{S.CHAMP[0].upper()}!"]),
+                  ("say", S.CHAMP[0], ["So you're the one everyone's talking about.",
+                                       "I've held this title for ten years. Show me everything you have!"]),
+                  ("battle", "final"),
+                  ("say", "Host", [f"IT'S OVER! {self.game['name'].upper()} IS THE NEW WORLD CHAMPION!",
                                    "The best Pokemon trainer in the world!"]),
-                  ("say", S.CHAMP[0], ["Ten years I held that title. You've earned it - wear it well, Champion."]),
                   ("crowned",)]
         return steps
 
