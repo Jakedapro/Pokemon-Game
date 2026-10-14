@@ -29,9 +29,84 @@ def direction(ev):
     return DIR_KEYS.get(ev.key) if ev.type == pygame.KEYDOWN else None
 
 
+def _frame_tiles(name):
+    """FireRed's window frame tiles (graphics/text_window/<name>.png) at 2x, or None."""
+    from . import frlg
+    if not frlg.is_ready():
+        return None
+    key = ("frame", name)
+    if key not in _frames:
+        fr = frlg.frames(f"graphics/text_window/{name}.png", 8, 8)
+        _frames[key] = [pygame.transform.scale_by(t, 2) for t in fr] if fr else None
+    return _frames[key]
+
+
+_frames = {}
+
+
+def _tile_row(surf, tile, x0, x1, y):
+    x = x0
+    while x < x1:
+        w = min(16, x1 - x)
+        surf.blit(tile, (x, y), (0, 0, w, 16))
+        x += 16
+
+
+def _tile_col(surf, tile, x, y0, y1):
+    y = y0
+    while y < y1:
+        h = min(16, y1 - y)
+        surf.blit(tile, (x, y), (0, 0, 16, h))
+        y += 16
+
+
+def std_frame(surf, r, fill=None):
+    """FireRed's standard window (START menu, YES/NO, shop...) drawn over rect r. False if unavailable."""
+    t = _frame_tiles("std")
+    if not t or len(t) < 9:
+        return False
+    surf.fill(fill or t[4].get_at((8, 8)), r.inflate(-16, -16))
+    _tile_row(surf, t[1], r.x + 16, r.right - 16, r.y)
+    _tile_row(surf, t[7], r.x + 16, r.right - 16, r.bottom - 16)
+    _tile_col(surf, t[3], r.x, r.y + 16, r.bottom - 16)
+    _tile_col(surf, t[5], r.right - 16, r.y + 16, r.bottom - 16)
+    surf.blit(t[0], (r.x, r.y))
+    surf.blit(t[2], (r.right - 16, r.y))
+    surf.blit(t[6], (r.x, r.bottom - 16))
+    surf.blit(t[8], (r.right - 16, r.bottom - 16))
+    return True
+
+
+def dialogue_frame(surf, left, top, width, height=4):
+    """FireRed's dialogue frame (WindowFunc_DrawDialogueFrame) around a window of width x height tiles whose
+    top-left tile is (left, top) - in GBA tiles; drawn at 2x. False if unavailable."""
+    t = _frame_tiles("menu_message")
+    if not t or len(t) < 14:
+        return False
+    vf = {i: pygame.transform.flip(t[i], False, True) for i in (0, 1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13)}
+
+    def put(tile, tx, ty, w=1):
+        for k in range(w):
+            surf.blit(tile, ((tx + k) * 16, ty * 16))
+    surf.fill(t[7].get_at((8, 8)), (left * 16, top * 16, width * 16, height * 16))
+    put(t[0], left - 2, top - 1), put(t[1], left - 1, top - 1), put(t[2], left, top - 1, width)
+    put(t[3], left + width, top - 1), put(t[4], left + width + 1, top - 1)
+    for row, (a, b, c, d) in ((0, (5, 6, 8, 9)), (1, (10, 11, 12, 13))):
+        put(t[a], left - 2, top + row), put(t[b], left - 1, top + row)
+        put(t[c], left + width, top + row), put(t[d], left + width + 1, top + row)
+    for row, (a, b, c, d) in ((2, (10, 11, 12, 13)), (3, (5, 6, 8, 9))):
+        put(vf[a], left - 2, top + row), put(vf[b], left - 1, top + row)
+        put(vf[c], left + width, top + row), put(vf[d], left + width + 1, top + row)
+    put(vf[0], left - 2, top + 4), put(vf[1], left - 1, top + 4), put(vf[2], left, top + 4, width)
+    put(vf[3], left + width, top + 4), put(vf[4], left + width + 1, top + 4)
+    return True
+
+
 def box(surf, rect, fill=WHITE, border=(96, 160, 200), radius=6):
     """A framed window: dark outline, coloured border, light inner line, white fill."""
     r = pygame.Rect(rect)
+    if std_frame(surf, r, None if fill == WHITE else fill):
+        return r.inflate(-12, -12)
     pygame.draw.rect(surf, (48, 48, 56), r, border_radius=radius + 2)
     pygame.draw.rect(surf, border, r.inflate(-4, -4), border_radius=radius)
     pygame.draw.rect(surf, (232, 240, 248), r.inflate(-8, -8), border_radius=radius - 2)
@@ -100,10 +175,18 @@ class TextBox:
             return self.next()
         return False
 
-    def draw(self, surf, t, rect=(24, 236, 432, 80), dark=False):   # FireRed: tiles (2,15) 26x4 + frame
+    def draw(self, surf, t, rect=(24, 236, 432, 80), dark=False, bare=False, line_h=26):
+        # FireRed: tiles (2,15) 26x4 + frame
         if self.done:
             return
-        if dark:
+        if bare:   # just the text: the box is already drawn (the real battle message box)
+            inner = pygame.Rect(rect)
+            col, sh = (WHITE, (104, 88, 112)) if dark else (TEXT, SHADOW)
+        elif not dark and tuple(rect) == (24, 236, 432, 80) and dialogue_frame(surf, 2, 15, 26):
+            inner = pygame.Rect(22, 234, 416, 64)    # FireRed: text window at tiles (2, 15), 26 x 4
+            col, sh = TEXT, SHADOW
+            line_h = 32
+        elif dark:
             r = pygame.Rect(rect)
             pygame.draw.rect(surf, (48, 48, 56), r, border_radius=6)
             pygame.draw.rect(surf, (216, 176, 96), r.inflate(-4, -4), border_radius=5)
@@ -117,7 +200,7 @@ class TextBox:
         for i, row in enumerate(self.pages[self.page]):
             part = row[:max(0, int(left))]
             left -= len(row)
-            F.draw(surf, part, (inner.x + 10, inner.y + 6 + i * 26), col, sh)
+            F.draw(surf, part, (inner.x + 10, inner.y + 6 + i * line_h), col, sh)
         if self.shown >= self._len() and self.auto is None and int(t * 3) % 2 == 0:
             F.draw(surf, "▼", (inner.right - 22, inner.bottom - 18), (224, 64, 64), None)
 
@@ -172,8 +255,8 @@ class Menu:
             return "back"
         return None
 
-    def draw(self, surf, rect, row_h=26, col_w=None, border=(96, 160, 200), fill=WHITE):
-        inner = box(surf, rect, fill, border)
+    def draw(self, surf, rect, row_h=26, col_w=None, border=(96, 160, 200), fill=WHITE, bare=False):
+        inner = pygame.Rect(rect) if bare else box(surf, rect, fill, border)
         cw = col_w or (inner.w - 8) // self.cols
         self.rects = []
         for i, o in enumerate(self.options):

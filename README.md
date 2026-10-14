@@ -134,8 +134,16 @@ Tournaments: `{"title": "Legends Cup", "mode": "tournament", "size": 8, "pokemon
 
 ## Adventure mode
 
-A proper Pokemon journey in the style of the Game Boy Advance games. It opens in its own window with crisp
-pixel art: 16-pixel tiles, pixel trainers and a pixel font (all drawn by the game itself).
+A proper Pokemon journey that looks and plays like FireRed / LeafGreen. The first time you open it, Adventure
+mode downloads the FireRed graphics from the public [pret/pokefirered](https://github.com/pret/pokefirered)
+decompilation project into `~/.pokebrawl/frlg/` (nothing from the original games is stored in this repository).
+Every map tile, building, interior, trainer sprite, battle background, healthbox, text box, window frame and the
+font itself is the real thing. Pokemon #1-386 use their FireRed battle sprites. Without internet the game falls
+back to its own drawn art.
+
+- **Real interiors:** Pokemon Centers, Marts, houses and Prof. Hazel's lab are FireRed's own rooms, with their
+  counters, shelves and PCs. The eight gyms follow Kanto's order (Pewter's rock gym, Cerulean's pool...), and the
+  leaders use Brock's, Misty's... sprites.
 
 **Controls:** arrow keys / WASD to walk, hold **X** (or Shift) to run, **Z** / Space to talk and confirm,
 **X** / Esc to go back, **Enter** for the START menu. The mouse works in menus too.

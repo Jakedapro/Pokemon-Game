@@ -247,7 +247,7 @@ def npcs_for(world, index, game):
                 ("give", "poke-ball", 5), ("give", "potion", 2), ("flag", "aide1")])
         add(id="q_charm_girl", kind="quest", quest="q_charm", look="Lass", x=3, y=len(area["rows"]) - 8, face="right")
     if town == 1:   # Pebblecrest: Team Rift shows up
-        add(id="grunt1", kind="story", look="grunt", x=11, y=12, face="up", name="Rift Grunt", **{"if": "!grunt1"},
+        add(id="grunt1", kind="story", look="grunt", x=11, y=13, face="up", name="Rift Grunt", **{"if": "!grunt1"},
             script=[("say", "Rift Grunt", ["Hey! This gym is closed! Team Rift is searching it for Mega Stones!",
                                            "...You want in? Then beat me!"]),
                     ("battle", "grunt1"),

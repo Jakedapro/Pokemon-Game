@@ -116,7 +116,21 @@ def _glyph(ch, color, scale):
     return s
 
 
-def width(text, scale=2):
+def _real(kind="normal"):
+    """FireRed's own font, once the graphics are downloaded (see frlg.py)."""
+    from . import frlg
+    return frlg.font(kind) if frlg.is_ready() else None
+
+
+def _fix(text):
+    return text.replace("POKe", "POKé").replace("Poke", "Poké") if "oke" in text.lower() else text
+
+
+def width(text, scale=2, small=False):
+    f = _real("small" if small else "normal")
+    if f:
+        text = _fix(text)
+        return sum((f.width(ch) if f.has(ch) else _old_width(ch) + 1) * scale for ch in text)
     w = 0
     for ch in text:
         if ch == " ":
@@ -127,10 +141,18 @@ def width(text, scale=2):
     return max(0, w - scale)
 
 
-def draw(surf, text, pos, color=(64, 64, 64), shadow=(216, 208, 176), scale=2, anchor="topleft"):
-    """GBA-style text: dark letters with a soft drop shadow to the right and below."""
+def _old_width(ch):
+    if ch == " ":
+        return SPACE
+    rows = _G.get(ch) or _G.get(ch.upper()) or _G["?"]
+    return max(len(r) for r in rows)
+
+
+def draw(surf, text, pos, color=(64, 64, 64), shadow=(216, 208, 176), scale=2, anchor="topleft", small=False):
+    """GBA-style text: dark letters with a soft drop shadow to the right and below. small: FireRed's small font
+    (healthboxes)."""
     x, y = pos
-    w = width(text, scale)
+    w = width(text, scale, small)
     if anchor == "center":
         x -= w // 2
         y -= ROWS * scale // 2
@@ -141,6 +163,20 @@ def draw(surf, text, pos, color=(64, 64, 64), shadow=(216, 208, 176), scale=2, a
     elif anchor == "midright":
         x -= w
         y -= 7 * scale // 2
+    f = _real("small" if small else "normal")
+    if f:
+        text = _fix(text)
+        cx = x
+        for ch in text:
+            if f.has(ch):
+                g = f.glyph(ch, tuple(color), tuple(shadow) if shadow else None, scale)
+                surf.blit(g, (cx, y - f.top * scale))
+                cx += f.width(ch) * scale
+            else:
+                if ch != " ":
+                    surf.blit(_glyph(ch, color, scale), (cx, y))
+                cx += (_old_width(ch) + 1) * scale
+        return w
     cx = x
     for ch in text:
         if ch == " ":

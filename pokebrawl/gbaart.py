@@ -497,12 +497,48 @@ LOOKS = {   # cap, shirt, pants, hair; cap None = no cap (hair shown)
 }
 
 
+# the FireRed overworld sprite each look uses (graphics/object_events/pics/people/<name>.png)
+FRLG_PEOPLE = {
+    "player": "red_normal", "rival": "blue", "Youngster": "youngster", "Lass": "lass", "Bug Catcher": "bug_catcher",
+    "Hiker": "hiker", "Swimmer": "swimmer_m_land", "Ace Trainer": "cooltrainer_m", "Psychic": "channeler",
+    "Black Belt": "black_belt", "Picnicker": "picnicker", "Fisher": "fisher", "Biker": "biker", "Beauty": "beauty",
+    "nurse": "nurse", "clerk": "clerk", "mom": "mom", "prof": "prof_oak", "leader": "cooltrainer_m",
+    "guard": "policeman", "villager": "man", "grunt": "rocket_m", "admin": "rocket_f", "boss": "giovanni",
+    "ace": "cooltrainer_m", "champ": "cooltrainer_f", "creator": "gba_kid", "frost": "lorelei", "brutus": "bruno",
+    "morrow": "agatha", "drakon": "lance",
+}
+# frames in a FireRed people sheet: stand down/up/left, then two steps each for down, up, left
+FRLG_FRAMES = {"down": (0, 3, 4), "up": (1, 5, 6), "left": (2, 7, 8), "right": (2, 7, 8)}
+
+
+def _frlg_person(look, face, frame):
+    from . import frlg
+    name = FRLG_PEOPLE.get(look, look if isinstance(look, str) and look.islower() else None)
+    if not name:
+        return None
+    fr = frlg.frames(f"graphics/object_events/pics/people/{name}.png", 16, 32)
+    if not fr:
+        return None
+    i = FRLG_FRAMES[face][frame]
+    if i >= len(fr):
+        i = FRLG_FRAMES[face][0]
+    img = fr[i]
+    if face == "right":
+        img = pygame.transform.flip(img, True, False)
+    return pygame.transform.scale_by(img, 2)
+
+
 def person(look, face, frame=0, shirt=None):
     """A trainer sprite (32x64 on the canvas: 16x32 like the handhelds). face: up/down/left/right,
     frame 0 = standing, 1/2 = steps."""
     key = ("p", look, face, frame, shirt)
     if key in _cache:
         return _cache[key]
+    if not shirt:
+        real = _frlg_person(look, face, frame)
+        if real is not None:
+            _cache[key] = real
+            return real
     cap, sh, pants, hair = LOOKS.get(look, LOOKS["villager"])
     if shirt:
         sh = shirt
@@ -570,6 +606,11 @@ def battle_sprite(pid, back=False, shiny=False, max_h=150):
     key = ("bs", pid, back, shiny, max_h)
     if key in _cache:
         return _cache[key]
+    from . import battlegfx
+    real = battlegfx.mon(pid, back, shiny) if battlegfx.frlg.is_ready() else None
+    if real is not None:   # the FireRed sprite itself
+        _cache[key] = real
+        return real
     from .gfx import SPRITES
     base = SPRITES.base(pid, back and not shiny, shiny)
     if back and shiny:
@@ -578,7 +619,8 @@ def battle_sprite(pid, back=False, shiny=False, max_h=150):
     if base.get_height() * k > max_h:
         k = max_h / base.get_height()
     out = pygame.transform.scale(base, (max(1, int(base.get_width() * k)), max(1, int(base.get_height() * k))))
-    _cache[key] = out
+    if not (1 <= pid <= 386 and battlegfx.frlg.is_ready()):   # the FireRed one may still be on its way
+        _cache[key] = out
     return out
 
 
@@ -1017,6 +1059,11 @@ def hsign():
 def hitem():
     key = ("hitem",)
     if key not in _cache:
+        from . import frlg
+        real = frlg.sprite("graphics/object_events/pics/misc/item_ball.png")
+        if real is not None:
+            _cache[key] = pygame.transform.scale_by(real, 2)
+            return _cache[key]
         s = pygame.Surface((TS, TS), pygame.SRCALPHA)
         pygame.draw.circle(s, (57, 57, 74), (8, 9), 5)
         pygame.draw.circle(s, (248, 248, 248), (8, 9), 4)

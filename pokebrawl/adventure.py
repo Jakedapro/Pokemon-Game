@@ -260,13 +260,18 @@ def _put(grid, x, y, block):
                 grid[y + dy][x + dx] = ch
 
 
+def _bld(body, door, w, h, dx, dy):
+    return [body * w if y != dy else body * dx + door + body * (w - dx - 1) for y in range(h)]
+
+
+# footprints match the FireRed buildings they're drawn with (see fieldmap.STAMPS)
 BUILDINGS = {
-    "C": ["ccccc", "ccccc", "ccccc", "ccCcc"],  # Pokemon Center (door C) - big, like the handhelds
-    "M": ["mmmm", "mmmm", "mmmm", "mMmm"],      # Poke Mart (door M)
-    "G": ["ggggg", "ggggg", "ggggg", "ggGgg"],  # Gym (door G)
-    "H": ["hhh", "hhh", "hDh"],              # house (door D)
-    "L": ["lllllll", "lllllll", "lllllll", "lllllll", "lllLlll"],  # Pokemon League
-    "P": ["pppp", "pppp", "pPpp"],           # Professor's lab
+    "C": _bld("c", "C", 5, 4, 2, 3),   # Pokemon Center
+    "M": _bld("m", "M", 4, 4, 2, 3),   # Poke Mart
+    "G": _bld("g", "G", 6, 5, 3, 4),   # Gym
+    "H": _bld("h", "D", 5, 5, 1, 4),   # house
+    "L": _bld("l", "L", 11, 7, 5, 6),  # Pokemon League
+    "P": _bld("p", "P", 7, 5, 3, 4),   # Professor's lab
 }
 
 
@@ -282,30 +287,29 @@ def town_map(i, rng):
         g[13][x] = "="
     if i == 0:
         _put(g, 1, 3, BUILDINGS["H"])
-        _put(g, 10, 3, BUILDINGS["H"])
+        _put(g, 9, 3, BUILDINGS["H"])
         _put(g, 1, 15, BUILDINGS["P"])
-        _put(g, 10, 15, BUILDINGS["H"])
+        _put(g, 9, 21, BUILDINGS["H"])
         _put(g, 5, 9, ["S"])
+        g[8][2] = g[8][10] = g[20][4] = g[26][10] = "="   # doorsteps
         g[h - 1] = ["#"] * COLS     # the hometown is the south end of the region
     elif i == 9:
-        _put(g, 4, 2, BUILDINGS["L"])
+        _put(g, 2, 1, BUILDINGS["L"])
         _put(g, 1, 15, BUILDINGS["C"])
         _put(g, 10, 15, BUILDINGS["M"])
         g[0] = ["#"] * COLS
-        for x in (5, 6, 7, 8, 9):
-            g[7][x] = "="
+        g[19][3] = g[19][12] = "="
     else:
         _put(g, 1, 1, BUILDINGS["C"])
         _put(g, 10, 1, BUILDINGS["M"])
-        _put(g, 9, 8, BUILDINGS["G"])
-        _put(g, 1, 8, BUILDINGS["H"])
+        _put(g, 8, 8, BUILDINGS["G"])
+        _put(g, 1, 7, BUILDINGS["H"])
         _put(g, 1, 16, BUILDINGS["H"])
-        _put(g, 10, 16, BUILDINGS["H"])
-        _put(g, 5, 10, ["S"])
-        for x in range(3, 12):        # a little square in front of the Center and Mart
-            g[6][x] = "="
-        g[5][3] = g[5][11] = "="
-        g[12][11] = "="
+        _put(g, 9, 16, BUILDINGS["H"])
+        _put(g, 5, 14, ["S"])
+        for x in range(3, 13):        # a little square in front of the Center and Mart
+            g[5][x] = "="
+        g[12][2] = g[21][2] = g[21][10] = "="
     # decoration: flowers and the odd tree on empty ground
     for y in range(h):
         for x in range(1, COLS - 1):
@@ -363,7 +367,21 @@ def route_map(i, rng):
                 g[y][xx] = ","
     for y in range(h):
         g[y][0] = g[y][COLS - 1] = "#"
+    _pair_trees(g)
     return ["".join(r) for r in g], path
+
+
+def _pair_trees(g):
+    """FireRed's trees are two tiles wide and two tall, on even columns and rows: grow every lone tree tile into
+    its 2x2 block (only over open ground), so forests have clean edges."""
+    h = len(g)
+    for y0 in range(0, h - 1, 2):
+        for x0 in range(0, COLS - 1, 2):
+            cells = [(x0, y0), (x0 + 1, y0), (x0, y0 + 1), (x0 + 1, y0 + 1)]
+            if any(g[y][x] == "#" for x, y in cells):
+                for x, y in cells:
+                    if g[y][x] in ".,":
+                        g[y][x] = "#"
 
 
 class World:
@@ -460,7 +478,7 @@ class World:
             px = path[y]
             side = rng.choice((-1, 1))
             x = px + side * 2
-            if not (1 <= x <= COLS - 2) or rows[y][x] in "~":
+            if not (1 <= x <= COLS - 2) or rows[y][x] in "~#":
                 continue
             cls = rng.choice(TRAINER_CLASSES)
             nm = rng.choice(TRAINER_NAMES)

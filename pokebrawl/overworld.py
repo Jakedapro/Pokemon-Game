@@ -14,6 +14,7 @@ from . import gbaui as U
 from . import pixelfont as F
 from . import profile
 from . import story as S
+from . import fieldmap
 from .app import Scene
 from .audio import AUDIO
 from .gfx import PIXEL
@@ -84,7 +85,11 @@ class OverworldScene(Scene):
         self.choice = None        # yes/no prompts
         self.healing = None
         self.buttons = []
+        from . import frlg
+        frlg.start(fieldmap.warm)
         self.cur = None           # the area or room being shown
+        self.field = None         # FireRed-tile layers (under, over) for it, when available
+        self.field_missing = []
         g = game
         if g.get("room"):
             r = g["room"]
@@ -99,6 +104,7 @@ class OverworldScene(Scene):
         g["area"], g["x"], g["y"] = index, x, y
         self.cur = self.world.areas[index]
         self.blds = buildings_of(self.cur)
+        self._set_field(("area", index), lambda: fieldmap.render_area(self.cur, self.blds))
         self._refresh()
         self.trail = [(x, y + 1)]
         self.banner = 0.0
@@ -106,10 +112,36 @@ class OverworldScene(Scene):
         if not first:
             A.save(g)
 
-    def _load_room(self, kind, area_index, door, x=7, y=None):
+    def _set_field(self, key, make):
+        """The FireRed-tile drawing of this place (cached), or None to use the drawn art."""
+        cache = self.__dict__.setdefault("_fields", {})
+        if key not in cache:
+            try:
+                cache[key] = make() if fieldmap.available() else None
+            except Exception:
+                cache[key] = None
+        f = cache[key]
+        self.field = (f[0], f[1]) if f else None
+        self.field_missing = f[2] if f and len(f) > 2 else []
+
+    def _load_room(self, kind, area_index, door, x=None, y=None):
         g = self.game
         self.cur = A.room(self.world, kind, area_index)
         self.blds = []
+        self.field, self.field_missing = None, []
+        real = None
+        if fieldmap.available():
+            try:
+                real = fieldmap.room(kind, area_index, self.world, door)
+            except Exception:
+                real = None
+        if real:
+            self._realize(real, kind, area_index)
+            self.field = real["field"]
+            if x is None:
+                x, y = real["entry"]
+        if x is None:
+            x = 7
         if y is None:
             y = len(self.cur["rows"]) - 1
         g["room"] = {"kind": kind, "area": area_index, "door": list(door)}
@@ -118,6 +150,47 @@ class OverworldScene(Scene):
         g["x"], g["y"], g["face"] = x, y, "up"
         self.trail = [(x, y)]
         AUDIO.music(self.cur["music"])
+
+    def _realize(self, real, kind, area_index):
+        """Moves this room's people to where they stand in the real interior."""
+        cur = dict(self.cur)
+        cur["rows"] = real["rows"]
+        spots = real["spots"]
+        npcs = [dict(n) for n in cur["npcs"]]
+        people = list(spots.get("people", []))
+        trainer_spots = list(spots.get("trainers", []))
+        out = []
+        for n in npcs:
+            k = n["kind"]
+            if k in ("nurse", "clerk") and spots.get(k):
+                n["x"], n["y"], n["face"] = spots[k][0][:3]
+            elif k in ("leader", "prof", "champion") and spots.get("leader"):
+                n["x"], n["y"], n["face"] = spots["leader"][0][:3]
+                if k == "leader":
+                    n["look"] = spots["leader"][0][3]   # Brock's gym gets Brock's sprite, and so on
+            elif k == "trainer":
+                if not trainer_spots:
+                    continue
+                sx, sy, face, gfx = trainer_spots.pop(0)
+                n["x"], n["y"], n["face"] = sx, sy, face
+                n["look"] = n.get("look") or gfx
+            elif people:
+                sx, sy, face, gfx = people.pop(0)
+                n["x"], n["y"], n["face"] = sx, sy, face
+                n["look"] = gfx
+            out.append(n)
+        if kind == "gym" and trainer_spots:   # the real gym has more trainers: fill their spots too
+            k = self.world.areas[area_index].get("town", 1) - 1
+            town, leader, typ, ace, *_ = A.GYMS[k]
+            rng = random.Random(900 + k)
+            for j, (sx, sy, face, gfx) in enumerate(trainer_spots):
+                team = self.world.team_for([typ], ace - 7 + j, 1 + (k > 2) + (k > 5), rng)
+                out.append({"id": f"gym{k}-x{j}", "kind": "trainer", "x": sx, "y": sy, "face": face,
+                            "name": f"Gym Trainer {rng.choice(A.TRAINER_NAMES)}", "cls": "Ace Trainer", "look": gfx,
+                            "team": team, "sight": 4, "intro": f"{leader} won't have to lift a finger against you!",
+                            "lose": f"Fine... go on and face {leader}.", "money": 40 * ace})
+        cur["npcs"] = out
+        self.cur = cur
 
     def _exit_room(self):
         r = self.game["room"]
@@ -134,7 +207,7 @@ class OverworldScene(Scene):
 
     def tile(self, x, y):
         rows = self.rows()
-        if 0 <= y < len(rows) and 0 <= x < A.COLS:
+        if 0 <= y < len(rows) and 0 <= x < len(rows[y]):
             return rows[y][x]
         return "#"
 
@@ -143,7 +216,7 @@ class OverworldScene(Scene):
         def ok(xx, yy):
             if not (0 <= yy < len(self.rows())):
                 return True     # map edges continue off-screen
-            if not (0 <= xx < A.COLS):
+            if not (0 <= xx < len(self.rows()[0])):
                 return True
             return self.rows()[yy][xx] in same
         return (ok(x, y - 1), ok(x + 1, y), ok(x, y + 1), ok(x - 1, y))
@@ -171,13 +244,13 @@ class OverworldScene(Scene):
 
     def _free_spot(self, x, y):
         """The nearest open ground to (x, y): story people never stand inside a wall, tree or each other."""
-        walk = A.ROOM_WALK if self.inside else OUT_WALK
+        walk = "_" if self.inside else OUT_WALK
         taken = ({(n["x"], n["y"]) for n in self.npcs} | {(i["x"], i["y"]) for i in self.items} |
                  {(self.game["x"], self.game["y"])})
         rows = self.rows()
         best = None
         for yy in range(len(rows)):
-            for xx in range(A.COLS):
+            for xx in range(len(rows[yy])):
                 if rows[yy][xx] in walk and (xx, yy) not in taken:
                     d = abs(xx - x) * 1.01 + abs(yy - y)
                     if best is None or d < best[0]:
@@ -210,6 +283,11 @@ class OverworldScene(Scene):
         if self.app.stack[-1] is not self:
             return
         self.t += dt
+        if not self.__dict__.get("_had_field") and fieldmap.available():   # the graphics just finished downloading
+            self._had_field = True
+            self.__dict__["_fields"] = {}
+            if not self.inside:
+                self._set_field(("area", self.game["area"]), lambda: fieldmap.render_area(self.cur, self.blds))
         g = self.game
         g["playtime"] = g.get("playtime", 0.0) + dt
         self.banner += dt
@@ -791,15 +869,21 @@ class OverworldScene(Scene):
         px, py, p = self._player_px()
         cam = int(min(max(0, py + T / 2 - VH / 2), max(0, mh - VH)))
         oy = -cam if mh > VH else (VH - mh) // 2
-        surf.fill((16, 16, 24))
+        mw = len(rows[0]) * T
+        camx = int(min(max(0, px + T / 2 - VW / 2), max(0, mw - VW)))
+        ox = -camx if mw > VW else (VW - mw) // 2
+        surf.fill((0, 0, 0) if self.field else (16, 16, 24))
         y0, y1 = max(0, cam // T - 1), min(len(rows), (cam + VH) // T + 2)
         wf = int(self.t * 3) % 3
         gf = int(self.t * 2) % 2
         inside = self.inside
         kind = self.cur.get("room")
-        for y in range(y0, y1):
+        field = self.field
+        if field:
+            surf.blit(field[0], (ox, oy))
+        for y in range(y0, y1) if not field else ():
             for x, ch in enumerate(rows[y]):
-                dx, dy = x * T, y * T + oy
+                dx, dy = x * T + ox, y * T + oy
                 if inside:
                     if ch == "W":
                         surf.blit(G.hwall(kind, self.tile(x, y + 1) != "W"), (dx, dy))
@@ -820,14 +904,16 @@ class OverworldScene(Scene):
                     surf.blit(G.hgrass(x, y), (dx, dy))
                     if ch == "S":
                         surf.blit(G.hsign(), (dx, dy))
-        if not inside:   # forests: crowns overlap upward, drawn top row first so lower trees sit in front
+        if not inside and not field:   # forests: crowns overlap upward, drawn top row first so lower trees sit in front
             for y in range(y0, min(len(rows), y1 + 1)):
                 for x, ch in enumerate(rows[y]):
                     if ch in "#t":
                         img = G.htree(self.tile(x, y + 1) in "#t", self.tile(x, y - 1) in "#t", x * 7 + y)
-                        surf.blit(img, (x * T, y * T + oy - 16))
+                        surf.blit(img, (x * T + ox, y * T + oy - 16))
         if inside and kind == "center" and self.healing is not None:   # balls on the healing machine
-            mx, my = 5 * T, 2 * T + oy
+            nurse = next((n for n in self.npcs if n["kind"] == "nurse"), None)
+            hx, hy = (nurse["x"] - 2, nurse["y"]) if field and nurse else (5, 2)
+            mx, my = hx * T + ox, hy * T + oy
             n = len(self.game["party"])
             for i in range(n):
                 if (2.4 - self.healing) > i * 0.15:
@@ -835,16 +921,16 @@ class OverworldScene(Scene):
                     U.ball(surf, (mx + 10 + (i % 3) * 7, my + 12 + (i // 3) * 7), 3)
                     if on and self.healing < 1.4:
                         pygame.draw.circle(surf, (255, 255, 200), (mx + 10 + (i % 3) * 7, my + 12 + (i // 3) * 7), 2)
-        for kind_b, bx, by, bw, bh, door in self.blds:
+        for kind_b, bx, by, bw, bh, door in (self.field_missing if field else self.blds):
             accent = None
             if kind_b == "gym" and self.cur.get("town"):
                 from .gfx import type_color
                 accent = type_color(A.GYMS[self.cur["town"] - 1][2], 0)
-            surf.blit(G.hbuilding(kind_b, bw, bh, door, accent, seed=bx * 3 + by), (bx * T, by * T + oy))
+            surf.blit(G.hbuilding(kind_b, bw, bh, door, accent, seed=bx * 3 + by), (bx * T + ox, by * T + oy))
         for it in self.items:
             if it["id"] not in self.game["picked"]:
                 if it.get("mega"):   # a Mega Stone glinting on the ground
-                    cx, cy = it["x"] * T + T // 2, it["y"] * T + oy + T // 2
+                    cx, cy = it["x"] * T + T // 2 + ox, it["y"] * T + oy + T // 2
                     k = 0.5 + 0.5 * math.sin(self.t * 5 + it["x"])
                     pygame.draw.circle(surf, (255, 255, 255), (cx, cy), 2 + int(3 * k))
                     for a in range(4):
@@ -853,11 +939,12 @@ class OverworldScene(Scene):
                         ey = cy + int(math.sin(ang) * (4 + 6 * k))
                         pygame.draw.line(surf, (255, 236, 150), (cx, cy), (ex, ey), 2)
                     continue
-                surf.blit(G.hgrass(it["x"], it["y"]), (it["x"] * T, it["y"] * T + oy))
-                surf.blit(G.hitem(), (it["x"] * T, it["y"] * T + oy))
+                if not field:
+                    surf.blit(G.hgrass(it["x"], it["y"]), (it["x"] * T + ox, it["y"] * T + oy))
+                surf.blit(G.hitem(), (it["x"] * T + ox, it["y"] * T + oy))
         actors = []
         for n in self.npcs:
-            nx, ny = n["x"] * T, n["y"] * T
+            nx, ny = n["x"] * T + ox, n["y"] * T
             walking = self.walking_npc and self.walking_npc[0] is n
             if walking:
                 ddx, ddy = DIRS[n["face"]]
@@ -867,8 +954,8 @@ class OverworldScene(Scene):
         lead = A.lead_alive(self.game, self.app.dex)
         if lead is not None and not inside:
             fx, fy = self._follower_px(p)
-            actors.append((fy - 1, "follow", (lead, fx, fy)))
-        actors.append((py, "player", (px, py, p)))
+            actors.append((fy - 1, "follow", (lead, fx + ox, fy)))
+        actors.append((py, "player", (px + ox, py, p)))
         actors.sort(key=lambda a: a[0])
         for _, kind_a, data in actors:
             if kind_a == "npc":
@@ -885,7 +972,7 @@ class OverworldScene(Scene):
             elif kind_a == "follow":
                 mon, fx, fy = data
                 img = G.icon(mon["species"], mon.get("shiny", False))
-                if self.game["x"] * T > fx:
+                if self.game["x"] * T + ox > fx:
                     img = pygame.transform.flip(img, True, False)
                 hop = 2 if self.move is not None and p < 0.5 else 0
                 surf.blit(img, img.get_rect(midbottom=(fx + T / 2, fy + T - 2 - hop + oy)))
@@ -894,11 +981,13 @@ class OverworldScene(Scene):
                 frame = (1 + self.step) if self.move is not None and pp < 0.5 else 0
                 img = G.person("player", self.game["face"], frame)
                 surf.blit(img, (x, y + oy + T - img.get_height() - 2))
-                if not inside and self.tile(self.game["x"], self.game["y"]) == '"' and self.move is None:
+                if not field and not inside and self.tile(self.game["x"], self.game["y"]) == '"' and self.move is None:
                     surf.blit(G.htall_over(gf), (x, y + oy + T - 16))
+        if field:
+            surf.blit(field[1], (ox, oy))   # tree tops, roofs and grass tips go over everyone
         if self.emote is not None:
             n = self.emote[1]
-            bx, by = n["x"] * T + T // 2, n["y"] * T + oy - 28
+            bx, by = n["x"] * T + T // 2 + ox, n["y"] * T + oy - 28
             pygame.draw.rect(surf, (48, 48, 56), (bx - 8, by - 10, 16, 20), border_radius=4)
             pygame.draw.rect(surf, (248, 248, 248), (bx - 6, by - 8, 12, 16), border_radius=3)
             F.draw(surf, "!", (bx - 1, by - 6), (224, 56, 56), None)

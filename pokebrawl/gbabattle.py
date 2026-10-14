@@ -9,6 +9,7 @@ import random
 import pygame
 
 from . import adventure as A
+from . import battlegfx as BG
 from . import gbaart as G
 from . import gbaui as U
 from . import pixelfont as F
@@ -57,6 +58,10 @@ class GBABattle(Scene):
         self.done = False
         self.end_t = None
         self.trainer = session.trainer or {}
+        self.arena = self._arena()
+        self.real = BG.terrain(self.arena) is not None and BG.box("message") is not None
+        # FireRed: the foe's sprite is centred at (176, 40), yours at (72, 80), at 1x
+        self.foe_at, self.me_at = ((352, 144), (144, 224)) if self.real else (FOE_AT, ME_AT)
         self.buttons = []
         for u in self.s.pump():
             self._absorb(u)
@@ -238,7 +243,8 @@ class GBABattle(Scene):
         elif kind == "miss":
             AUDIO.play("miss", 0.6)
         elif kind == "ball":
-            self.catch = {"t": 0.0, "shakes": 0, "caught": False, "broke": None, "shake_t": None}
+            self.catch = {"t": 0.0, "shakes": 0, "caught": False, "broke": None, "shake_t": None,
+                          "ball": a[2] if len(a) > 2 else "poke-ball"}
             AUDIO.play("ball", 0.7)
             self.anim = {"kind": "ball", "t": 0, "dur": 1.0}
         elif kind == "shake" and self.catch is not None:
@@ -316,7 +322,7 @@ class GBABattle(Scene):
         return max(0.0, min(1.0, (p["xp"] - lo) / max(1, hi - lo)))
 
     def _burst(self, side, color):
-        x, y = FOE_AT if side == 1 else ME_AT
+        x, y = self.foe_at if side == 1 else self.me_at
         y -= 50
         rng = random.Random(self.t)
         for _ in range(14):
@@ -432,25 +438,45 @@ class GBABattle(Scene):
         else:
             AUDIO.play("miss", 0.5)
 
+    def _arena(self):
+        """Which FireRed battle background this fight gets."""
+        tid = str(self.trainer.get("id", ""))
+        if tid.startswith("e4_"):
+            return ["lorelei", "bruno", "agatha", "lance"][int(tid[3]) % 4]
+        if tid in ("final", "creator") or self.s.kind == "champion":
+            return "champion"
+        if self.s.kind == "gym":
+            return "leader"
+        if tid.startswith("gym"):
+            return "gym"
+        if self.g.get("room"):
+            return "building"
+        if self.g.get("area", 0) == 17:   # Victory Road
+            return "cave"
+        return "grass"
+
     # ------------------------------------------------------------------ drawing
     def draw(self, surf):
+        if self.real:
+            self._draw_real(surf)
+            return
         self._background(surf)
         k = min(1.0, self.intro_t / 0.9) if self.mode == "intro" else 1.0
         e = 1 - (1 - k) ** 3
         # platforms slide in from opposite sides
-        fx = FOE_AT[0] + int((1 - e) * -400)
-        mx = ME_AT[0] + int((1 - e) * 400)
-        self._platform(surf, fx, FOE_AT[1] - 6, 92, 20)
-        self._platform(surf, mx, ME_AT[1] - 8, 110, 24)
+        fx = self.foe_at[0] + int((1 - e) * -400)
+        mx = self.me_at[0] + int((1 - e) * 400)
+        self._platform(surf, fx, self.foe_at[1] - 6, 92, 20)
+        self._platform(surf, mx, self.me_at[1] - 8, 110, 24)
         if self.mode == "intro" and self.s.kind != "wild":   # trainers standing on their platforms
             look = self.trainer.get("look") or "Youngster"
             img = pygame.transform.scale_by(G.person(look, "down", 0), 2)
-            surf.blit(img, img.get_rect(midbottom=(fx, FOE_AT[1] - 4)))
+            surf.blit(img, img.get_rect(midbottom=(fx, self.foe_at[1] - 4)))
         if self.mode == "intro" or self.hidden[0]:
             img = pygame.transform.scale_by(G.person("player", "up", 0), 2)
-            surf.blit(img, img.get_rect(midbottom=(mx - (0 if self.mode == "intro" else 0), ME_AT[1])))
-        self._mon(surf, 1, (fx, FOE_AT[1]), dark=self.mode == "intro" and self.intro_t < 0.9)
-        self._mon(surf, 0, (mx, ME_AT[1]))
+            surf.blit(img, img.get_rect(midbottom=(mx - (0 if self.mode == "intro" else 0), self.me_at[1])))
+        self._mon(surf, 1, (fx, self.foe_at[1]), dark=self.mode == "intro" and self.intro_t < 0.9)
+        self._mon(surf, 0, (mx, self.me_at[1]))
         if self.catch is not None:
             self._draw_catch(surf)
         for x, y, vx, vy, life, col in self.fx:
@@ -461,6 +487,93 @@ class GBABattle(Scene):
             if self.vis[0] and self.faint[0] < 1:
                 self._my_box(surf)
         self._bottom(surf)
+
+    def _draw_real(self, surf):
+        """The FireRed battle screen: real background (with its bases), boxes and pictures."""
+        surf.blit(BG.terrain(self.arena), (0, 0))
+        k = min(1.0, self.intro_t / 0.9) if self.mode == "intro" else 1.0
+        e = 1 - (1 - k) ** 3
+        fx = self.foe_at[0] + int((1 - e) * -400)
+        mx = self.me_at[0] + int((1 - e) * 400)
+        if self.mode == "intro" and self.s.kind != "wild":   # the trainer, in their battle picture
+            look = self.trainer.get("look") or "Youngster"
+            img = BG.trainer_pic(look)
+            if img is None:
+                img = pygame.transform.scale_by(G.person(look, "down", 0), 2)
+            surf.blit(img, img.get_rect(midbottom=(fx, self.foe_at[1] + 8)))
+        if self.mode == "intro" or self.hidden[0]:
+            img = BG.player_back(0) or pygame.transform.scale_by(G.person("player", "up", 0), 2)
+            surf.blit(img, img.get_rect(midbottom=(mx, self.me_at[1])))
+        self._mon(surf, 1, (fx, self.foe_at[1]), dark=self.mode == "intro" and self.intro_t < 0.9)
+        self._mon(surf, 0, (mx, self.me_at[1]))
+        if self.catch is not None:
+            self._draw_catch(surf)
+        for x, y, vx, vy, life, col in self.fx:
+            pygame.draw.circle(surf, col, (int(x), int(y)), max(1, int(life * 10)))
+        if self.mode != "intro":
+            if self.vis[1] and self.faint[1] < 1 and not (self.catch and self.catch.get("caught")):
+                self._foe_box_real(surf)
+            if self.vis[0] and self.faint[0] < 1:
+                self._my_box_real(surf)
+        self._bottom_real(surf)
+
+    def _foe_box_real(self, surf):
+        v = self.vis[1]
+        x, y = 26, 32                               # FireRed: the box's corner at (13, 16)
+        ink, shade = (64, 64, 64), (216, 208, 176)
+        surf.blit(BG.healthbox(1), (x, y))
+        F.draw(surf, v["name"].upper()[:9], (x + 16, y + 10), ink, shade, small=True)
+        F.draw(surf, str(v["level"]), (x + 128, y + 10), ink, shade, small=True)   # right after the box's own "Lv"
+        if self.s.kind == "wild" and self.s.foes[0]["species"] in self.g["caught"]:
+            U.ball(surf, (x + 14, y + 38), 4)
+        U.hp_bar(surf, x + 54, y + 34, 96, self.frac.get((1, v["idx"]), 1.0))
+        self._status_tag(surf, x + 22, y + 33, v.get("status"))
+
+    def _my_box_real(self, surf):
+        v = self.vis[0]
+        x, y = 252, 148                             # FireRed: (126, 74)
+        ink, shade = (64, 64, 64), (216, 208, 176)
+        surf.blit(BG.healthbox(0), (x, y))
+        F.draw(surf, v["name"].upper()[:9], (x + 32, y + 10), ink, shade, small=True)
+        F.draw(surf, str(v["level"]), (x + 144, y + 10), ink, shade, small=True)
+        frac = self.frac.get((0, v["idx"]), 1.0)
+        U.hp_bar(surf, x + 70, y + 32, 96, frac)
+        self._status_tag(surf, x + 36, y + 31, v.get("status"))
+        bm = self.s.battle.sides[0].mons[v["idx"]]
+        F.draw(surf, str(max(0, round(bm.maxhp * frac))), (x + 126, y + 46), ink, shade, anchor="topright", small=True)
+        F.draw(surf, str(bm.maxhp), (x + 142, y + 46), ink, shade, small=True)   # either side of the box's own "/"
+        ef = self.exp_shown[1] if self.exp_shown and self.exp_shown[0] == v["idx"] else self._exp_frac(v["idx"])
+        w = int(128 * max(0.0, min(1.0, ef)))
+        if w:
+            pygame.draw.rect(surf, (64, 200, 248), (x + 64, y + 70, w, 4))
+
+    def _bottom_real(self, surf):
+        top = VH - 96
+        if self.mode == "action":
+            surf.blit(BG.box("action"), (0, top))
+            name = self.vis[0]["name"].upper() if self.vis[0] else ""
+            F.draw(surf, "What will", (22, top + 18), U.WHITE, (104, 88, 112))
+            F.draw(surf, f"{name} do?", (22, top + 50), U.WHITE, (104, 88, 112))
+            self.menu.draw(surf, (256, top + 12, 220, 76), row_h=32, col_w=104, bare=True)
+        elif self.mode == "fight":
+            surf.blit(BG.box("move"), (0, top))
+            self.menu.draw(surf, (4, top + 12, 316, 76), row_h=32, col_w=150, bare=True)
+            m = self.req["moves"][self.menu.index] if self.menu.index < len(self.req["moves"]) else None
+            if m:
+                F.draw(surf, "PP", (338, top + 18), U.TEXT, U.SHADOW)
+                col = (232, 72, 64) if m["pp"] == 0 else (224, 160, 48) if m["pp"] <= m["maxpp"] // 4 else U.TEXT
+                F.draw(surf, f"{m['pp']}/{m['maxpp']}", (464, top + 18), col, U.SHADOW, anchor="topright")
+                F.draw(surf, f"TYPE/{m['type'].upper()}", (338, top + 50), U.TEXT, U.SHADOW)
+            if self.req.get("can_mega"):
+                on = getattr(self, "mega_on", False)
+                F.draw(surf, "MEGA: ON (M)" if on else "M: MEGA", (VW - 8, top - 18),
+                       (255, 216, 96) if on else U.WHITE, (48, 40, 72), scale=1, anchor="topright")
+        else:
+            surf.blit(BG.box("message"), (0, top))
+            if self.mode == "play" and self.text is not None:
+                self.text.draw(surf, self.t, rect=(12, top + 12, 440, 76), dark=True, bare=True, line_h=32)
+        if self.mode in ("bag", "party") and self.sub is not None:
+            self._overlay(surf)
 
     def _background(self, surf):
         kind = self.trainer.get("arena") or {"gym": "gym", "champion": "league"}.get(self.s.kind, "grass")
@@ -621,12 +734,12 @@ class GBABattle(Scene):
     def _draw_catch(self, surf):
         c = self.catch
         t = c["t"]
-        fx, fy = FOE_AT[0], FOE_AT[1] - 50
+        fx, fy = self.foe_at[0], self.foe_at[1] - 50
         if t < 0.5:                     # the throw
             p = t / 0.5
             x = 60 + (fx - 60) * p
             y = 230 + (fy - 230) * p - math.sin(p * math.pi) * 110
-            U.ball(surf, (int(x), int(y)), 7)
+            self._ball(surf, int(x), int(y), int(t * 12) % 2 + (1 if self.real else 0))
             return
         if c["broke"] is not None and t - c["broke"] > 0.25:
             self.catch = None
@@ -647,7 +760,7 @@ class GBABattle(Scene):
             q = (t - c["broke"]) / 0.25
             pygame.draw.circle(surf, (255, 255, 255), (fx, y), int(10 + 40 * q), 3)
             return
-        U.ball(surf, (int(x), int(y)), 7)
+        self._ball(surf, int(x), int(y), 0)
         if c["caught"] and st is not None and t - st > 0.2 + 0.8 * c["shakes"]:
             for k in range(3):
                 a = -math.pi / 2 + (k - 1) * 0.8
@@ -655,6 +768,15 @@ class GBABattle(Scene):
             dim = pygame.Surface((14, 14), pygame.SRCALPHA)
             dim.fill((0, 0, 0, 60))
             surf.blit(dim, (fx - 7, y - 7))
+
+    def _ball(self, surf, x, y, frame):
+        img = BG.ball(self.catch.get("ball", "poke-ball") if self.catch else "poke-ball", 0) if self.real else None
+        if img is None:
+            U.ball(surf, (x, y), 7)
+            return
+        if frame:
+            img = pygame.transform.rotate(img, -90 * frame)
+        surf.blit(img, img.get_rect(center=(x, y)))
 
     def close(self):
         pass
