@@ -48,6 +48,23 @@ def default_options():
     return o
 
 
+def migrate(game):
+    """Saves from the first, 8-gym region: move them to the same places on the 18-gym map."""
+    if game.get("world", 1) >= 2:
+        return
+
+    def new_index(a):
+        if a % 2 == 0:
+            return 2 * LEGACY.get(a // 2, a // 2)
+        return 2 * LEGACY.get((a + 1) // 2, (a + 1) // 2) - 1
+    game["area"] = new_index(game.get("area", 0))
+    if game.get("center"):
+        game["center"][0] = new_index(game["center"][0])
+    if game.get("room"):
+        game["room"]["area"] = new_index(game["room"]["area"])
+    game["world"] = 2
+
+
 def use_options(game):
     """Make this save's options the current ones (text speed, sound, the player's look...)."""
     OPTS.clear()
@@ -103,31 +120,63 @@ MART_STOCK = [(0, ["poke-ball", "potion", "full-heal"]), (1, ["super-potion", "r
               (7, ["max-revive"])]
 BALL_KEYS = ["poke-ball", "great-ball", "ultra-ball", "master-ball"]
 
-GYMS = [  # (town, leader, type, ace level, intro line, defeat line, badge)
+GYMS = [  # (town, leader, type, ace level, intro line, defeat line, badge) - one Gym for every type
     ("Pebblecrest City", "Petra", "rock", 13, "My Pokemon are as hard as the mountain. Can you crack them?",
      "You shattered my defence! The Crest Badge is yours.", "Crest Badge"),
+    ("Mossgrove Town", "Hive", "bug", 16, "Every bug in this forest answers to me. Buzz off - or battle!",
+     "My swarm... scattered! Here, the Hive Badge.", "Hive Badge"),
     ("Tidewater City", "Coral", "water", 19, "The tide is turning... against you!",
      "You rode the wave. The Tide Badge is yours.", "Tide Badge"),
+    ("Hearthvale Town", "Patty", "normal", 22, "Nothing fancy here. Just good, honest, NORMAL power!",
+     "Well, aren't you something special. The Hearth Badge.", "Hearth Badge"),
     ("Voltara City", "Zappa", "electric", 25, "Hope you like getting shocked, kid!",
      "Whoa, you're charged up! Take the Spark Badge.", "Spark Badge"),
+    ("Gustcliff City", "Skye", "flying", 28, "Up here, the wind decides who wins. Today it's blowing my way!",
+     "You flew higher than me. The Gale Badge is yours.", "Gale Badge"),
     ("Bloomfield City", "Fern", "grass", 31, "Let's see if you can weather my garden.",
      "Your team bloomed beautifully. The Bloom Badge.", "Bloom Badge"),
+    ("Brawlport City", "Knox", "fighting", 34, "Talk is cheap. Fists up!",
+     "Hah! Now THAT was a fight! The Fist Badge, champ.", "Fist Badge"),
     ("Toxmire Town", "Nox", "poison", 37, "Breathe in. Now panic.", "Tch. Fine. The Venom Badge.",
      "Venom Badge"),
+    ("Glimmerdell Town", "Pixie", "fairy", 40, "Aww, you're adorable! My Pokemon are going to destroy you~",
+     "Hmph! Cute AND strong? Take the Charm Badge.", "Charm Badge"),
     ("Mindspire City", "Sage", "psychic", 43, "I already know how this ends.",
      "...I did not see that coming. The Mind Badge.", "Mind Badge"),
+    ("Duskmoor Town", "Wren", "ghost", 46, "Shh... the spirits here don't like noise. Or visitors.",
+     "The spirits... have chosen you. The Shade Badge.", "Shade Badge"),
     ("Emberpeak City", "Blaze", "fire", 49, "Hope you packed water. You'll need it!",
      "You put out my fire! The Ember Badge.", "Ember Badge"),
-    ("Duneholt City", "Terra", "ground", 55, "Only the strongest reach the League. Show me.",
-     "You are ready. Take the Earth Badge and go.", "Earth Badge"),
+    ("Steelhaven City", "Ferris", "steel", 52, "My team is forged, tempered and polished. Yours?",
+     "You found a crack in the armour. The Forge Badge.", "Forge Badge"),
+    ("Frostmere Town", "Nieve", "ice", 55, "Cold hands, colder Pokemon. Shall we?",
+     "You melted my heart... a little. The Glacier Badge.", "Glacier Badge"),
+    ("Shadegate City", "Raven", "dark", 58, "Nobody beats me in the dark. Lights out.",
+     "...You see well in the dark. The Eclipse Badge.", "Eclipse Badge"),
+    ("Duneholt City", "Terra", "ground", 60, "Only the strongest reach the League. Show me.",
+     "You are ready. Take the Earth Badge.", "Earth Badge"),
+    ("Wyrmspire City", "Draco", "dragon", 62, "Dragons are the last test before the League. Most fail it.",
+     "A true dragon tamer. The Wyrm Badge - the League awaits.", "Wyrm Badge"),
 ]
-CHAMPION = ("Aurelia", 64, "So you're the one who beat all eight gyms. I'm the Champion. Let's make it a battle "
-            "worth remembering!", "Incredible... You are the new Champion of the Brawl region!")
-ROUTE_TYPES = [["normal", "bug", "flying"], ["normal", "grass", "bug", "rock"], ["water", "normal", "flying"],
-               ["electric", "normal", "grass", "poison"], ["grass", "bug", "fairy", "normal"],
-               ["poison", "dark", "ghost", "bug"], ["psychic", "fairy", "normal", "fighting"],
-               ["fire", "dragon", "rock", "fighting"], ["ground", "steel", "rock", "dark"],
-               ["dragon", "steel", "fighting", "ice", "ghost"]]
+LEAGUE_TOWN = len(GYMS) + 1                   # town index of the Pokemon League
+NUM_ROUTES = len(GYMS) + 1                    # the last one is Victory Road
+# where the towns and routes of the first (8-gym) region ended up: old town / route number -> new one
+LEGACY = {1: 1, 2: 3, 3: 5, 4: 7, 5: 9, 6: 11, 7: 13, 8: 17, 9: LEAGUE_TOWN}
+CHAMPION = ("Aurelia", 72, "So you're the one who beat all eighteen gyms. I'm the Champion. Let's make it a "
+            "battle worth remembering!", "Incredible... You are the new Champion of the Brawl region!")
+
+
+def route_types(r):
+    """The types of wild Pokemon on route r: the next Gym's type, the last one's, and a common mix."""
+    if r >= NUM_ROUTES:
+        return ["dragon", "steel", "fighting", "ice", "ghost", "dark"]
+    ahead = GYMS[r - 1][2]
+    behind = GYMS[r - 2][2] if r >= 2 else "normal"
+    common = [["normal", "bug", "flying"], ["grass", "water", "normal"], ["rock", "ground", "fighting"],
+              ["psychic", "dark", "steel"]][min(3, (r - 1) // 5)]
+    return list(dict.fromkeys([ahead, behind] + common))
+
+
 TRAINER_CLASSES = ["Youngster", "Lass", "Bug Catcher", "Hiker", "Swimmer", "Ace Trainer", "Psychic", "Black Belt",
                    "Picnicker", "Fisher", "Biker", "Beauty"]
 TRAINER_NAMES = ["Joey", "Mia", "Leo", "Ava", "Sam", "Kai", "Zoe", "Ben", "Ivy", "Max", "Lily", "Tom", "Nia", "Eli",
@@ -355,7 +404,7 @@ def town_map(i, rng):
         _put(g, 5, 9, ["S"])
         g[8][2] = g[8][10] = g[20][4] = g[26][10] = "="   # doorsteps
         g[h - 1] = ["#"] * COLS     # the hometown is the south end of the region
-    elif i == 9:
+    elif i == LEAGUE_TOWN:
         _put(g, 2, 1, BUILDINGS["L"])
         _put(g, 1, 15, BUILDINGS["C"])
         _put(g, 10, 15, BUILDINGS["M"])
@@ -380,7 +429,26 @@ def town_map(i, rng):
             elif g[y][x] == "." and rng.random() < 0.03 and x not in (5, 9):
                 g[y][x] = "t"
     _theme(i, g, rng)
+    _clear_doorsteps(g)
     return ["".join(r) for r in g]
+
+
+def _clear_doorsteps(g):
+    """Whatever a town's look added (water, trees, rocks, fences, ledges), every door keeps a way to the road."""
+    for y, row in enumerate(g):
+        for x, ch in enumerate(row):
+            if ch in "CMGDPL" and y + 1 < len(g):
+                step = y + 1
+                if g[step][x] in "~#rfv":
+                    g[step][x] = "="
+                d = 1 if x < 7 else -1
+                xx = x
+                while 0 < xx < COLS - 1 and g[step][xx] not in "=" or xx == x:
+                    if g[step][xx] in "~#rfv":
+                        g[step][xx] = "."
+                    if xx in (6, 7, 8):
+                        break
+                    xx += d
 
 
 def _theme(i, g, rng):
@@ -397,39 +465,66 @@ def _theme(i, g, rng):
         for x, y in cells:
             if 0 <= y < h and g[y][x] in ".,t":
                 g[y][x] = ch
-    if i == 0:     # Rootleaf: little fenced gardens and a pond
+    look = "home" if i == 0 else "league" if i == LEAGUE_TOWN else GYMS[i - 1][2]
+    if look == "home":       # Rootleaf: little fenced gardens and a pond
         paint("f", 1, 10, 4, 10), paint("f", 10, 10, 13, 10)
         paint(",", 1, 11, 4, 12), paint(",", 10, 11, 13, 12)
         paint("~", 1, 22, 4, 24)
-    elif i == 1:   # Pebblecrest: boulders everywhere and ledges down the hill
+    elif look == "rock":     # Pebblecrest: boulders everywhere and ledges down the hill
         at("r", (1, 0), (2, 0), (12, 0), (11, 6), (2, 6), (12, 14), (11, 15), (12, 22), (2, 24), (3, 26), (11, 26))
         paint("v", 1, 23, 5, 23), paint("v", 9, 23, 13, 23)
-    elif i == 2:   # Tidewater: a beach and the open sea
+    elif look == "water":    # Tidewater: a beach and the open sea
         paint("_", 9, 14, 9, h - 1, over=".,thD="), paint("~", 10, 14, 13, h - 1, over=".,thD=")
         for y in range(14, h):
             g[y][COLS - 1] = "~"      # the sea runs off the edge of the map
         paint("_", 1, 24, 5, h - 1)
-    elif i == 3:   # Voltara: fenced power lots and a wide plaza
+    elif look == "electric":  # Voltara: fenced power lots and a wide plaza
         paint("f", 1, 22, 5, 22), paint("f", 9, 22, 13, 22), paint("f", 9, 6, 13, 6)
         paint("=", 1, 14, 5, 15), paint("=", 9, 14, 13, 15)
         at("r", (1, 24), (13, 24), (1, 26), (13, 26))
-    elif i == 4:   # Bloomfield: flower fields
+    elif look == "grass":    # Bloomfield: flower fields
         paint(",", 1, 0, 13, h - 1, 0.75, over=".")
         paint("t", 1, 14, 2, 15)
-    elif i == 5:   # Toxmire: a swamp
+    elif look == "poison":   # Toxmire: a swamp
         paint("~", 1, 22, 4, 25), paint("~", 10, 23, 13, 26), paint("~", 11, 14, 13, 15)
         paint('"', 1, 26, 5, h - 1, 0.7), paint('"', 9, 21, 13, 22, 0.7)
-    elif i == 6:   # Mindspire: neat and symmetrical
+    elif look == "psychic":  # Mindspire: neat and symmetrical
         for y in range(14, h, 2):
             at("t", (5, y), (9, y))
         paint(",", 1, 22, 4, 26, 0.6), paint(",", 10, 22, 13, 26, 0.6)
-    elif i == 7:   # Emberpeak: rocky ground and ash
+    elif look == "fire":     # Emberpeak: rocky ground and ash
         paint("_", 9, 22, 13, h - 1), paint("r", 1, 22, 5, h - 1, 0.25), paint("r", 9, 22, 13, h - 1, 0.2)
         paint("v", 1, 21, 5, 21)
-    elif i == 8:   # Duneholt: a desert town
+    elif look == "ground":   # Duneholt: a desert town
         paint("_", 1, 0, 13, h - 1, over=".,t")
         paint("r", 1, 0, 13, h - 1, 0.06, over="_")
-    elif i == 9:   # the League: a formal garden
+    elif look == "bug":      # Mossgrove: a town in the woods, tall grass growing right up to the houses
+        paint('"', 1, 21, 5, h - 1, 0.8), paint('"', 9, 21, 13, h - 1, 0.8)
+        paint("t", 1, 0, 13, h - 1, 0.18, over=".,")
+    elif look == "normal":   # Hearthvale: a tidy village green
+        paint("f", 1, 22, 5, 22), paint("f", 9, 22, 13, 22)
+        paint(",", 2, 24, 4, 26, 0.5), paint(",", 10, 24, 12, 26, 0.5)
+    elif look == "flying":   # Gustcliff: windswept terraces - ledges stepping down the cliff
+        for y in (15, 19, 23):
+            paint("v", 1, y, 5, y), paint("v", 9, y, 13, y)
+    elif look == "fighting":  # Brawlport: a dojo yard of rocks and sand
+        paint("_", 1, 21, 5, h - 1), paint("_", 9, 21, 13, h - 1)
+        paint("r", 1, 21, 13, h - 1, 0.12, over="_")
+    elif look == "fairy":    # Glimmerdell: flower gardens around a pond
+        paint("~", 10, 23, 12, 25), paint(",", 1, 0, 13, h - 1, 0.45, over=".")
+    elif look == "ghost":    # Duskmoor: crooked fences and lonely rocks
+        paint("f", 1, 21, 4, 21), paint("f", 10, 24, 13, 24)
+        paint("r", 1, 22, 13, h - 1, 0.1), paint('"', 1, 25, 5, h - 1, 0.5)
+    elif look == "steel":    # Steelhaven: paved, fenced industrial lots
+        paint("=", 1, 14, 5, 15), paint("=", 9, 14, 13, 15)
+        paint("f", 1, 22, 5, 22), paint("f", 9, 22, 13, 22), paint("f", 1, 26, 5, 26)
+    elif look == "ice":      # Frostmere: frozen lakes
+        paint("~", 1, 21, 5, 25), paint("~", 9, 22, 13, 26), paint("_", 1, 26, 5, h - 1)
+    elif look == "dark":     # Shadegate: hemmed in by the forest
+        paint("#", 1, 22, 3, h - 1), paint("#", 10, 22, 13, h - 1)   # whole 2x2 trees (even columns / rows)
+    elif look == "dragon":   # Wyrmspire: crags and a mountain lake
+        paint("r", 1, 21, 5, h - 1, 0.3), paint("~", 9, 22, 13, 25), paint("v", 9, 26, 13, 26)
+    elif look == "league":   # the League: a formal garden
         paint("f", 1, 9, 4, 9), paint("f", 10, 9, 13, 9)
         paint(",", 1, 10, 4, 11), paint(",", 10, 10, 13, 11)
 
@@ -532,11 +627,12 @@ class World:
         for i, name in enumerate(towns):
             rows = town_map(i, random.Random(seed * 7 + i))
             area = {"name": name, "kind": "town", "rows": rows, "town": i, "npcs": self._town_npcs(i, rows, rng),
-                    "items": [], "music": "town", "ground": "sand" if i == 8 else "grass"}
+                    "items": [], "music": "town",
+                    "ground": "sand" if 0 < i <= len(GYMS) and GYMS[i - 1][2] == "ground" else "grass"}
             self.areas.append(area)
             if i < len(towns) - 1:
                 rows, path = route_map(i + 1, random.Random(seed * 13 + i))
-                rname = f"Route {i + 1}" if i < 8 else "Victory Road"
+                rname = f"Route {i + 1}" if i + 1 < NUM_ROUTES else "Victory Road"
                 lo, hi = self.route_levels(i + 1)
                 area = {"name": rname, "kind": "route", "rows": rows, "route": i + 1, "music": "route",
                         "levels": (lo, hi), "pool": self._pool(i + 1, random.Random(
@@ -549,7 +645,10 @@ class World:
 
     @staticmethod
     def route_levels(r):
-        return (2 + 6 * (r - 1), 5 + 6 * (r - 1)) if r < 9 else (50, 56)
+        if r >= NUM_ROUTES:   # Victory Road
+            return (60, 66)
+        lo = 2 + round(3.2 * (r - 1))
+        return (lo, lo + 3)
 
     def base_form(self, pid):
         seen = set()
@@ -561,8 +660,8 @@ class World:
     def _pool(self, r, rng):
         lo, hi = self.route_levels(r)
         cand = []
-        types = ROUTE_TYPES[min(r, len(ROUTE_TYPES) - 1)]
-        cap = 330 + 30 * r
+        types = route_types(r)
+        cap = 330 + 16 * r
         starters = {i for trio in STARTERS.values() for i in trio}
         for e in self.dex.all.values():
             if e["id"] in starters or e["species"] in SPECIAL_IDS:
@@ -575,10 +674,10 @@ class World:
             if par is None:            # a first-stage Pokemon
                 if sum(e["stats"].values()) <= cap:
                     cand.append(e["id"])
-            elif par[1] <= hi and self._parents.get(par[0]) is None and r >= 4:   # middle stages later on
+            elif par[1] <= hi and self._parents.get(par[0]) is None and r >= 7:   # middle stages later on
                 cand.append(e["id"])
         rng.shuffle(cand)
-        pool = sorted(set(cand[:16 + r]))
+        pool = sorted(set(cand[:14 + r // 2]))
         if self.rand_wild:   # the randomizer: every slot becomes something else
             pool = sorted({self._random_species(p, rng) for p in pool})
         return pool or [16, 19]
@@ -628,7 +727,7 @@ class World:
         lo, hi = area["levels"]
         npcs = []
         h = len(rows)
-        ys = sorted(rng.sample(range(6, h - 6), min(h - 12, 5 + r)))
+        ys = sorted(rng.sample(range(6, h - 6), min(h - 12, 5 + r // 2)))
         last = -9
         for y in ys:
             if y - last < 4:
@@ -699,7 +798,7 @@ class World:
     def gym_team(self, k):
         town, leader, typ, ace, *_ = GYMS[k]
         rng = random.Random(1000 + k + (self.rseed if self.rand_trainers else 0))
-        size = min(6, 3 + k // 2 + (1 if k >= 5 else 0))
+        size = min(6, 2 + (k + 2) // 3)
         return self.team_for([self.gym_types[k]], ace, size, rng, strong=True)
 
     def champion_team(self):
@@ -715,7 +814,7 @@ class World:
 def new_game(name, starter_id, dex):
     rng = random.Random()
     starter = make_mon(dex, dex.all[starter_id], 5, rng, origin="Rootleaf Town")
-    return {"v": 1, "name": name or "Trainer", "party": [starter], "box": [], "money": 3000,
+    return {"v": 1, "world": 2, "name": name or "Trainer", "party": [starter], "box": [], "money": 3000,
             "bag": {"poke-ball": 5, "potion": 3}, "badges": [], "area": 0, "x": 7, "y": 12, "face": "up",
             "center": [0, 7, 12], "seen": [starter_id], "caught": [starter_id], "beaten": [], "picked": [],
             "playtime": 0.0, "started": int(time.time()), "champion": False}

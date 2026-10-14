@@ -950,7 +950,7 @@ class QuestScene(GBAScene):
         F.draw(surf, f"SECRETS FOUND: {S.secrets_found(g)}/{len(S.SECRETS)}", (box.x + 8, box.bottom - 18),
                (112, 80, 160), None, scale=1)
         if g.get("keystone"):
-            F.draw(surf, f"MEGA RIFTS SEALED: {S.rifts_sealed(g)}/9", (box.right - 8, box.bottom - 18),
+            F.draw(surf, f"MEGA RIFTS SEALED: {S.rifts_sealed(g)}/{A.NUM_ROUTES}", (box.right - 8, box.bottom - 18),
                    (112, 80, 160), None, scale=1, anchor="topright")
 
 
@@ -1183,11 +1183,11 @@ class CardScene(GBAScene):
         me = pygame.transform.scale_by(G.person("player", "down", 0), 3)
         surf.blit(me, me.get_rect(midbottom=(r.right - 80, r.y + 176)))
         pygame.draw.rect(surf, (200, 168, 96), (r.x + 10, r.y + 190, r.w - 20, 86), border_radius=6)
-        for i, gym in enumerate(A.GYMS):
-            x, y = r.x + 50 + i * 50, r.y + 232
+        for i, gym in enumerate(A.GYMS):   # the badge case: two rows of nine
+            x, y = r.x + 34 + (i % 9) * 46, r.y + 212 + (i // 9) * 38
             have = gym[6] in g["badges"]
             col = type_color(gym[2], 0) if have else (168, 136, 80)
-            pts = [(x + 16 * math.cos(a), y + 16 * math.sin(a)) for a in [k * math.tau / 6 for k in range(6)]]
+            pts = [(x + 14 * math.cos(a), y + 14 * math.sin(a)) for a in [k * math.tau / 6 for k in range(6)]]
             pygame.draw.polygon(surf, (72, 56, 32), [(px + 1, py + 2) for px, py in pts])
             pygame.draw.polygon(surf, col, pts)
             if have:

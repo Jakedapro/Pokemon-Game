@@ -66,6 +66,7 @@ class OverworldScene(Scene):
     def __init__(self, app, game):
         super().__init__(app)
         self.game = game
+        A.migrate(game)       # older saves move onto the 18-gym map
         A.use_options(game)   # difficulty, text speed, sound, the player's look, the randomizer
         self.world = A.World(app.dex)
         self.rng = random.Random()
@@ -502,7 +503,7 @@ class OverworldScene(Scene):
             self.say([f"I'm {leader}, the {town} Gym Leader!", intro],
                      lambda: self._battle(team, "gym", trainer), speaker=leader)
         elif k == "champion":
-            if len(g["badges"]) < 8:
+            if len(g["badges"]) < len(A.GYMS):
                 self.say(["Come back when you have all eight badges."], speaker=CHAMP_NAME)
                 return
             name, lvl, intro, lose = A.CHAMPION
@@ -813,10 +814,10 @@ class OverworldScene(Scene):
                     g["megastones"].append(stone)
                     lines.append(f"{t.get('leader', '')} also gave you a MEGA STONE: "
                                  f"{S.stone_name(dex, stone).upper()}!")
-                if t.get("gym") == 7:
+                if t.get("gym") == len(A.GYMS) - 1:
                     g["bag"]["master-ball"] = g["bag"].get("master-ball", 0) + 1
-                    lines.append("Terra also gave you a Master Ball! It never fails.")
-            if self.cur.get("route") == 4 and all(n["id"] in g["beaten"] for n in self.cur["npcs"]
+                    lines.append(f"{t.get('leader', '')} also gave you a Master Ball! It never fails.")
+            if self.cur.get("route") == A.LEGACY[4] and all(n["id"] in g["beaten"] for n in self.cur["npcs"]
                                                   if n["kind"] == "trainer"):
                 S.set_flag(g, "route4_clear")
         evolutions = list(s.evolutions)

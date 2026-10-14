@@ -25,15 +25,25 @@ CAST = {
     "grunt_f": ("rocket_f", "rocket_grunt_f", ()),
     "admin": ("rocket_f", "rocket_grunt_f", ()),
     "boss": ("giovanni", "leader_giovanni", ()),
-    # the eight Gym Leaders, each in their type's colours
-    "leader0": ("sabrina", "leader_sabrina", _all(28, 0.9, 0.95)),        # Petra, rock
-    "leader1": ("misty", "leader_misty", ((5, 50, 328, 1.0, 1.0),)),      # Coral, water: pink hair
-    "leader2": ("lt_surge", "leader_lt_surge", ((60, 160, 52, 1.2, 1.15),)),   # Zappa, electric
-    "leader3": ("erika", "leader_erika", _all(118, 1.0, 1.0)),           # Fern, grass
-    "leader4": ("koga", "leader_koga", _all(288, 1.0, 1.0)),             # Nox, poison
-    "leader5": ("gentleman", "gentleman", _all(305, 1.0, 1.0)),          # Sage, psychic
-    "leader6": ("rocker", "biker", _all(8, 1.2, 1.0)),                   # Blaze, fire
-    "leader7": ("cooltrainer_f", "cool_trainer_f", _all(36, 0.8, 0.8)),  # Terra, ground
+    # the eighteen Gym Leaders, each in their type's colours (numbered in Gym order)
+    "leader0": ("sabrina", "leader_sabrina", _all(28, 0.9, 0.95)),          # Petra, rock
+    "leader1": ("bug_catcher", "bug_maniac", _all(80, 1.0, 1.0)),          # Hive, bug
+    "leader2": ("misty", "leader_misty", ((5, 50, 328, 1.0, 1.0),)),        # Coral, water: pink hair
+    "leader3": ("woman_2", "lady", _all(20, 0.6, 1.0)),                    # Patty, normal
+    "leader4": ("lt_surge", "leader_lt_surge", ((60, 160, 52, 1.2, 1.15),)),   # Zappa, electric
+    "leader5": ("cooltrainer_m", "bird_keeper", _all(200, 1.0, 1.05)),     # Skye, flying
+    "leader6": ("erika", "leader_erika", _all(118, 1.0, 1.0)),             # Fern, grass
+    "leader7": ("black_belt", "black_belt", _all(2, 1.2, 0.95)),           # Knox, fighting
+    "leader8": ("koga", "leader_koga", _all(288, 1.0, 1.0)),               # Nox, poison
+    "leader9": ("lass", "lass", _all(330, 1.0, 1.05)),                     # Pixie, fairy
+    "leader10": ("gentleman", "gentleman", _all(305, 1.0, 1.0)),           # Sage, psychic
+    "leader11": ("channeler", "channeler", _all(268, 1.0, 0.85)),          # Wren, ghost
+    "leader12": ("rocker", "biker", _all(8, 1.2, 1.0)),                    # Blaze, fire
+    "leader13": ("worker_m", "engineer", _all(212, 0.35, 0.9)),            # Ferris, steel
+    "leader14": ("picnicker", "picnicker", _all(192, 0.8, 1.1)),           # Nieve, ice
+    "leader15": ("man", "burglar", _all(250, 0.6, 0.6)),                   # Raven, dark
+    "leader16": ("cooltrainer_f", "cool_trainer_f", _all(36, 0.8, 0.8)),   # Terra, ground
+    "leader17": ("cooltrainer_m", "cool_trainer_m", _all(235, 1.0, 0.8)),  # Draco, dragon
     # the Elite Four and World Champion Aurelia
     "frost": ("lorelei", "elite_four_lorelei", _all(200, 0.9, 1.05)),
     "brutus": ("bruno", "elite_four_bruno", ((0, 60, 12, 1.2, 0.9),)),
@@ -54,7 +64,7 @@ def set_player(gender):
 def player_look():
     return PLAYER[0]
 
-LEADERS = {f"leader{k}" for k in range(8)}
+LEADERS = {f"leader{k}" for k in range(18)}
 
 
 def overworld(look):

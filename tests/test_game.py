@@ -159,7 +159,7 @@ def test_adventure_world_and_progress(dex, tmp_path, monkeypatch):
     from pokebrawl.adventure_battle import AdventureSession
     monkeypatch.setattr(A, "SAVE_FILE", str(tmp_path / "adv.json"))
     w = A.World(dex)
-    assert len(w.areas) == 19 and w.areas[0]["kind"] == "town" and w.areas[1]["kind"] == "route"
+    assert len(w.areas) == 2 * len(A.GYMS) + 3 and w.areas[0]["kind"] == "town" and w.areas[1]["kind"] == "route"
     for a in w.areas:  # every map is 15 wide and the exits line up
         assert all(len(r) == A.COLS for r in a["rows"])
         if a["kind"] == "route":

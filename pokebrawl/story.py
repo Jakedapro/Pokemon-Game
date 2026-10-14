@@ -27,13 +27,13 @@ BOSS = "Giovanni"
 ADMIN = "Morga"
 E4 = [  # (name, type, title, intro, lose, ace level)
     ("Frost", "ice", "Elite Four", "Welcome to the World Tournament! I'm Frost. Let's see if you can handle the cold!",
-     "Brr... you're the real deal.", 58),
+     "Brr... you're the real deal.", 66),
     ("Brutus", "fighting", "Elite Four", "I'm Brutus! My Pokemon and I trained under waterfalls for this!",
-     "Haha! What a fight!", 59),
+     "Haha! What a fight!", 67),
     ("Morrow", "ghost", "Elite Four", "Morrow... is my name. Your Pokemon look tired. Shall we make them... rest?",
-     "...Impressive. Go on, then.", 60),
+     "...Impressive. Go on, then.", 68),
     ("Drakon", "dragon", "Elite Four", "I am Drakon, the strongest of the Elite Four. Dragons bow to no one!",
-     "You... you beat my dragons. The final awaits you.", 62),
+     "You... you beat my dragons. The final awaits you.", 70),
 ]
 CHAMP = ("Aurelia", "World Champion")
 
@@ -103,7 +103,7 @@ def _ordinary_stones(dex):
 def gym_stone(dex, k):
     """The Mega Stone a gym leader hands over: a different one per gym, of a Pokemon of their type."""
     used = set(QUEST_STONES.values())
-    for j in range(8):
+    for j in range(len(A.GYMS)):
         typ = A.GYMS[j][2]
         pick = [s for s in _ordinary_stones(dex) if typ in dex.all[s[2]]["types"] and s[0] not in used]
         pick = pick or [s for s in _ordinary_stones(dex) if s[0] not in used]
@@ -117,16 +117,16 @@ def gym_stone(dex, k):
 def route_stones(dex):
     """Two hidden Mega Stones per route (sparkles on the ground), chosen once for the whole region."""
     stones = [s[0] for s in _ordinary_stones(dex)]
-    taken = {gym_stone(dex, k) for k in range(8)} | set(QUEST_STONES.values())
+    taken = {gym_stone(dex, k) for k in range(len(A.GYMS))} | set(QUEST_STONES.values())
     free = [s for s in stones if s not in taken]
     random.Random(77).shuffle(free)
-    return {r: free[(r - 1) * 2:(r - 1) * 2 + 2] for r in range(1, 10)}
+    return {r: free[(r - 1) * 2:(r - 1) * 2 + 2] for r in range(1, A.NUM_ROUTES + 1)}
 
 
 def rift_stone(dex, r):
     """The Mega Stone sealed inside route r's Mega Rift (none of these can be found anywhere else)."""
     stones = [s[0] for s in _ordinary_stones(dex)]
-    taken = {gym_stone(dex, k) for k in range(8)} | set(QUEST_STONES.values())
+    taken = {gym_stone(dex, k) for k in range(len(A.GYMS))} | set(QUEST_STONES.values())
     taken |= {k for v in route_stones(dex).values() for k in v}
     free = [s for s in stones if s not in taken]
     random.Random(4242).shuffle(free)
@@ -177,10 +177,10 @@ def battle_team(world, game, key):
         return rival_team(world, game, 5, 1), {"name": RIVAL, "look": "rival", "money": 300, "ai": "easy",
                                               "lose": "What?! I picked the strongest one, too!"}
     if key == "rival2":
-        return rival_team(world, game, 21, 3), {"name": RIVAL, "look": "rival", "money": 2100, "ai": "normal",
+        return rival_team(world, game, 20, 3), {"name": RIVAL, "look": "rival", "money": 2100, "ai": "normal",
                                                "lose": "Tch. You got lucky. Next time I'll crush you!"}
     if key == "rival3":
-        return rival_team(world, game, 52, 6), {"name": RIVAL, "look": "rival", "money": 7800, "ai": "hard",
+        return rival_team(world, game, 60, 6), {"name": RIVAL, "look": "rival", "money": 7800, "ai": "hard",
                                                "lose": "...You're really strong. Win that tournament for both of us."}
     if key.startswith("grunt"):
         lv = {"grunt1": 12, "grunt2": 24, "grunt3": 34, "grunt4": 40}.get(key, 20)
@@ -196,8 +196,8 @@ def battle_team(world, game, key):
         return team, {"name": f"Rocket Boss {BOSS}", "look": "boss", "money": 6000, "ai": "hard",
                       "lose": "Interesting... You are a variable I did not plan for."}
     if key == "vex2":
-        team = world.team_for(["dark", "dragon", "steel"], 56, 5, rng, strong=True)
-        ace = A.make_mon(dex, dex.get("garchomp"), 58, rng, shiny=False)
+        team = world.team_for(["dark", "dragon", "steel"], 64, 5, rng, strong=True)
+        ace = A.make_mon(dex, dex.get("garchomp"), 66, rng, shiny=False)
         ace["mega"] = dex.get("garchomp")["megas"][0]
         return team + [ace], {"name": f"Rocket Boss {BOSS}", "look": "boss", "money": 10000, "ai": "insane",
                               "lose": "Impossible... The machine... my plan..."}
@@ -215,7 +215,7 @@ def battle_team(world, game, key):
                       "lose": lose}
     if key == "final":
         team = world.champion_team()
-        ace = A.make_mon(dex, dex.get("rayquaza"), 66, rng, shiny=False)
+        ace = A.make_mon(dex, dex.get("rayquaza"), 74, rng, shiny=False)
         ace["mega"] = dex.get("rayquaza")["megas"][0] if dex.get("rayquaza")["megas"] else None
         return team[:5] + [ace], {"name": f"{CHAMP[1]} {CHAMP[0]}", "look": "champ", "money": 30000,
                                   "ai": "insane", "lose": "I've waited years for someone like you. Well done."}
@@ -239,8 +239,11 @@ def npcs_for(world, index, game):
         _, kind, area, door = index
         return [n for n in _room_npcs(world, kind, area, door, game) if check(game, dex, n.get("if"))]
     area = world.areas[index]
-    town = area.get("town")
-    route = area.get("route")
+    # the story was written for the first 8-gym region: map this place back to its old town / route number
+    inv = {v: k for k, v in A.LEGACY.items()}
+    real_route = area.get("route")
+    town = inv.get(area.get("town")) if area.get("kind") == "town" else None
+    route = inv.get(real_route)
 
     def add(**n):
         n.setdefault("face", "down")
@@ -317,7 +320,7 @@ def npcs_for(world, index, game):
                    "...I wonder if it's still back there."])
         # the secret Pikachu: squeezed behind the power-lot fence next to the Gym
         add(id="pikachu", kind="static", pokemon="pikachu", level=0, x=12, y=7, face="down",
-            **{"if": ["badges>=3", "!pikachu"]}, script=[
+            **{"if": ["badges>=5", "!pikachu"]}, script=[
                 ("say", "", ["Something yellow is hiding behind the fence...", "Pika? Pika-pi!",
                              "The Pikachu sniffs your hand. It looks like it wants to come with you!"]),
                 ("gift", 25, 18), ("flag", "pikachu")])
@@ -383,19 +386,20 @@ def npcs_for(world, index, game):
         add(id="mew", kind="static", pokemon="mew", level=50, x=1, y=4, **{"if": ["champion", "!mew"]},
             script=[("say", "", ["There's something hiding behind the trees... It's giggling!"]),
                     ("wild", "mew", 50, False), ("flag", "mew")])
-    if route and game.get("keystone"):   # Mega Rifts: tears Team Rocket's machine leaves behind
-        key = rift_stone(dex, route)
+    if real_route and game.get("keystone"):   # Mega Rifts: tears Team Rocket's machine leaves behind
+        key = rift_stone(dex, real_route)
         fid = mega_form(dex, key) if key else None
-        if fid and not has(game, f"rift_{route}"):
-            lv = A.World.route_levels(route)[1] + 5
-            add(id=f"rift_{route}", kind="rift", x=_rift_spot(area, route), y=None, pokemon=fid, level=lv, script=[
+        if fid and not has(game, f"rift_{real_route}"):
+            lv = A.World.route_levels(real_route)[1] + 5
+            add(id=f"rift_{real_route}", kind="rift", x=_rift_spot(area, real_route), y=None, pokemon=fid, level=lv, script=[
                 ("say", "", ["The air here is torn open... it's crackling with Mega energy!",
                              "Something is raging inside the rift!"]),
                 ("rift", fid, lv),
                 ("say", "", ["The Pokemon calmed down... and the rift sealed itself shut.",
                              "Something was left behind on the ground!"]),
-                ("mega", key), ("flag", f"rift_{route}")])
-    if index == 0 and all(has(game, f"rift_{r}") for r in range(1, 10)) and not has(game, "rift_zero"):
+                ("mega", key), ("flag", f"rift_{real_route}")])
+    if index == 0 and all(has(game, f"rift_{r}") for r in range(1, A.NUM_ROUTES + 1)) and \
+            not has(game, "rift_zero"):
         fid = mega_form(dex, "mewtwo-mega-y")
         if fid:   # sealing every rift wakes the first one, right at home
             add(id="rift_zero", kind="rift", x=3, y=23, pokemon=fid, level=75, script=[
@@ -407,7 +411,7 @@ def npcs_for(world, index, game):
                 ("mega", "mewtwo-mega-y"), ("mega", "mewtwo-mega-x"), ("flag", "rift_zero")])
     if index == len(world.areas) - 1:   # the League town
         add(id="league_guard", kind="talk", look="guard", x=8, y=8, face="down",
-            lines=["Beyond here is the POKeMON WORLD TOURNAMENT.", "Only trainers with all 8 badges may enter."])
+            lines=["Beyond here is the POKeMON WORLD TOURNAMENT.", "Only trainers with all 18 badges may enter."])
     # hidden Mega Stones on routes (sparkles), and the hidden items you find by checking the ground
     return [n for n in out if check(game, dex, n.get("if")) and not (n.get("once") and has(game, n["once"]))]
 
@@ -443,7 +447,7 @@ def _room_npcs(world, kind, area, door, game):
                     ([("battle", "creator"), ("give", "master-ball", 3), ("flag", "creator_beaten"),
                       ("say", "The Creator", ["You beat my dream team. You really are the best in the world."])]
                      if game.get("champion") and not has(game, "creator_beaten") else [])})
-    if kind == "house" and world.areas[area].get("town") == 4 and door[0] < 7:   # the letter's sister
+    if kind == "house" and world.areas[area].get("town") == A.LEGACY[4] and door[0] < 7:   # the letter's sister
         if check(game, world.dex, ["item:old-letter", "!letter_delivered"]):
             out.append({"id": "sister", "kind": "story", "look": "mom", "x": 8, "y": 5, "face": "down",
                         "name": "Old Lady", "script": [
@@ -467,10 +471,10 @@ def _room_npcs(world, kind, area, door, game):
                                                 if game.get("champion") else
                                                 ["I am Aurelia, the World Champion.",
                                                  "Beat all four of the Elite Four, and I'll face you myself."])})
-        if len(game.get("badges", [])) < 8:
+        if len(game.get("badges", [])) < len(A.GYMS):
             out.append({"id": "host", "kind": "talk", "look": "guard", "x": 7, "y": 10, "face": "up",
                         "name": "Host", "lines": ["Welcome to the POKeMON WORLD TOURNAMENT!",
-                                                  "Sorry - only trainers with all 8 Gym Badges can enter.",
+                                                  "Sorry - only trainers with all 18 Gym Badges can enter.",
                                                   f"You have {len(game.get('badges', []))}. Come back soon!"]})
             return out
         out.append({"id": "host", "kind": "story", "look": "guard", "x": 7, "y": 10, "face": "up",
@@ -603,7 +607,7 @@ SECRETS = {"chatterbox": "The Chatterbox", "red_gyarados": "The Red Gyarados", "
 
 
 def rifts_sealed(game):
-    return sum(1 for r in range(1, 10) if has(game, f"rift_{r}"))
+    return sum(1 for r in range(1, A.NUM_ROUTES + 1) if has(game, f"rift_{r}"))
 
 
 def secrets_found(game):
@@ -613,27 +617,24 @@ def secrets_found(game):
 def next_goal(game, dex):
     """One line telling you where the main story goes next."""
     b = len(game.get("badges", []))
-    gym = A.GYMS[b][0] if b < 8 else None
+    n = len(A.GYMS)
+    gym = A.GYMS[b][0] if b < n else None
     if game.get("champion"):
-        n = len(game.get("megastones", []))
-        return (f"You're the World Champion! Mega Stones: {n}/{len(all_stones(dex))}. "
+        stones = len(game.get("megastones", []))
+        return (f"You're the World Champion! Mega Stones: {stones}/{len(all_stones(dex))}. "
                 "Secrets still hide out there...")
     if not has(game, "rival1"):
         return f"Your rival {RIVAL} is waiting for you in Rootleaf Town."
     if b == 0 and not has(game, "grunt1"):
         return "Head north to Pebblecrest City. Something is going on at the Gym..."
-    if b < 2:
-        return f"Earn your next badge at the {gym} Gym."
-    if not game.get("keystone"):
+    if b >= 2 and not game.get("keystone"):
         return "Prof. Hazel is waiting for you in Tidewater City."
-    if b < 5:
-        return f"Find Mega Stones and earn your next badge in {gym}."
-    if not has(game, "admin"):
+    if b >= 8 and not has(game, "admin"):
         return f"Team Rocket's Admin {ADMIN} is causing trouble in Toxmire Town!"
-    if not has(game, "vex1"):
+    if b >= 10 and not has(game, "vex1"):
         return f"Confront Boss {BOSS} of Team Rocket in Mindspire City."
-    if b < 8:
-        return f"Earn your next badge at the {gym} Gym."
+    if b < n:
+        return f"Badge {b + 1} of {n}: the {A.GYMS[b][2].upper()} Gym in {gym}."
     if not has(game, "vex2"):
         return f"Stop {BOSS} on Victory Road, then enter the World Tournament!"
     return "Enter the POKeMON WORLD TOURNAMENT and become the best trainer in the world!"

@@ -13,6 +13,7 @@ from collections import deque
 
 import pygame
 
+from . import adventure as A
 from . import frlg
 
 S = 2   # the field is drawn at 2x, like the rest of Adventure mode
@@ -56,13 +57,28 @@ ROOM_MAPS = {
 }
 HOUSES = ["ViridianCity_House", "PalletTown_RivalsHouse", "PewterCity_House1", "CeruleanCity_House1",
           "LavenderTown_House1", "VermilionCity_House1", "CeladonCity_House1", "FuchsiaCity_House1"]
-# our 8 gyms are rock, water, electric, grass, poison, psychic, fire, ground - Kanto's order
-GYM_MAPS = ["PewterCity_Gym", "CeruleanCity_Gym", "VermilionCity_Gym", "CeladonCity_Gym", "FuchsiaCity_Gym",
-            "SaffronCity_Gym", "CinnabarIsland_Gym", "ViridianCity_Gym"]
-# each gym's room, palette-swapped into its type's colours (frlg.recolor_palette rules)
-GYM_TINT = [((0, 360, 30, 0.75, 0.95),), None, ((0, 360, 52, 0.9, 1.05),), ((0, 360, 112, 0.8, 1.0),),
-            ((0, 360, 285, 0.8, 0.95),), ((0, 360, 318, 0.75, 1.0),), ((0, 360, 8, 0.9, 1.0),),
-            ((0, 360, 36, 0.6, 0.85),)]
+# a room for every type's Gym (Kanto's own gyms where the type matches), palette-swapped into the type's colours
+GYM_BY_TYPE = {
+    "rock": ("PewterCity_Gym", 30), "water": ("CeruleanCity_Gym", None), "electric": ("VermilionCity_Gym", 52),
+    "grass": ("CeladonCity_Gym", 112), "poison": ("FuchsiaCity_Gym", 285), "psychic": ("SaffronCity_Gym", 318),
+    "fire": ("CinnabarIsland_Gym", 8), "ground": ("ViridianCity_Gym", 36), "bug": ("CeladonCity_Gym", 80),
+    "normal": ("FuchsiaCity_Gym", 30), "flying": ("CeladonCity_Gym", 195), "fighting": ("PewterCity_Gym", 12),
+    "fairy": ("CeladonCity_Gym", 335), "ghost": ("FuchsiaCity_Gym", 265), "steel": ("ViridianCity_Gym", 210),
+    "ice": ("CeruleanCity_Gym", 185), "dark": ("PewterCity_Gym", 250), "dragon": ("ViridianCity_Gym", 160),
+}
+GYM_MAPS = sorted({m for m, _ in GYM_BY_TYPE.values()})
+TINT_SAT = {"ground": 0.6, "normal": 0.45, "steel": 0.3, "dark": 0.5, "ice": 0.6}
+TINT_VAL = {"dark": 0.6, "ghost": 0.8, "ground": 0.85}
+
+
+def gym_look(typ):
+    """(FireRed gym map, recolour rules) for a Gym of this type."""
+    m, hue = GYM_BY_TYPE.get(typ, ("PewterCity_Gym", None))
+    if hue is None:
+        return m, None
+    return m, ((0, 360, hue, TINT_SAT.get(typ, 0.8), TINT_VAL.get(typ, 0.97)),)
+
+
 LEADER_GFX = {"BROCK", "MISTY", "LT_SURGE", "ERIKA", "KOGA", "SABRINA", "BLAINE", "GIOVANNI", "PROF_OAK", "BLUE"}
 
 MB_COUNTER, MB_BOOKSHELF, MB_MART_SHELF, MB_PC, MB_TV, MB_CABINET = 0x80, 0x81, 0x82, 0x83, 0x86, 0x89
@@ -259,7 +275,7 @@ def render_area(area, buildings):
 def _map_for(kind, area_index, world, door):
     if kind == "gym":
         k = world.areas[area_index].get("town", 1) - 1
-        return GYM_MAPS[k % len(GYM_MAPS)]
+        return gym_look(world.gym_types[k] if hasattr(world, "gym_types") else A.GYMS[k][2])[0]
     if kind == "house":
         rng = random.Random(area_index * 31 + (door[0] if door else 0) * 7 + (door[1] if door else 0))
         if area_index == 0 and door is not None:
@@ -289,7 +305,8 @@ def room(kind, area_index, world, door=None):
     name = _map_for(kind, area_index, world, door)
     tint = None
     if kind == "gym":
-        tint = GYM_TINT[(world.areas[area_index].get("town", 1) - 1) % len(GYM_TINT)]
+        k = world.areas[area_index].get("town", 1) - 1
+        tint = gym_look(world.gym_types[k] if hasattr(world, "gym_types") else A.GYMS[k][2])[1]
     out = _room_from(name, tint)
     if out is None and kind == "house":
         out = _room_from("ViridianCity_House")

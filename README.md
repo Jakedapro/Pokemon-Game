@@ -150,8 +150,10 @@ back to its own drawn art.
   for a secret. Mega Evolution has its own sequence (the stone reacts, the Pokemon is wrapped in light,
   then bursts out under the Mega mark), and Mega forms are redrawn GBA-style to match.
 - **Real interiors:** Pokemon Centers, Marts, houses and Prof. Hazel's lab are FireRed's own rooms, with their
-  counters, shelves and PCs. The eight gyms follow Kanto's order (Pewter's rock gym, Cerulean's pool...), and the
-  leaders use Brock's, Misty's... sprites.
+  counters, shelves and PCs.
+- **A Gym for every type:** 18 Gyms in 18 towns - Rock, Bug, Water, Normal, Electric, Flying, Grass, Fighting,
+  Poison, Fairy, Psychic, Ghost, Fire, Steel, Ice, Dark, Ground and Dragon - each with its own leader, badge,
+  Mega Stone, town look and recoloured gym. 19 routes lead from Rootleaf to Victory Road.
 
 **Controls:** arrow keys / WASD to walk, hold **X** (or Shift) to run, **Z** / Space to talk and confirm,
 **X** / Esc to go back, **Enter** for the START menu. The mouse works in menus too.
@@ -177,7 +179,7 @@ back to its own drawn art.
 - **Side quests:** a lost lucky charm, a letter to deliver, a lost Psyduck, Pokedex goals, a route clean sweep and
   more. **QUESTS** in the START menu shows your next story goal and every quest.
 - **Secrets:** a few hidden things to find (there's a counter in the quest log). Hidden items too: check the ground.
-- **The World Tournament:** with all 8 badges, enter the League and face the Elite Four back to back with no
+- **The World Tournament:** with all 18 badges, enter the League and face the Elite Four back to back with no
   healing, then World Champion Aurelia in the Grand Final. Win to become the best trainer in the world.
 - **Trainers** spot you and walk over. **Gym leaders** give badges, and the road north stays closed until you
   have a town's badge.
