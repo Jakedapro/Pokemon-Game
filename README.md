@@ -1,6 +1,6 @@
 # PokeBrawl
 
-A Pokemon battle game for Mac with **every Pokemon** (all 1,025 species plus regional forms, Megas and Primals), real moves and learnsets, and three modes:
+A Pokemon battle game for Mac and Windows with **every Pokemon** (all 1,025 species plus regional forms, Megas and Primals), real moves and learnsets, and three modes:
 
 | Mode | What it is |
 |---|---|
@@ -19,6 +19,8 @@ The real-time arena is used only for showcases.
 
 ## Install (one command)
 
+### Mac
+
 Open **Terminal** and paste:
 
 ```bash
@@ -33,6 +35,24 @@ The installer:
 - installs the game engine (`pygame-ce`)
 - installs `ffmpeg` with Homebrew for video recording, if you have Homebrew
 - downloads the Pokedex and sprites once (about 20 MB)
+
+### Windows 10 / 11
+
+Open **PowerShell** (Start menu, type *PowerShell*) and paste:
+
+```powershell
+irm https://raw.githubusercontent.com/jamalmusialla81-hub/Pokemon-Game/HEAD/install.ps1 | iex
+```
+
+Then double-click **PokeBrawl** on your Desktop (or in the Start menu), or type `pokebrawl` in a new window.
+
+The Windows installer:
+- installs into `%USERPROFILE%\.pokebrawl` with its own private copy of Python (nothing else on your PC changes)
+- adds Desktop and Start menu shortcuts and a `pokebrawl` command
+- installs `ffmpeg` with `winget` for video recording
+- downloads the Pokedex and sprites once (about 20 MB)
+
+### Updating
 
 The game **updates itself**: it downloads new versions in the background while you're in the menu and installs
 them the next time you open it (or hit *Update ready - Restart*). Turn it off in Settings. You can also run the

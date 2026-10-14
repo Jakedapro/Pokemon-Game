@@ -129,6 +129,8 @@ def restart():
     except Exception:  # noqa: BLE001
         pass
     sys.stdout.flush()
+    if os.name == "nt":   # no real exec on Windows: run the new version, then leave with its exit code
+        sys.exit(subprocess.call([sys.executable, "-X", "utf8", "-m", "pokebrawl", *sys.argv[1:]]))
     os.execv(sys.executable, [sys.executable, "-m", "pokebrawl", *sys.argv[1:]])
 
 

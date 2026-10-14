@@ -10,7 +10,12 @@ def ffmpeg_path():
     """ffmpeg comes from Homebrew, which needs Apple's Command Line Tools - so it may simply not be there.
     The .app launcher doesn't always have Homebrew on PATH, so look in its usual spots too."""
     exe = shutil.which("ffmpeg")
-    for cand in (exe, "/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg"):
+    win = []
+    if os.name == "nt":
+        from .pokedex import HOME
+        win = [os.path.join(HOME, "ffmpeg", "bin", "ffmpeg.exe"),
+               os.path.join(os.environ.get("LOCALAPPDATA", ""), "Microsoft", "WinGet", "Links", "ffmpeg.exe")]
+    for cand in (exe, *win, "/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg"):
         if cand and os.path.isfile(cand) and os.access(cand, os.X_OK):
             return cand
     return None
@@ -24,7 +29,7 @@ class Recorder:
     def __init__(self, path, w, h, fps=30):
         exe = ffmpeg_path()
         if not exe:
-            raise RuntimeError("ffmpeg not found. On Mac: brew install ffmpeg")
+            raise RuntimeError("ffmpeg not found. On Mac: brew install ffmpeg  -  on Windows: winget install ffmpeg")
         self.proc = subprocess.Popen(
             [exe, "-loglevel", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{w}x{h}",
              "-r", str(fps), "-i", "-", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "medium",

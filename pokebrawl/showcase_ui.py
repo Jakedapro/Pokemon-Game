@@ -24,7 +24,7 @@ SIZES = ["All", "100", "50", "25", "10", "3", "1"]
 
 
 def video_dir():
-    movies = os.path.join(os.path.expanduser("~"), "Movies")
+    movies = os.path.join(os.path.expanduser("~"), "Videos" if os.name == "nt" else "Movies")
     d = os.path.join(movies, "PokeBrawl") if os.path.isdir(movies) else os.path.join(os.path.expanduser("~"),
                                                                                        "pokebrawl-videos")
     os.makedirs(d, exist_ok=True)
@@ -33,7 +33,9 @@ def video_dir():
 
 def open_path(path):
     try:
-        if sys.platform == "darwin":
+        if os.name == "nt":
+            os.startfile(path)
+        elif sys.platform == "darwin":
             subprocess.Popen(["open", path])
         elif sys.platform.startswith("linux"):
             subprocess.Popen(["xdg-open", path])

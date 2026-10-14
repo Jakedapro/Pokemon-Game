@@ -15,7 +15,27 @@ import sys
 APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
+def _utf8_on_windows():
+    """Started from a shortcut there's no console, so printing goes to ~/.pokebrawl/last-run.log. And Windows
+    Python reads and writes text as cp1252 unless told otherwise - the game's data (Pokémon...) is UTF-8, so
+    re-run ourselves in UTF-8 mode if the launcher didn't already turn it on."""
+    if sys.stdout is None or sys.stderr is None:   # started from a shortcut with no console (pythonw)
+        home = os.path.join(os.path.expanduser("~"), ".pokebrawl")
+        os.makedirs(home, exist_ok=True)
+        log = open(os.path.join(home, "last-run.log"), "w", encoding="utf-8")
+        sys.stdout = sys.stdout or log
+        sys.stderr = sys.stderr or log
+    if os.name == "nt" and not sys.flags.utf8_mode and not os.environ.get("POKEBRAWL_UTF8_TRIED"):
+        env = dict(os.environ, PYTHONUTF8="1", POKEBRAWL_UTF8_TRIED="1")
+        sys.exit(subprocess.call([sys.executable, "-X", "utf8", "-m", "pokebrawl", *sys.argv[1:]], env=env))
+
+
+WIN_UPDATE = ("powershell -NoProfile -ExecutionPolicy Bypass -Command "
+              "\"irm https://raw.githubusercontent.com/jamalmusialla81-hub/Pokemon-Game/HEAD/install.ps1 | iex\"")
+
+
 def main(argv=None):
+    _utf8_on_windows()
     p = argparse.ArgumentParser(prog="pokebrawl", description="Pokemon arena battles: practice, showcase, PvP")
     sub = p.add_subparsers(dest="cmd")
     un = sub.add_parser("unlock", help=argparse.SUPPRESS)
@@ -71,6 +91,8 @@ def main(argv=None):
         print(f"PokeBrawl {h} ({d})")
         return
     if args.cmd == "update":
+        if os.name == "nt":
+            sys.exit(subprocess.call(WIN_UPDATE, shell=True))
         if os.path.isdir(os.path.join(APP_DIR, ".git")):
             subprocess.call(["git", "-C", APP_DIR, "pull", "--ff-only"])
         else:
