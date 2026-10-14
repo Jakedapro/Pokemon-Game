@@ -21,7 +21,7 @@ from .gfx import PIXEL
 
 T = G.T
 VW, VH = PIXEL
-OUT_WALK = set('.,"=')
+OUT_WALK = set('.,"=_')
 DOORS = {"C": "center", "M": "mart", "G": "gym", "D": "house", "P": "lab", "L": "league"}
 BODY = {"c": "center", "m": "mart", "g": "gym", "h": "house", "p": "lab", "l": "league"}
 DIRS = {"up": (0, -1), "down": (0, 1), "left": (-1, 0), "right": (1, 0)}
@@ -167,7 +167,7 @@ class OverworldScene(Scene):
             elif k in ("leader", "prof", "champion") and spots.get("leader"):
                 n["x"], n["y"], n["face"] = spots["leader"][0][:3]
                 if k == "leader":
-                    n["look"] = spots["leader"][0][3]   # Brock's gym gets Brock's sprite, and so on
+                    n["look"] = f"leader{n.get('gym', 0)}"   # our own leaders (cast.py)
             elif k == "trainer":
                 if not trainer_spots:
                     continue
@@ -338,9 +338,10 @@ class OverworldScene(Scene):
             fx, fy, tx, ty, p = self.move
             keys = pygame.key.get_pressed()
             run = keys[pygame.K_x] or keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT]
-            p += dt * (8.0 if run and not self.inside else 4.0)
+            p += dt * (2.2 if getattr(self, "jumping", False) else 8.0 if run and not self.inside else 4.0)
             if p >= 1:
                 self.move = None
+                self.jumping = False
                 g["x"], g["y"] = tx, ty
                 self._arrived(tx, ty)
                 if self.move is None and self.text is None and self.trans is None:
@@ -372,8 +373,15 @@ class OverworldScene(Scene):
             if not self.inside:
                 self._edge(nx, ny)
             return
+        if d == "down" and not self.inside and self.tile(nx, ny) == "v":   # hop down a ledge
+            if self.walkable(nx, ny + 1):
+                AUDIO.play("click", 0.5)
+                self.move = (x, y, nx, ny + 1, 0.0)
+                self.jumping = True
+            return
         if not self.walkable(nx, ny):
             return
+        self.jumping = False
         self.move = (x, y, nx, ny, 0.0)
         self.step = 1 - self.step
         self.trail.append((x, y))
@@ -485,7 +493,7 @@ class OverworldScene(Scene):
                 return
             team = self.world.gym_team(gi)
             trainer = {"name": f"Leader {leader}", "leader": leader, "id": n["id"], "lose": lose,
-                       "money": 100 * ace, "badge": badge, "gym": gi, "look": "leader"}
+                       "money": 100 * ace, "badge": badge, "gym": gi, "look": f"leader{gi}"}
             self.say([f"I'm {leader}, the {town} Gym Leader!", intro],
                      lambda: self._battle(team, "gym", trainer), speaker=leader)
         elif k == "champion":
@@ -496,7 +504,7 @@ class OverworldScene(Scene):
             trainer = {"name": f"Champion {name}", "leader": name, "id": "champion", "lose": lose,
                        "money": 200 * lvl, "champion": True, "look": "rival"}
             self.say([intro], lambda: self._battle(self.world.champion_team(), "champion", trainer), speaker=name)
-        elif k in ("story", "static"):
+        elif k in ("story", "static", "rift"):
             self.run_script(n.get("script", []), n)
         elif k == "quest":
             self.run_script(S.quest_script(g, self.app.dex, n["quest"]), n)
@@ -539,6 +547,12 @@ class OverworldScene(Scene):
             if st[1].startswith(("e4_", "final", "creator")):
                 trainer["arena"] = "league"
             self._battle(team, "story", trainer, then=self._step)
+        elif op == "rift":   # a raging Mega Pokemon inside a rift
+            _, fid, level = st
+            form = dex.all[fid]
+            foe = A.make_mon(dex, dex.all[form["species"]], level, self.rng, shiny=False)
+            foe["species"] = fid
+            self._battle([foe], "wild", {"rift": True, "ai": "hard", "name": f"Wild {form['name']}"}, then=self._step)
         elif op == "wild":
             _, species, level, shiny = st
             e = dex.get(species)
@@ -751,6 +765,10 @@ class OverworldScene(Scene):
         lines = []
         if r["caught"]:
             mon = r["caught"]
+            base = dex.all[mon["species"]]
+            if not base["default"] and "-mega" in base["key"]:   # caught from a rift: it calms down
+                mon["species"] = base["species"]
+                lines.append(f"The Mega Evolution faded. {A.name_of(dex, mon)} looks calm now.")
             where = A.add_caught(g, dex, mon)
             nm = A.name_of(dex, mon)
             if where == "box":
@@ -892,8 +910,17 @@ class OverworldScene(Scene):
                         if ch in FURN:
                             surf.blit(G.hfurn(FURN[ch], kind), (dx, dy))
                     continue
-                if ch == "=":
-                    surf.blit(G.hsand(self._mask(x, y, "=" + "".join(DOORS)), x * 3 + y), (dx, dy))
+                if ch in "=_":
+                    surf.blit(G.hsand(self._mask(x, y, "=_" + "".join(DOORS)), x * 3 + y), (dx, dy))
+                elif ch in "rvf":   # without the FireRed tiles: simple stand-ins
+                    surf.blit(G.hgrass(x, y), (dx, dy))
+                    if ch == "r":
+                        pygame.draw.ellipse(surf, (120, 104, 96), (dx + 4, dy + 6, T - 8, T - 10))
+                    elif ch == "v":
+                        pygame.draw.rect(surf, (128, 96, 72), (dx, dy + T - 10, T, 6))
+                    else:
+                        pygame.draw.rect(surf, (200, 200, 208), (dx, dy + 10, T, 4))
+                        pygame.draw.rect(surf, (200, 200, 208), (dx + 4, dy + 4, 4, T - 8))
                 elif ch == '"':
                     surf.blit(G.htall(0), (dx, dy))
                 elif ch == ",":
@@ -961,6 +988,18 @@ class OverworldScene(Scene):
             if kind_a == "npc":
                 n, nx, ny, walking = data
                 frame = (1 + int(self.t * 6) % 2) if walking else 0
+                if n["kind"] == "rift":   # a tear in the world, crackling with Mega energy
+                    cx, cy = nx + T // 2, ny + oy + T // 2
+                    for k in range(5):
+                        ang = self.t * (2.5 + k * 0.4) + k * 1.3
+                        rr = 6 + k * 3 + int(2 * math.sin(self.t * 5 + k))
+                        col = [(40, 8, 72), (96, 32, 160), (160, 72, 232), (208, 144, 255), (255, 232, 255)][k]
+                        pygame.draw.arc(surf, col, (cx - rr, cy - rr, rr * 2, rr * 2), ang, ang + 2.4, 3)
+                    pygame.draw.circle(surf, (24, 0, 40), (cx, cy), 5)
+                    for k in range(3):
+                        a = self.t * 3 + k * 2.1
+                        pygame.draw.circle(surf, (255, 240, 160), (int(cx + math.cos(a) * 18), int(cy + math.sin(a) * 14)), 2)
+                    continue
                 if n["kind"] == "static":   # a Pokemon standing in the world
                     e = self.app.dex.get(n["pokemon"])
                     img = pygame.transform.scale_by(G.icon(e["id"] if e else 25, n.get("shiny", False)), 1.5)
@@ -978,6 +1017,9 @@ class OverworldScene(Scene):
                 surf.blit(img, img.get_rect(midbottom=(fx + T / 2, fy + T - 2 - hop + oy)))
             else:
                 x, y, pp = data
+                if getattr(self, "jumping", False):   # an arc over the ledge, with a shadow
+                    pygame.draw.ellipse(surf, (40, 56, 48), (x + 6, y + oy + T - 10, T - 12, 8))
+                    y -= int(math.sin(pp * math.pi) * 22)
                 frame = (1 + self.step) if self.move is not None and pp < 0.5 else 0
                 img = G.person("player", self.game["face"], frame)
                 surf.blit(img, (x, y + oy + T - img.get_height() - 2))

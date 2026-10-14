@@ -36,6 +36,9 @@ PAVE = ((357, 358, 359), (365, 366, 367), (373, 374, 375), (405, 406, 413, 414))
 POND = ((421, 422, 423), (429, 430, 431), (307, 307, 307))
 GRASS = (1, 1, 1, 1, 8, 9, 16, 17)
 TALL, FLOWER, SIGN, BUSH = 13, 4, 3, 5
+ROCK, ROCK_SAND = 159, 175
+LEDGE = (176, 135, 177)     # left end, middle, right end (behaviour 0x3B: jump south)
+FENCE = (236, 231, 237)
 TREE = {  # (row parity, half) -> (normal, edge-facing-grass)
     ("top", "L"): (28, 30), ("top", "R"): (29, 31),
     ("bot", "L"): (20, 22), ("bot", "R"): (21, 23),
@@ -56,6 +59,10 @@ HOUSES = ["ViridianCity_House", "PalletTown_RivalsHouse", "PewterCity_House1", "
 # our 8 gyms are rock, water, electric, grass, poison, psychic, fire, ground - Kanto's order
 GYM_MAPS = ["PewterCity_Gym", "CeruleanCity_Gym", "VermilionCity_Gym", "CeladonCity_Gym", "FuchsiaCity_Gym",
             "SaffronCity_Gym", "CinnabarIsland_Gym", "ViridianCity_Gym"]
+# each gym's room, palette-swapped into its type's colours (frlg.recolor_palette rules)
+GYM_TINT = [((0, 360, 30, 0.75, 0.95),), None, ((0, 360, 52, 0.9, 1.05),), ((0, 360, 112, 0.8, 1.0),),
+            ((0, 360, 285, 0.8, 0.95),), ((0, 360, 318, 0.75, 1.0),), ((0, 360, 8, 0.9, 1.0),),
+            ((0, 360, 36, 0.6, 0.85),)]
 LEADER_GFX = {"BROCK", "MISTY", "LT_SURGE", "ERIKA", "KOGA", "SABRINA", "BLAINE", "GIOVANNI", "PROF_OAK", "BLUE"}
 
 MB_COUNTER, MB_BOOKSHELF, MB_MART_SHELF, MB_PC, MB_TV, MB_CABINET = 0x80, 0x81, 0x82, 0x83, 0x86, 0x89
@@ -157,16 +164,31 @@ def area_cells(area):
     """The metatile id for every cell of an outdoor area (buildings are added separately)."""
     rows = area["rows"]
     town = area.get("kind") == "town"
-    path_set = PAVE if town else SAND
+    sandy = area.get("ground") == "sand"
+    path_set = PAVE if town and not sandy else SAND
     doors = "CMGDPL"
+    path_same = "=" + doors + "cmgdhpl" + ("_" if sandy else "")
+
+    def run(ch, x, y, ends):
+        left = x > 0 and rows[y][x - 1] == ch
+        right = x + 1 < len(rows[y]) and rows[y][x + 1] == ch
+        return ends[1] if left and right else ends[0] if right else ends[2] if left else ends[1]
     out = []
     for y, row in enumerate(rows):
         line = []
         for x, ch in enumerate(row):
             if ch == "#":
                 mid = _tree(rows, x, y)
-            elif ch == "=" or ch in doors:
-                mid = _nine(path_set, rows, x, y, "=" + doors + "cmgdhpl")
+            elif ch == "=" or ch in doors or (ch == "_" and sandy):
+                mid = _nine(path_set, rows, x, y, path_same)
+            elif ch == "_":
+                mid = _nine(SAND, rows, x, y, "_")
+            elif ch == "r":
+                mid = ROCK_SAND if sandy else ROCK
+            elif ch == "v":
+                mid = run("v", x, y, LEDGE)
+            elif ch == "f":
+                mid = run("f", x, y, FENCE)
             elif ch == '"':
                 mid = TALL
             elif ch == ",":
@@ -265,21 +287,24 @@ def _reachable(rows, start, goal_cells):
 def room(kind, area_index, world, door=None):
     """A real interior: {'rows', 'field': (under, over), 'entry', 'spots': {role: [(x, y, face)]}} or None."""
     name = _map_for(kind, area_index, world, door)
-    out = _room_from(name)
+    tint = None
+    if kind == "gym":
+        tint = GYM_TINT[(world.areas[area_index].get("town", 1) - 1) % len(GYM_TINT)]
+    out = _room_from(name, tint)
     if out is None and kind == "house":
         out = _room_from("ViridianCity_House")
     if out is None and kind == "gym":
-        out = _room_from("PewterCity_Gym")
+        out = _room_from("PewterCity_Gym", tint)
     if out is not None and kind == "gym" and not out["spots"].get("leader"):
-        out = _room_from("PewterCity_Gym")
+        out = _room_from("PewterCity_Gym", tint)
     if out is not None and kind == "gym":
         lx, ly = out["spots"]["leader"][0][:2]
         if not _reachable(out["rows"], out["entry"], {(lx, ly + 1), (lx - 1, ly), (lx + 1, ly)}):
-            out = _room_from("PewterCity_Gym")   # puzzle gyms (teleporters, locked doors) need their scripts
+            out = _room_from("CeladonCity_Gym", tint) or _room_from("PewterCity_Gym", tint)   # puzzle gyms
     return out
 
 
-def _room_from(name):
+def _room_from(name, tint=None):
     j = frlg.map_json(name)
     if not j:
         return None
@@ -287,8 +312,8 @@ def _room_from(name):
     lay_name = next((n for n, l in frlg.layouts().items() if l.get("id") == lid), None)
     if not lay_name:
         return None
-    r = frlg.render(lay_name, scale=S)
-    lay = frlg.layout(lay_name)
+    r = frlg.render(lay_name, scale=S, recolor=tint)
+    lay = frlg.layout(lay_name, tint)
     if not r or not lay:
         return None
     under, over, blocked = r

@@ -123,6 +123,30 @@ def route_stones(dex):
     return {r: free[(r - 1) * 2:(r - 1) * 2 + 2] for r in range(1, 10)}
 
 
+def rift_stone(dex, r):
+    """The Mega Stone sealed inside route r's Mega Rift (none of these can be found anywhere else)."""
+    stones = [s[0] for s in _ordinary_stones(dex)]
+    taken = {gym_stone(dex, k) for k in range(8)} | set(QUEST_STONES.values())
+    taken |= {k for v in route_stones(dex).values() for k in v}
+    free = [s for s in stones if s not in taken]
+    random.Random(4242).shuffle(free)
+    return free[(r - 1) % len(free)] if free else None
+
+
+def mega_form(dex, key):
+    """The form id for a Mega Stone key (e.g. 'charizard-mega-x' -> 10034)."""
+    return next((e["id"] for e in dex.all.values() if e["key"] == key), None)
+
+
+def _rift_spot(area, r):
+    """An open spot off the path for a route's rift."""
+    rows = area["rows"]
+    rng = random.Random(r * 313)
+    spots = [(x, y) for y in range(8, len(rows) - 8) for x in range(1, A.COLS - 1)
+             if rows[y][x] in '.,"' and all(rows[y][xx] != "=" for xx in range(max(0, x - 1), min(A.COLS, x + 2)))]
+    return rng.choice(spots) if spots else (2, len(rows) // 2)
+
+
 QUEST_STONES = {"q_letter": "venusaur-mega", "q_psyduck": "alakazam-mega", "q_rift1": "gyarados-mega",
                 "q_rift2": "gengar-mega", "q_vex": "garchomp-mega", "q_starter": None}
 
@@ -258,10 +282,12 @@ def npcs_for(world, index, game):
         add(id="hazel_key", kind="story", look="prof", x=4, y=7, name="Prof. Hazel",
             **{"if": ["badges>=2", "!keystone"]}, script=[
                 ("say", "Prof. Hazel", [f"{game['name']}! Two badges already? Wonderful!",
-                                        "Listen. Team Rift is stealing MEGA STONES all over the region.",
+                                        "Listen. Team Rift is tearing holes in the world - MEGA RIFTS.",
+                                        "Any Pokemon caught in one is forced to Mega Evolve, and goes wild.",
                                         "When a Pokemon holds its Mega Stone and its trainer has a KEY STONE,",
-                                        "it can MEGA EVOLVE in battle - for a huge power boost!",
-                                        "Take this Key Stone. Find the Mega Stones before Team Rift does!"]),
+                                        "it can MEGA EVOLVE in battle - by choice, as a partner.",
+                                        "Take this Key Stone. With it you can see the rifts on every route.",
+                                        "Calm the Pokemon inside and the rift seals... leaving its Mega Stone!"]),
                 ("keystone",), ("flag", "keystone"),
                 ("say", "Prof. Hazel", ["In battle, press M (or the MEGA button) before picking a move.",
                                         "Gym Leaders have stones too. And some are hidden on the routes - look for "
@@ -314,7 +340,8 @@ def npcs_for(world, index, game):
             **{"if": ["admin", "!vex1"]}, script=[
                 ("say", f"Boss {BOSS}", ["I am Vex, leader of Team Rift.",
                                          "Mega Evolution is the ultimate power. Why should it belong to children?",
-                                         "My machine will drain every Mega Stone it touches.",
+                                         "My machine tears the world open. Every Pokemon in a rift Mega Evolves...",
+                                         "...and every stone it leaves behind comes to me.",
                                          "At the World Tournament, no Mega Evolution will work... except mine."]),
                 ("battle", "vex1"),
                 ("say", f"Boss {BOSS}", ["You are strong. Keep your stone. We will meet at Victory Road."]),
@@ -348,6 +375,28 @@ def npcs_for(world, index, game):
         add(id="mew", kind="static", pokemon="mew", level=50, x=1, y=4, **{"if": ["champion", "!mew"]},
             script=[("say", "", ["There's something hiding behind the trees... It's giggling!"]),
                     ("wild", "mew", 50, False), ("flag", "mew")])
+    if route and game.get("keystone"):   # Mega Rifts: tears Team Rift's machine leaves behind
+        key = rift_stone(dex, route)
+        fid = mega_form(dex, key) if key else None
+        if fid and not has(game, f"rift_{route}"):
+            lv = A.World.route_levels(route)[1] + 5
+            add(id=f"rift_{route}", kind="rift", x=_rift_spot(area, route), y=None, pokemon=fid, level=lv, script=[
+                ("say", "", ["The air here is torn open... it's crackling with Mega energy!",
+                             "Something is raging inside the rift!"]),
+                ("rift", fid, lv),
+                ("say", "", ["The Pokemon calmed down... and the rift sealed itself shut.",
+                             "Something was left behind on the ground!"]),
+                ("mega", key), ("flag", f"rift_{route}")])
+    if index == 0 and all(has(game, f"rift_{r}") for r in range(1, 10)) and not has(game, "rift_zero"):
+        fid = mega_form(dex, "mewtwo-mega-y")
+        if fid:   # sealing every rift wakes the first one, right at home
+            add(id="rift_zero", kind="rift", x=3, y=23, pokemon=fid, level=75, script=[
+                ("say", "", ["...The pond is glowing. A rift is opening - bigger than any of the others.",
+                             "This must be where it all began. The FIRST rift!"]),
+                ("rift", fid, 75),
+                ("say", "", ["The first rift is closed for good. Every Mega Rift in the region is sealed.",
+                             "Left behind is a stone that hums with power..."]),
+                ("mega", "mewtwo-mega-y"), ("mega", "mewtwo-mega-x"), ("flag", "rift_zero")])
     if index == len(world.areas) - 1:   # the League town
         add(id="league_guard", kind="talk", look="guard", x=8, y=8, face="down",
             lines=["Beyond here is the POKeMON WORLD TOURNAMENT.", "Only trainers with all 8 badges may enter."])
@@ -541,7 +590,11 @@ def hidden_items(world, area_index):
 # ====================================================================== the quest log
 SECRETS = {"chatterbox": "The Chatterbox", "red_gyarados": "The Red Gyarados", "snorlax": "The Sleeping Giant",
            "shiny_charm": "Shiny Charm", "mom_gift": "Mom's Gift", "mew": "The Giggle in the Trees",
-           "arceus": "The Origin", "creator_beaten": "The Creator"}
+           "arceus": "The Origin", "creator_beaten": "The Creator", "rift_zero": "The First Rift"}
+
+
+def rifts_sealed(game):
+    return sum(1 for r in range(1, 10) if has(game, f"rift_{r}"))
 
 
 def secrets_found(game):

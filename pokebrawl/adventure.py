@@ -317,7 +317,59 @@ def town_map(i, rng):
                 g[y][x] = ","
             elif g[y][x] == "." and rng.random() < 0.03 and x not in (5, 9):
                 g[y][x] = "t"
+    _theme(i, g, rng)
     return ["".join(r) for r in g]
+
+
+def _theme(i, g, rng):
+    """Every town looks like itself: a seaside, a power town, flower fields, a swamp, a desert..."""
+    h = len(g)
+
+    def paint(ch, x0, y0, x1, y1, odds=1.0, over=".,t"):
+        for y in range(max(0, y0), min(h, y1 + 1)):
+            for x in range(max(1, x0), min(COLS - 1, x1 + 1)):
+                if g[y][x] in over and rng.random() < odds:
+                    g[y][x] = ch
+
+    def at(ch, *cells):
+        for x, y in cells:
+            if 0 <= y < h and g[y][x] in ".,t":
+                g[y][x] = ch
+    if i == 0:     # Rootleaf: little fenced gardens and a pond
+        paint("f", 1, 10, 4, 10), paint("f", 10, 10, 13, 10)
+        paint(",", 1, 11, 4, 12), paint(",", 10, 11, 13, 12)
+        paint("~", 1, 22, 4, 24)
+    elif i == 1:   # Pebblecrest: boulders everywhere and ledges down the hill
+        at("r", (1, 0), (2, 0), (12, 0), (11, 6), (2, 6), (12, 14), (11, 15), (12, 22), (2, 24), (3, 26), (11, 26))
+        paint("v", 1, 23, 5, 23), paint("v", 9, 23, 13, 23)
+    elif i == 2:   # Tidewater: a beach and the open sea
+        paint("_", 9, 14, 9, h - 1, over=".,thD="), paint("~", 10, 14, 13, h - 1, over=".,thD=")
+        for y in range(14, h):
+            g[y][COLS - 1] = "~"      # the sea runs off the edge of the map
+        paint("_", 1, 24, 5, h - 1)
+    elif i == 3:   # Voltara: fenced power lots and a wide plaza
+        paint("f", 1, 22, 5, 22), paint("f", 9, 22, 13, 22), paint("f", 9, 6, 13, 6)
+        paint("=", 1, 14, 5, 15), paint("=", 9, 14, 13, 15)
+        at("r", (1, 24), (13, 24), (1, 26), (13, 26))
+    elif i == 4:   # Bloomfield: flower fields
+        paint(",", 1, 0, 13, h - 1, 0.75, over=".")
+        paint("t", 1, 14, 2, 15)
+    elif i == 5:   # Toxmire: a swamp
+        paint("~", 1, 22, 4, 25), paint("~", 10, 23, 13, 26), paint("~", 11, 14, 13, 15)
+        paint('"', 1, 26, 5, h - 1, 0.7), paint('"', 9, 21, 13, 22, 0.7)
+    elif i == 6:   # Mindspire: neat and symmetrical
+        for y in range(14, h, 2):
+            at("t", (5, y), (9, y))
+        paint(",", 1, 22, 4, 26, 0.6), paint(",", 10, 22, 13, 26, 0.6)
+    elif i == 7:   # Emberpeak: rocky ground and ash
+        paint("_", 9, 22, 13, h - 1), paint("r", 1, 22, 5, h - 1, 0.25), paint("r", 9, 22, 13, h - 1, 0.2)
+        paint("v", 1, 21, 5, 21)
+    elif i == 8:   # Duneholt: a desert town
+        paint("_", 1, 0, 13, h - 1, over=".,t")
+        paint("r", 1, 0, 13, h - 1, 0.06, over="_")
+    elif i == 9:   # the League: a formal garden
+        paint("f", 1, 9, 4, 9), paint("f", 10, 9, 13, 9)
+        paint(",", 1, 10, 4, 11), paint(",", 10, 10, 13, 11)
 
 
 def route_map(i, rng):
@@ -368,6 +420,16 @@ def route_map(i, rng):
     for y in range(h):
         g[y][0] = g[y][COLS - 1] = "#"
     _pair_trees(g)
+    # ledges you can hop down (never across the path itself), and boulders further along
+    for y in range(9, h - 6, 9):
+        if rng.random() < 0.8:
+            for xx in range(1, COLS - 1):
+                if g[y][xx] in '.,"' and abs(xx - path[y]) > 1 and g[y + 1][xx] in '.,"':
+                    g[y][xx] = "v"
+    for y in range(4, h - 4):
+        for xx in range(1, COLS - 1):
+            if i >= 3 and g[y][xx] == "." and abs(xx - path[y]) > 1 and rng.random() < 0.025:
+                g[y][xx] = "r"
     return ["".join(r) for r in g], path
 
 
@@ -399,7 +461,7 @@ class World:
         for i, name in enumerate(towns):
             rows = town_map(i, random.Random(seed * 7 + i))
             area = {"name": name, "kind": "town", "rows": rows, "town": i, "npcs": self._town_npcs(i, rows, rng),
-                    "items": [], "music": "town"}
+                    "items": [], "music": "town", "ground": "sand" if i == 8 else "grass"}
             self.areas.append(area)
             if i < len(towns) - 1:
                 rows, path = route_map(i + 1, random.Random(seed * 13 + i))
@@ -478,7 +540,7 @@ class World:
             px = path[y]
             side = rng.choice((-1, 1))
             x = px + side * 2
-            if not (1 <= x <= COLS - 2) or rows[y][x] in "~#":
+            if not (1 <= x <= COLS - 2) or rows[y][x] in "~#vrf":
                 continue
             cls = rng.choice(TRAINER_CLASSES)
             nm = rng.choice(TRAINER_NAMES)
@@ -722,7 +784,7 @@ def room(world, kind, area_index):
         town, leader, typ, ace, intro, lose, badge = GYMS[k]
         rng = random.Random(500 + k)
         npcs.append({"id": f"gym{k}", "kind": "leader", "x": 7, "y": 3, "face": "down", "name": leader,
-                     "look": "leader", "gym": k})
+                     "look": f"leader{k}", "gym": k})
         for j, (x, y, face) in enumerate(((4, 6, "right"), (10, 9, "left"))):
             team = world.team_for([typ], ace - 6 + j * 2, 1 + (k > 2) + (k > 5), rng)
             npcs.append({"id": f"gym{k}-t{j}", "kind": "trainer", "x": x, "y": y, "face": face,

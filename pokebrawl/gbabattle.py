@@ -152,11 +152,16 @@ class GBABattle(Scene):
                 self.text = None
         if self.anim is not None:
             self.anim["t"] += dt
+            if self.anim["kind"] == "mega":
+                self._mega_tick()
             if self.anim["t"] >= self.anim["dur"]:
                 self.anim = None
         if self.text is None and self.anim is None:
             if self.queue:
                 text, a = self.queue.pop(0)
+                if a and a[0] == "mega" and text:   # the build-up first, the result after the reveal
+                    self.queue.insert(0, [text, None])
+                    text = self._mega_line(a)
                 self._start(a)
                 if text:
                     self.text = U.TextBox([text], auto=0.7)
@@ -261,16 +266,11 @@ class GBABattle(Scene):
             self.catch["broke"] = self.catch["t"]
             self.blink[1] = 0.3
             AUDIO.play("ball", 0.6)
-        elif kind == "mega":
+        elif kind == "mega":   # the full sequence plays out in _mega_tick / _draw_mega
             side, pid = a[1], a[2]
-            if self.vis[side]:
-                self.vis[side]["pid"] = pid
-                self.vis[side]["name"] = self.s.battle.sides[side].mon.name
             AUDIO.play("tera", 0.9)
-            for col in ((255, 240, 160), (200, 120, 255), (120, 220, 255)):
-                self._burst(side, col)
-            self.grow[side] = 0.0
-            self.anim = {"kind": "switch", "t": 0, "dur": 0.9}
+            self.anim = {"kind": "mega", "t": 0, "dur": 2.6, "side": side, "pid": pid,
+                         "name": self.s.battle.sides[side].mon.name, "swapped": False}
         elif kind == "item":
             AUDIO.play("heal", 0.6)
         elif kind == "win":
@@ -441,6 +441,8 @@ class GBABattle(Scene):
     def _arena(self):
         """Which FireRed battle background this fight gets."""
         tid = str(self.trainer.get("id", ""))
+        if self.trainer.get("rift"):
+            return "agatha"   # the dark violet arena inside a rift
         if tid.startswith("e4_"):
             return ["lorelei", "bruno", "agatha", "lance"][int(tid[3]) % 4]
         if tid in ("final", "creator") or self.s.kind == "champion":
@@ -479,6 +481,7 @@ class GBABattle(Scene):
         self._mon(surf, 0, (mx, self.me_at[1]))
         if self.catch is not None:
             self._draw_catch(surf)
+        self._draw_mega(surf)
         for x, y, vx, vy, life, col in self.fx:
             pygame.draw.circle(surf, col, (int(x), int(y)), max(1, int(life * 10)))
         if self.mode != "intro":
@@ -508,6 +511,7 @@ class GBABattle(Scene):
         self._mon(surf, 0, (mx, self.me_at[1]))
         if self.catch is not None:
             self._draw_catch(surf)
+        self._draw_mega(surf)
         for x, y, vx, vy, life, col in self.fx:
             pygame.draw.circle(surf, col, (int(x), int(y)), max(1, int(life * 10)))
         if self.mode != "intro":
@@ -522,7 +526,8 @@ class GBABattle(Scene):
         x, y = 26, 32                               # FireRed: the box's corner at (13, 16)
         ink, shade = (64, 64, 64), (216, 208, 176)
         surf.blit(BG.healthbox(1), (x, y))
-        F.draw(surf, v["name"].upper()[:9], (x + 16, y + 10), ink, shade, small=True)
+        self._mega_mark(surf, v, x + 166, y + 19)
+        F.draw(surf, self._short(v["name"]).upper()[:9], (x + 16, y + 10), ink, shade, small=True)
         F.draw(surf, str(v["level"]), (x + 128, y + 10), ink, shade, small=True)   # right after the box's own "Lv"
         if self.s.kind == "wild" and self.s.foes[0]["species"] in self.g["caught"]:
             U.ball(surf, (x + 14, y + 38), 4)
@@ -534,7 +539,8 @@ class GBABattle(Scene):
         x, y = 252, 148                             # FireRed: (126, 74)
         ink, shade = (64, 64, 64), (216, 208, 176)
         surf.blit(BG.healthbox(0), (x, y))
-        F.draw(surf, v["name"].upper()[:9], (x + 32, y + 10), ink, shade, small=True)
+        self._mega_mark(surf, v, x + 182, y + 19)
+        F.draw(surf, self._short(v["name"]).upper()[:9], (x + 32, y + 10), ink, shade, small=True)
         F.draw(surf, str(v["level"]), (x + 144, y + 10), ink, shade, small=True)
         frac = self.frac.get((0, v["idx"]), 1.0)
         U.hp_bar(surf, x + 70, y + 32, 96, frac)
@@ -546,6 +552,19 @@ class GBABattle(Scene):
         w = int(128 * max(0.0, min(1.0, ef)))
         if w:
             pygame.draw.rect(surf, (64, 200, 248), (x + 64, y + 70, w, 4))
+
+    @staticmethod
+    def _short(name):
+        return name[5:] if name.startswith("Mega ") else name
+
+    def _mega_mark(self, surf, v, cx, cy):
+        """A little rainbow Mega mark on the healthbox of a Mega Evolved Pokemon."""
+        if not v["name"].startswith("Mega "):
+            return
+        cols = [(255, 96, 96), (255, 184, 64), (255, 240, 96), (96, 224, 120), (96, 176, 255), (184, 120, 255)]
+        for i, col in enumerate(cols):
+            pygame.draw.arc(surf, col, (cx - 8, cy - 8, 16, 16), i * math.tau / 6, (i + 1) * math.tau / 6, 3)
+        pygame.draw.polygon(surf, (120, 64, 200), [(cx, cy - 4), (cx + 3, cy), (cx, cy + 4), (cx - 3, cy)])
 
     def _bottom_real(self, surf):
         top = VH - 96
@@ -584,6 +603,84 @@ class GBABattle(Scene):
         img = G.platform(kind, mine=rx > 100)
         surf.blit(img, img.get_rect(center=(x, y + 4)))
 
+    # ------------------------------------------------------------------ Mega Evolution
+    def _mega_line(self, a):
+        from . import story as S
+        side, pid = a[1], a[2]
+        v = self.vis[side]
+        mon = v["name"] if v else "It"
+        stone = S.stone_name(self.dex, self.dex.all[pid]["key"]) if pid in self.dex.all else "Mega Stone"
+        who = self.g["name"] if side == 0 else self.trainer.get("name", "the trainer")
+        return f"{mon}'s {stone} is reacting to {who}'s Key Stone!"
+
+    def _mega_tick(self):
+        a = self.anim
+        if a["t"] >= 1.7 and not a["swapped"]:   # the flash: it comes out Mega Evolved
+            a["swapped"] = True
+            v = self.vis[a["side"]]
+            if v:
+                v["pid"] = a["pid"]
+                v["name"] = a["name"]
+            AUDIO.play("hit_super", 0.8)
+            AUDIO.cry(a["pid"], 1.0)
+            for col in ((255, 240, 160), (200, 120, 255), (120, 220, 255), (255, 255, 255)):
+                self._burst(a["side"], col)
+
+    def _mega_phase(self, side):
+        """'orb' while it's wrapped in light (drawn as a white silhouette), else None."""
+        a = self.anim
+        if a and a.get("kind") == "mega" and a["side"] == side and 0.7 <= a["t"] < 1.7:
+            return "orb"
+        return None
+
+    def _draw_mega(self, surf):
+        a = self.anim
+        if not a or a.get("kind") != "mega":
+            return
+        t, side = a["t"], a["side"]
+        x, y = self.foe_at if side == 1 else self.me_at
+        cy = y - 60
+        rainbow = [(255, 96, 96), (255, 184, 64), (255, 240, 96), (96, 224, 120), (96, 176, 255), (184, 120, 255)]
+        if t < 1.7:   # the world goes dark around it
+            shade = pygame.Surface((VW, VH), pygame.SRCALPHA)
+            shade.fill((16, 8, 40, int(150 * min(1.0, t / 0.4))))
+            surf.blit(shade, (0, 0))
+        if t < 0.8:   # rainbow light pours in from the Key Stone / Mega Stone
+            k = t / 0.8
+            for i, col in enumerate(rainbow):
+                ang = self.t * 4 + i * math.tau / 6
+                r = int(220 * (1 - k)) + 18
+                pygame.draw.circle(surf, col, (int(x + math.cos(ang) * r), int(cy + math.sin(ang) * r * 0.7)), 6)
+            if side == 0:   # your Key Stone glints on your wrist (by the healthbox)
+                pygame.draw.circle(surf, (255, 255, 255), (300, 200), int(4 + 4 * math.sin(self.t * 20)))
+        elif t < 1.7:   # wrapped in a pulsing orb, a helix of light spinning around it
+            k = (t - 0.8) / 0.9
+            rad = int(54 + 10 * math.sin(t * 14))
+            glow = pygame.Surface((rad * 2 + 8, rad * 2 + 8), pygame.SRCALPHA)
+            pygame.draw.circle(glow, (255, 255, 255, 70), (rad + 4, rad + 4), rad)
+            pygame.draw.circle(glow, (220, 200, 255, 200), (rad + 4, rad + 4), rad, 3)
+            surf.blit(glow, (x - rad - 4, cy - rad - 4))
+            for i in range(12):
+                ang = self.t * 6 + i * math.tau / 12
+                hx = x + math.cos(ang) * (rad + 6)
+                hy = cy + math.sin(ang * 2) * 30 * (1 - k * 0.5)
+                pygame.draw.circle(surf, rainbow[i % 6], (int(hx), int(hy)), 4)
+        else:   # the flash, then the Mega symbol over its head
+            k = (t - 1.7) / 0.9
+            if k < 0.25:
+                flash = pygame.Surface((VW, VH), pygame.SRCALPHA)
+                flash.fill((255, 255, 255, int(255 * (1 - k / 0.25))))
+                surf.blit(flash, (0, 0))
+            sy = cy - 80 - int(10 * k)
+            alpha = 255 if k < 0.7 else int(255 * (1 - (k - 0.7) / 0.3))
+            sym = pygame.Surface((60, 60), pygame.SRCALPHA)
+            pygame.draw.circle(sym, (255, 255, 255, alpha), (30, 30), 26)
+            for i, col in enumerate(rainbow):   # the Mega mark: a rainbow ring around a white core
+                pygame.draw.arc(sym, col + (alpha,), (4, 4, 52, 52), i * math.tau / 6, (i + 1) * math.tau / 6, 6)
+            pygame.draw.polygon(sym, (120, 64, 200, alpha), [(30, 12), (42, 30), (30, 48), (18, 30)])
+            pygame.draw.polygon(sym, (255, 255, 255, alpha), [(30, 20), (36, 30), (30, 40), (24, 30)])
+            surf.blit(sym, (x - 30, sy))
+
     def _mon(self, surf, side, at, dark=False):
         v = self.vis[side] if not self.hidden[side] else None
         if side == 1 and self.s.kind == "wild" and v is None and self.state:   # the wild one is there from the start
@@ -597,6 +694,10 @@ class GBABattle(Scene):
                 (self.catch["broke"] is not None and self.catch["t"] - self.catch["broke"] > 0.1):
             return
         img = G.battle_sprite(v["pid"], back=side == 0, shiny=v.get("shiny", False), max_h=150 if side == 0 else 128)
+        if self._mega_phase(side) == "orb":
+            img = img.copy()
+            img.fill((255, 255, 255), special_flags=pygame.BLEND_RGB_MAX)
+            at = (at[0], at[1] - int(abs(math.sin(self.t * 10)) * 6))
         if dark:
             img = img.copy()
             img.fill((40, 40, 56), special_flags=pygame.BLEND_RGB_MIN)

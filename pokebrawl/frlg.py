@@ -92,9 +92,35 @@ def set_ready():
 
 
 # ====================================================================== sprites
-def sprite(path):
-    """An indexed sprite sheet with colour 0 made transparent. None if missing."""
-    key = ("spr", path)
+def recolor_palette(colors, rules):
+    """Palette swap, the way the games make new characters from old ones. rules: list of
+    (hue_from, hue_to, new_hue, sat_mult, val_mult[, min_saturation]); hues in degrees, only fairly saturated colours (not skin,
+    not greys) are touched. new_hue None keeps the hue. Returns the new colour list."""
+    import colorsys
+    out = []
+    for c in colors:
+        r, g, b = (v / 255 for v in c[:3])
+        h, sat, val = colorsys.rgb_to_hsv(r, g, b)
+        hd = h * 360
+        for rule in rules:
+            lo, hi, new, sm, vm = rule[:5]
+            min_sat = rule[5] if len(rule) > 5 else 0.22
+            inside = lo <= hd <= hi if lo <= hi else (hd >= lo or hd <= hi)
+            skin = 10 <= hd <= 40 and sat < 0.45 and val > 0.6
+            if inside and sat > min_sat and not skin:
+                if new is not None:
+                    h = (new % 360) / 360
+                sat, val = min(1.0, sat * sm), min(1.0, val * vm)
+                break
+        r, g, b = colorsys.hsv_to_rgb(h, sat, val)
+        out.append((int(r * 255), int(g * 255), int(b * 255)))
+    return out
+
+
+def sprite(path, recolor=None):
+    """An indexed sprite sheet with colour 0 made transparent (palette-swapped by `recolor` rules). None if
+    missing."""
+    key = ("spr", path, recolor)
     if key in _cache:
         return _cache[key]
     f = fetch(path)
@@ -103,6 +129,9 @@ def sprite(path):
         try:
             raw = pygame.image.load(f)
             if raw.get_bitsize() == 8:
+                if recolor:
+                    pal = [tuple(c)[:3] for c in raw.get_palette()]
+                    raw.set_palette([pal[0]] + recolor_palette(pal[1:], recolor))
                 raw.set_colorkey(raw.get_palette_at(0))
             img = raw.convert_alpha() if pygame.display.get_surface() else _to_rgba(raw)
         except Exception:
@@ -117,12 +146,12 @@ def _to_rgba(raw):
     return out
 
 
-def frames(path, w, h):
+def frames(path, w, h, recolor=None):
     """A sprite sheet cut into w x h frames (left to right, then top to bottom)."""
-    key = ("frames", path, w, h)
+    key = ("frames", path, w, h, recolor)
     if key in _cache:
         return _cache[key]
-    sheet = sprite(path)
+    sheet = sprite(path, recolor)
     out = None
     if sheet:
         sw, sh = sheet.get_size()
@@ -147,7 +176,7 @@ def read_pal(path):
 class Tileset:
     """One primary + secondary tile set pair, drawn as 16x16 metatiles."""
 
-    def __init__(self, primary, secondary):
+    def __init__(self, primary, secondary, recolor=None):
         self.ok = False
         self.parts = []
         for name in (primary, secondary):
@@ -157,6 +186,8 @@ class Tileset:
             if not tiles_f or not meta_f:
                 return
             pals = [read_pal(d + f"palettes/{i:02d}.pal") for i in range(16)]
+            if recolor and name == secondary:   # a palette swap of the room's own tiles (gyms in type colours)
+                pals = [[p[0]] + recolor_palette(p[1:], recolor) if p else p for p in pals]
             img = pygame.image.load(tiles_f)
             w, h = img.get_size()
             idx = pygame.image.tobytes(img, "P") if img.get_bitsize() == 8 else None
@@ -250,10 +281,10 @@ class Tileset:
 _sets = {}
 
 
-def tileset(primary, secondary):
-    key = (primary, secondary)
+def tileset(primary, secondary, recolor=None):
+    key = (primary, secondary, recolor)
     if key not in _sets:
-        ts = Tileset(primary, secondary)
+        ts = Tileset(primary, secondary, recolor)
         _sets[key] = ts if ts.ok else None
     return _sets[key]
 
@@ -277,9 +308,9 @@ def layouts():
     return _cache["layouts"]
 
 
-def layout(name):
+def layout(name, recolor=None):
     """A map layout: {'w', 'h', 'blocks' (u16 per cell), 'tiles' (Tileset)} or None."""
-    key = ("layout", name)
+    key = ("layout", name, recolor)
     if key in _cache:
         return _cache[key]
     out = None
@@ -287,7 +318,7 @@ def layout(name):
     if l:
         f = fetch(l["blockdata_filepath"])
         ts = tileset("primary/" + _tileset_name(l["primary_tileset"]),
-                     "secondary/" + _tileset_name(l["secondary_tileset"]))
+                     "secondary/" + _tileset_name(l["secondary_tileset"]), recolor)
         if f and ts:
             with open(f, "rb") as fh:
                 data = fh.read()
@@ -311,13 +342,13 @@ def map_json(name):
     return _cache[key]
 
 
-def render(name, x=0, y=0, w=None, h=None, scale=2):
+def render(name, x=0, y=0, w=None, h=None, scale=2, recolor=None):
     """Part of a real map, as the field engine draws it: (under, over, blocked) where blocked[y][x] says whether
     a cell has collision. None if the files can't be had."""
-    key = ("render", name, x, y, w, h, scale)
+    key = ("render", name, x, y, w, h, scale, recolor)
     if key in _cache:
         return _cache[key]
-    lay = layout(name)
+    lay = layout(name, recolor)
     out = None
     if lay:
         w = w or lay["w"] - x

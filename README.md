@@ -141,6 +141,15 @@ Every map tile, building, interior, trainer sprite, battle background, healthbox
 font itself is the real thing. Pokemon #1-386 use their FireRed battle sprites. Without internet the game falls
 back to its own drawn art.
 
+- **Our own world in that style:** every character is a palette swap of a FireRed sprite, the way the games
+  make new characters - your teal-capped trainer, orange-haired rival Blake, Team Rift in black with a violet R,
+  Boss Vex in a violet suit, and Gym Leaders and Elite Four in their type colours. Every town has its own look
+  (Tidewater's beach and sea, Voltara's fenced power lots, Bloomfield's flower fields, the Toxmire swamp, the
+  Duneholt desert...), routes have ledges to hop down and boulders, and each gym is recoloured in its type.
+- **Mega Rifts:** once you have the Key Stone, every route has a crackling rift. Inside, a raging wild Mega
+  Pokemon - beat or catch it to seal the rift and take its Mega Stone (found nowhere else). Seal all nine
+  for a secret. Mega Evolution has its own sequence (the stone reacts, the Pokemon is wrapped in light,
+  then bursts out under the Mega mark), and Mega forms are redrawn GBA-style to match.
 - **Real interiors:** Pokemon Centers, Marts, houses and Prof. Hazel's lab are FireRed's own rooms, with their
   counters, shelves and PCs. The eight gyms follow Kanto's order (Pewter's rock gym, Cerulean's pool...), and the
   leaders use Brock's, Misty's... sprites.

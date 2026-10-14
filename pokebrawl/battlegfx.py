@@ -49,7 +49,10 @@ def files():
                             "healthbar.pal")]
     for folder, pal in set(TERRAINS.values()):
         out += [TERRAIN_DIR + folder + "/terrain.png", TERRAIN_DIR + folder + "/terrain.bin", TERRAIN_DIR + pal]
-    out += [f"graphics/trainers/front_pics/{n}_front_pic.png" for n in sorted(set(FRONT_PICS.values()))]
+    from . import cast
+    pics = set(FRONT_PICS.values()) | {c[1] for c in cast.CAST.values()}
+    out += [f"graphics/trainers/front_pics/{n}_front_pic.png" for n in sorted(pics)]
+    out += [f"graphics/object_events/pics/people/{c[0]}.png" for c in cast.CAST.values()]
     out += ["graphics/trainers/back_pics/red_back_pic.png"]
     out += [f"graphics/interface/ball/{n}.png" for n in BALLS.values()]
     out += ["graphics/fonts/latin_normal.png", "graphics/fonts/latin_small.png", "src/text.c"]
@@ -143,20 +146,28 @@ def healthbox(side):
 
 def trainer_pic(look):
     """A trainer's battle picture (128x128 at 2x), or None."""
-    name = FRONT_PICS.get(look, look if isinstance(look, str) and look.islower() else None)
+    from . import cast
+    mine = cast.picture(look)
+    rules = None
+    if mine:
+        name, rules = mine
+    else:
+        name = FRONT_PICS.get(look, look if isinstance(look, str) and look.islower() else None)
     if not name:
         return None
 
     def make():
-        img = frlg.sprite(f"graphics/trainers/front_pics/{name}_front_pic.png")
+        img = frlg.sprite(f"graphics/trainers/front_pics/{name}_front_pic.png", rules)
         return pygame.transform.scale_by(img, S) if img else None
-    return _cached(("tp", name), make)
+    return _cached(("tp", name, rules), make)
 
 
 def player_back(frame=0):
-    """Red's back sprite (frame 0 standing, 1-4 the throw), 128x128 at 2x."""
+    """The player's back sprite (frame 0 standing, 1-4 the throw), 128x128 at 2x - in our colours."""
+    from . import cast
+
     def make():
-        fr = frlg.frames("graphics/trainers/back_pics/red_back_pic.png", 64, 64)
+        fr = frlg.frames("graphics/trainers/back_pics/red_back_pic.png", 64, 64, cast.CAST["player"][2])
         return pygame.transform.scale_by(fr[min(frame, len(fr) - 1)], S) if fr else None
     return _cached(("back", frame), make)
 
@@ -293,3 +304,51 @@ def party_slot(i, state="normal", empty=False):
                         out.set_at((ox + x, oy + y), colors[c])
         return pygame.transform.scale_by(out, S)
     return _cached(("slot", i, state, empty), make)
+
+
+# ====================================================================== "demake": newer sprites in the GBA style
+def demake(src, size=64, colors=14):
+    """Redraws a sprite the way a GBA one is made: fit into size x size, at most `colors` colours (+ outline),
+    hard transparency and a dark outline. Returns a size x size surface (1x)."""
+    w, h = src.get_size()
+    box = src.get_bounding_rect(min_alpha=40)
+    if box.w == 0 or box.h == 0:
+        return pygame.Surface((size, size), pygame.SRCALPHA)
+    part = src.subsurface(box).copy()
+    k = min((size - 4) / box.w, (size - 4) / box.h, 1.0)
+    tw, th = max(1, int(box.w * k)), max(1, int(box.h * k))
+    small = pygame.transform.smoothscale(part.convert_alpha() if pygame.display.get_surface() else part, (tw, th))
+    px = [[small.get_at((x, y)) for x in range(tw)] for y in range(th)]
+    solid = [(x, y) for y in range(th) for x in range(tw) if px[y][x].a >= 128]
+    if not solid:
+        return pygame.Surface((size, size), pygame.SRCALPHA)
+    pts = [tuple(px[y][x])[:3] for x, y in solid]
+    # k-means down to a GBA-sized palette
+    uniq = sorted(set(pts), key=lambda c: c[0] * 0.3 + c[1] * 0.59 + c[2] * 0.11)
+    cent = [uniq[int(i * (len(uniq) - 1) / max(1, colors - 1))] for i in range(min(colors, len(uniq)))]
+    assign = [0] * len(pts)
+    for _ in range(6):
+        sums = [[0, 0, 0, 0] for _ in cent]
+        for n, c in enumerate(pts):
+            best = min(range(len(cent)), key=lambda j: (c[0] - cent[j][0]) ** 2 + (c[1] - cent[j][1]) ** 2 +
+                       (c[2] - cent[j][2]) ** 2)
+            assign[n] = best
+            sm = sums[best]
+            sm[0] += c[0]
+            sm[1] += c[1]
+            sm[2] += c[2]
+            sm[3] += 1
+        cent = [(sm[0] // sm[3], sm[1] // sm[3], sm[2] // sm[3]) if sm[3] else cent[j] for j, sm in enumerate(sums)]
+    out = pygame.Surface((size, size), pygame.SRCALPHA)
+    ox, oy = (size - tw) // 2, size - th - 1
+    filled = set()
+    for n, (x, y) in enumerate(solid):
+        out.set_at((ox + x, oy + y), cent[assign[n]])
+        filled.add((ox + x, oy + y))
+    for x, y in list(filled):   # the outline: darker versions of what's inside
+        for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            q = (x + dx, y + dy)
+            if q not in filled and 0 <= q[0] < size and 0 <= q[1] < size and out.get_at(q).a == 0:
+                c = out.get_at((x, y))
+                out.set_at(q, (c.r // 4 + 16, c.g // 4 + 16, c.b // 4 + 24))
+    return out

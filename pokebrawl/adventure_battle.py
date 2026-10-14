@@ -46,7 +46,8 @@ class AdventureSession:
         lead = next(i for i, m in enumerate(game["party"]) if not A.fainted(dex, m))
         self.battle.choose(0, {"type": "switch", "index": lead})
         self.battle.choose(1, {"type": "switch", "index": 0})
-        intro = {"wild": f"A wild {A.name_of(dex, foes[0])} appeared!",
+        intro = {"wild": (f"The rift tore open! A raging {A.name_of(dex, foes[0]).upper()} burst out!"
+                          if self.trainer.get("rift") else f"A wild {A.name_of(dex, foes[0])} appeared!"),
                  "gym": f"Gym Leader {self.trainer.get('leader', '')} wants to battle!",
                  "champion": f"Champion {self.trainer.get('leader', '')} wants to battle!"}.get(
             kind, f"{self.names[1]} wants to battle!")

@@ -812,6 +812,9 @@ class QuestScene(GBAScene):
                    anchor="topright")
         F.draw(surf, f"SECRETS FOUND: {S.secrets_found(g)}/{len(S.SECRETS)}", (box.x + 8, box.bottom - 18),
                (112, 80, 160), None, scale=1)
+        if g.get("keystone"):
+            F.draw(surf, f"MEGA RIFTS SEALED: {S.rifts_sealed(g)}/9", (box.right - 8, box.bottom - 18),
+                   (112, 80, 160), None, scale=1, anchor="topright")
 
 
 # ====================================================================== mart

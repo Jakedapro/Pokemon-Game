@@ -512,11 +512,16 @@ FRLG_FRAMES = {"down": (0, 3, 4), "up": (1, 5, 6), "left": (2, 7, 8), "right": (
 
 
 def _frlg_person(look, face, frame):
-    from . import frlg
-    name = FRLG_PEOPLE.get(look, look if isinstance(look, str) and look.islower() else None)
+    from . import cast, frlg
+    mine = cast.overworld(look)
+    rules = None
+    if mine:
+        name, rules = mine
+    else:
+        name = FRLG_PEOPLE.get(look, look if isinstance(look, str) and look.islower() else None)
     if not name:
         return None
-    fr = frlg.frames(f"graphics/object_events/pics/people/{name}.png", 16, 32)
+    fr = frlg.frames(f"graphics/object_events/pics/people/{name}.png", 16, 32, rules)
     if not fr:
         return None
     i = FRLG_FRAMES[face][frame]
@@ -615,6 +620,12 @@ def battle_sprite(pid, back=False, shiny=False, max_h=150):
     base = SPRITES.base(pid, back and not shiny, shiny)
     if back and shiny:
         base = SPRITES.base(pid, True, False)
+    if pid >= 10000 and battlegfx.frlg.is_ready() and base.get_width() > 8:   # Megas etc. redrawn GBA-style
+        dk = ("demake", pid, back, shiny)
+        if dk not in _cache:
+            _cache[dk] = pygame.transform.scale_by(battlegfx.demake(base), 2)
+        _cache[key] = _cache[dk]
+        return _cache[dk]
     k = 2.0
     if base.get_height() * k > max_h:
         k = max_h / base.get_height()
