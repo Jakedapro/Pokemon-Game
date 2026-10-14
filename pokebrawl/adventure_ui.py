@@ -121,7 +121,7 @@ class AdventureTitle(GBAScene):
             pygame.draw.polygon(surf, c, pts + [(VW, VH), (0, VH)])
         img = G.battle_sprite(6, max_h=120)
         surf.blit(img, img.get_rect(midbottom=(370, 228 + int(math.sin(t * 2) * 3))))
-        F.draw(surf, "POKeBRAWL", (34, 40), (248, 216, 64), (120, 56, 32), scale=5)
+        F.draw(surf, "PokeBrawl", (34, 40), (248, 216, 64), (120, 56, 32), scale=5)
         F.draw(surf, "ADVENTURE", (40, 92), U.WHITE, (48, 64, 120), scale=3)
         F.draw(surf, "The Brawl Region", (42, 124), (232, 240, 248), (48, 64, 120))
         state = self._graphics()
