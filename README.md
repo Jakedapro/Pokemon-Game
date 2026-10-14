@@ -184,10 +184,22 @@ back to its own drawn art.
 - **Corrupted Mega Stones:** some buried stones are corrupted. They double every stat after Mega Evolving, but
   the Pokemon loses HP every turn and can be poisoned, burned or paralysed by the corruption. Pick clean or
   corrupted per stone in the BAG's Mega Stone case.
-- **New Mega Evolutions (coming):** ten Megas the official games never made - Flygon, Luxray, Arcanine,
-  Milotic, Typhlosion, Snorlax, Lapras, Ninetales, Machamp and Togekiss. Their stats are ready; each one switches
-  on as soon as its sprite is dropped into `pokebrawl/art/megas/` (see the README there). Until then, digging
-  turns up corrupted Mega Stones.
+- **New Mega Evolutions:** ten Megas the official games never made, dug up with the Mega Radar:
+  - **Mega Snorlax** (Normal/Fighting) - finally on its feet: boxing gloves, headband, champion's belt
+  - **Mega Lapras** (Water/Ice) - its shell freezes into a glacier of ice spires
+  - **Mega Machamp** (Fighting/Steel) - a living chrome titan
+  - **Mega Arcanine** (Fire/Dragon) - dragon-blue coat, horns, blue fire off the mane and tail
+  - **Mega Typhlosion** (Fire/Ghost) - shadow fur and a corona of violet ghost-fire
+  - **Mega Luxray** (Electric/Dark) - a crown of lightning shards bursts from its black mane
+  - **Mega Ninetales** (Fire/Fairy) - pearl-white, pink fairy-flames on all nine tails
+  - **Mega Milotic** (Water/Fairy) - a vast iridescent fin, a diamond tiara and fairy veils
+  - **Mega Flygon** (Ground/Dragon) - four sand-gold diamond wings
+  - **Mega Togekiss** (Fairy/Flying) - a halo, a crest of red, blue and gold plumes, golden streamers
+
+  They're sprite edits in GBA style, made the way fan sprite artists make fan Megas: the game downloads
+  the GBA-style sprites from the [pokeemerald-expansion](https://github.com/rh-hideout/pokeemerald-expansion)
+  community project, then splices, repaints and adds drawn parts (`pokebrawl/megas.py`, tools in
+  `tools/pixelstudio/`). An artist's own sprite dropped into `pokebrawl/art/megas/` replaces any of them.
 - **No more one-Mega rule:** every Pokemon holding its stone can Mega Evolve in the same battle, and from the
   fourth Gym on, leaders bring two Megas.
 - **Real interiors:** Pokemon Centers, Marts, houses and Prof. Hazel's lab are FireRed's own rooms, with their

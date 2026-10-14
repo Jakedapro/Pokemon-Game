@@ -219,9 +219,223 @@ def typhlosion(L):
     return out, back
 
 
-RECIPES = {"snorlax": snorlax, "lapras": lapras, "machamp": machamp, "arcanine": arcanine, "typhlosion": typhlosion}
+# ---------------------------------------------------------------------------------------------- Mega Luxray
+def _bolt_mane(L):
+    """Mega Manectric's mane of lightning shards (yellow + its outline), cut free."""
+    mn = L("manectric/mega")
+    yellow = lambda c: K.hue_in(38, 62, 0.25)(c) or (K.lum(c) > 200 and K.hsv(c)[1] < 0.4)
+    shards = K.flood(mn, [(30, 20), (20, 24), (44, 16), (40, 30)], yellow)
+    piece = mn.cut(shards)
+    piece.outline((48, 40, 16))
+    return piece
+
+
+def luxray(L):
+    """Mega Luxray - Electric/Dark, Strong Jaw: a crown of lightning shards bursts from its black mane
+    (Mega Manectric's), crackling against the dark."""
+    out = L("luxray")
+    mane = _bolt_mane(L)
+    big, _ = K.transform(mane, 0.95)
+    out.paste(big, -10, -3, under=True)
+    back = L("luxray", back=True)
+    bm, _ = K.transform(mane.flip(), 0.95)
+    back.paste(bm, 8, 0, under=True)
+    return out, back
+
+
+# ---------------------------------------------------------------------------------------------- Mega Ninetales
+NT_FUR = {(131, 98, 24): (122, 66, 104), (205, 156, 74): (204, 156, 170), (205, 156, 98): (210, 164, 176),
+          (230, 197, 82): (238, 218, 204), (238, 222, 115): (246, 234, 220), (246, 230, 123): (250, 242, 232),
+          (255, 238, 180): (255, 254, 250), (255, 106, 41): (240, 80, 168), (248, 160, 56): (250, 150, 210),
+          (232, 128, 40): (232, 96, 184), (222, 32, 16): (216, 32, 128), (180, 16, 0): (150, 16, 96)}
+FAIRYFIRE = [(228, 72, 168), (248, 132, 210), (255, 196, 236), (255, 248, 252)]
+FF_OUT = (112, 24, 88)
+# (base, direction) of a flame at each tail tip
+NT_TIPS = [((30, 6), (0, -1)), ((42, 9), (0.4, -1)), ((52, 15), (0.8, -0.8)), ((59, 25), (1, -0.4)),
+           ((62, 36), (1, 0)), ((60, 47), (1, 0.5)), ((52, 55), (0.6, 1)), ((40, 58), (0, 1)), ((27, 57), (-0.4, 1))]
+NT_BACK_TIPS = [((6, 44), (-1, -0.6)), ((14, 41), (-0.6, -1)), ((24, 40), (-0.2, -1)), ((4, 54), (-1, 0))]
+
+
+def _tip_flames(tips, length=9.0, width=3.6):
+    img = K.Img(64, 64)
+    for (x, y), (dx, dy) in tips:
+        n = (dx * dx + dy * dy) ** 0.5
+        dx, dy = dx / n, dy / n
+        spine = [(x - dx * 2, y - dy * 2), (x + dx * length * 0.4 - dy * 2.2, y + dy * length * 0.4 + dx * 2.2),
+                 (x + dx * length * 0.75 + dy * 0.8, y + dy * length * 0.75 - dx * 0.8),
+                 (x + dx * length - dy * 1.5, y + dy * length + dx * 1.5)]
+        K.flame(img, spine, width, FAIRYFIRE, FF_OUT)
+    return img
+
+
+def ninetales(L):
+    """Mega Ninetales - Fire/Fairy, Drought: its coat turns pearl-white with a blush of pink, and every one of
+    its nine tails ends in a flickering pink fairy-flame."""
+    recol = lambda c: NT_FUR.get(c, c)
+    out = L("ninetales")
+    out.map_colors(recol)
+    out.paste(_tip_flames(NT_TIPS), 0, 0, under=True)
+    back = L("ninetales", back=True)
+    back.map_colors(recol)
+    back.paste(_tip_flames(NT_BACK_TIPS, 10, 4.0), 0, 0, under=True)
+    return out, back
+
+
+# ---------------------------------------------------------------------------------------------- Mega Milotic
+def _diancie(L):
+    di = L("diancie/mega")
+    light = lambda c: K.lum(c) > 165 and K.hsv(c)[1] < 0.3
+    veil = di.cut(K.flood(di, [(4, 40), (6, 34), (58, 40), (56, 34)], light) |
+                  K.flood(di, [(3, 44), (59, 44)], light))
+    veil.outline((120, 96, 140))
+    crown = di.cut(K.poly([(16, 0), (48, 0), (48, 12), (16, 12)]) &
+                   K.by_color(di, lambda c: K.hue_in(290, 359, 0.15)(c) or K.lum(c) > 200 or K.is_dark(c, 50)))
+    return veil.trim()[0], crown.trim()[0]
+
+
+MI_FIN = {(8, 120, 160): (96, 64, 176), (56, 168, 216): (160, 120, 236)}
+SPARKLE = {"w": (255, 255, 255), "p": (248, 168, 224), "k": (176, 72, 160)}
+
+
+def sparkle(img, x, y, big=False):
+    rows = (["..k..", ".kpk.", "kpwpk", ".kpk.", "..k.."] if big else [".p.", "pwp", ".p."])
+    K_ = len(rows) // 2
+    for r, row in enumerate(rows):
+        for c, ch in enumerate(row):
+            if ch in SPARKLE and img.get(x + c - K_, y + r - K_) is None:
+                img.set(x + c - K_, y + r - K_, SPARKLE[ch])
+
+
+def milotic(L):
+    """Mega Milotic - Water/Fairy, Multiscale: its tail fan grows into a vast iridescent fin, a pink diamond
+    tiara crowns it (Mega Diancie's) and veils of fairy light trail behind."""
+    veil, crown = _diancie(L)
+    out = L("milotic")
+    fin = out.cut(K.poly([(40, 10), (64, 10), (64, 40), (44, 40), (40, 26)]))
+    fin, (fx, fy) = fin.trim()
+    big, _ = K.transform(fin, 1.45)
+    recol = lambda c: MI_FIN.get(c, c)
+    big.map_colors(recol)
+    out.map_colors(recol)
+    out.paste(big, fx - 6, fy - 12, under=True)
+    v, _ = K.transform(veil, 1.15)
+    out.paste(v, -3, 10, under=True)
+    c, _ = K.transform(crown, 0.8)
+    out.paste(c, 2, -1)
+    for x, y, b in ((4, 6, True), (60, 50, True), (30, 6, False), (56, 2, False), (2, 30, False)):
+        sparkle(out, x, y, b)
+    back = L("milotic", back=True)
+    back.map_colors(recol)
+    bv, _ = K.transform(veil, 1.2)
+    back.paste(bv, -4, 16, under=True)
+    return out, back
+
+
+# ---------------------------------------------------------------------------------------------- Mega Flygon
+FL_MEMBRANE = {(136, 160, 80): (184, 120, 40), (176, 216, 112): (232, 176, 64), (216, 248, 136): (252, 224, 128),
+               (80, 96, 32): (120, 64, 24)}
+FL_WING_COLS = set(FL_MEMBRANE) | {(200, 56, 72), (216, 96, 112), (248, 160, 176), (128, 40, 56), (16, 16, 16)}
+
+
+FL_RIM = {(200, 56, 72), (216, 96, 112), (248, 160, 176), (128, 40, 56)}
+
+
+def flygon(L):
+    """Mega Flygon - Ground/Dragon, Tough Claws: a second, greater pair of wings unfolds behind the first - four
+    diamond wings with sand-gold membranes and crimson rims, the spirit of the desert."""
+    out = L("flygon")
+    wing_area = (K.poly([(1, 8), (15, 8), (15, 18), (25, 31), (4, 26)]) |
+                 K.poly([(31, 6), (63, 6), (57, 36), (33, 36)])) - K.rect(14, 8, 18, 14)
+    membrane = K.flood(out, [(8, 16), (6, 12), (20, 26), (40, 16), (50, 12), (44, 26), (36, 30)],
+                       lambda c: c in FL_MEMBRANE) & wing_area
+    rims = K.by_color(out, lambda c: c in FL_RIM, wing_area)
+    wmask = K.grow(membrane | rims, 1) & (wing_area | membrane)
+    recol = lambda c: FL_MEMBRANE.get(c, c)
+    out.map_colors(recol, membrane)
+    w = out.cut(wmask)
+    for half, piv, ang, dx in (([(0, 0), (31, 0), (31, 40), (0, 40)], (28, 30), -12, -2),
+                               ([(31, 0), (64, 0), (64, 40), (31, 40)], (33, 31), 12, 2)):
+        part_, (px, py) = K.transform(w.cut(K.poly(half)), 1.32, ang, pivot=piv)
+        out.paste(part_, px + dx, py + 4, under=True)
+    back = L("flygon", back=True)
+    bmem = K.by_color(back, lambda c: c in FL_MEMBRANE, K.poly([(0, 0), (64, 0), (64, 26), (44, 36), (0, 40)]))
+    back.map_colors(recol, bmem)
+    return out, back
+
+
+# ---------------------------------------------------------------------------------------------- Mega Togekiss
+HALO = [(176, 120, 24), (232, 184, 48), (252, 232, 120), (255, 252, 220)]
+HALO_OUT = (104, 64, 16)
+TG_STREAM = [(160, 104, 24), (216, 160, 40), (244, 204, 88), (252, 236, 168)]
+
+
+def ring(img, cx, cy, rx, ry, colors, outline):
+    """A glowing ring (halo), lit from the top: outline, then the band in 3 tones."""
+    band = set()
+    for y in range(int(cy - ry - 3), int(cy + ry + 4)):
+        for x in range(int(cx - rx - 3), int(cx + rx + 4)):
+            d = ((x + 0.5 - cx) / rx) ** 2 + ((y + 0.5 - cy) / ry) ** 2
+            if 0.55 <= d <= 1.25:
+                band.add((x, y))
+    edge = {(x + dx, y + dy) for x, y in band for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1))} - band
+    for x, y in edge:
+        img.set(x, y, outline)
+    for x, y in band:
+        top = y + 0.5 < cy
+        img.set(x, y, colors[2] if top else colors[1])
+    for x, y in band:
+        if y + 0.5 < cy - ry * 0.6:
+            img.set(x, y, colors[3])
+
+
+def tri(img, pts, fill, light, outline):
+    m = K.poly(pts)
+    edge = {(x + dx, y + dy) for x, y in m for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1))} - m
+    for x, y in edge:
+        img.set(x, y, outline)
+    for x, y in m:
+        img.set(x, y, fill)
+    xs = [p[0] for p in pts]
+    for x, y in m:
+        if x < min(xs) + (max(xs) - min(xs)) * 0.4:
+            img.set(x, y, light)
+
+
+TG_CREST = [([(15, 30), (12, 22), (13, 14), (9, 7)], 3.4, [(184, 40, 32), (224, 72, 48), (248, 128, 96), (252, 192, 168)],
+             (96, 24, 24)),
+            ([(21, 27), (21, 18), (25, 10), (24, 3)], 3.6, [(48, 80, 200), (72, 120, 232), (144, 184, 248),
+                                                           (216, 232, 255)], (24, 40, 112)),
+            ([(28, 26), (31, 18), (36, 12), (37, 5)], 3.2, [(200, 144, 32), (232, 184, 48), (252, 232, 120),
+                                                           (255, 252, 220)], (104, 64, 16))]
+TG_STREAMERS = [([(46, 46), (52, 52), (56, 58), (63, 60)], 2.4), ([(40, 48), (43, 55), (48, 60), (54, 64)], 2.2)]
+
+
+def togekiss(L):
+    """Mega Togekiss - Fairy/Flying, Serene Grace: a radiant halo, a crest of long red, blue and gold plumes
+    swept back from its head, and golden streamers trailing behind - a messenger of blessings."""
+    out = L("togekiss")
+    layer = K.Img(64, 64)
+    for spine, w, cols, o in TG_CREST:
+        K.flame(layer, spine, w, cols, o)
+    for spine, w in TG_STREAMERS:
+        K.flame(layer, spine, w, TG_STREAM, (96, 56, 16))
+    ring(layer, 17, 3.5, 9, 2.6, HALO, HALO_OUT)
+    out.paste(layer, 0, 0, under=True)
+    back = L("togekiss", back=True)
+    bl = K.Img(64, 64)
+    for spine, w, cols, o in TG_CREST:
+        K.flame(bl, [(64 - x + 6, y + 6) for x, y in spine], w * 1.15, cols, o)
+    ring(bl, 40, 6, 10, 3, HALO, HALO_OUT)
+    back.paste(bl, 0, 0, under=True)
+    return out, back
+
+
+RECIPES = {"snorlax": snorlax, "lapras": lapras, "machamp": machamp, "arcanine": arcanine, "typhlosion": typhlosion, "luxray": luxray, "ninetales": ninetales, "milotic": milotic, "flygon": flygon, "togekiss": togekiss}
 NEEDS = {"snorlax": ["snorlax"], "lapras": ["lapras", "crabominable/mega"], "machamp": ["machamp"],
-         "arcanine": ["arcanine"], "typhlosion": ["typhlosion"]}
+         "arcanine": ["arcanine"], "typhlosion": ["typhlosion"],
+         "luxray": ["luxray", "manectric/mega"], "ninetales": ["ninetales"],
+         "milotic": ["milotic", "diancie/mega"], "flygon": ["flygon"],
+         "togekiss": ["togekiss"]}
 
 
 # ---------------------------------------------------------------------------------------------- loading / building
