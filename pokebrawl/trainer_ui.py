@@ -88,6 +88,12 @@ class TrainerCard(Scene):
             gfx.text(surf, "Top rank. Respect.", (290, 396), 16, ui.SIGNAL, None, 0, anchor="midleft", chunky=False)
         gfx.text(surf, f"Peak: {profile.rank_of(data['peak_rp'])['label']}", (290, 440), 16, ui.MUTED, None, 0,
                  anchor="midleft", chunky=False)
+        mine = profile.my_rating(data)   # the online skill rating
+        mrk = profile.mmr_rank(mine["mmr"], mine["games"])
+        ui.rank_badge(surf, (302, 478), 11, mrk, t)
+        gfx.text(surf, "Ranked 1v1: " + (f"{mrk['label']}  {mine['mmr']}  ({mine['w']}W {mine['l']}L)"
+                                         if not mrk.get("placing") else mrk["label"]),
+                 (320, 478), 17, mrk["color"], None, 0, anchor="midleft", chunky=False)
         # the ladder
         for i, (name, need, col) in enumerate(profile.RANKS):
             x = 96 + i * 132
