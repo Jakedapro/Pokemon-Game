@@ -90,8 +90,68 @@ def snorlax(L):
     return out, back
 
 
-RECIPES = {"snorlax": snorlax}
-NEEDS = {"snorlax": ["snorlax"]}
+# ---------------------------------------------------------------------------------------------- Mega Lapras
+def _crab_crystals(L):
+    crab = L("crabominable/mega")
+    ice = lambda c: (K.hue_in(165, 215, 0.12)(c) or K.lum(c) > 215 or
+                     (170 < K.hsv(c)[0] < 215 and K.lum(c) < 120))
+    right = crab.cut(K.flood(crab, [(52, 10), (50, 14), (56, 12)], ice))
+    left = crab.cut(K.flood(crab, [(20, 10), (22, 14), (18, 12)], ice))
+    return left.trim()[0], right.trim()[0]
+
+
+def _greys(img, mask):
+    return {p for p in mask if img.get(*p) is not None and K.hsv(img.get(*p))[1] < 0.2 and
+            not K.is_dark(img.get(*p), 50)}
+
+
+def lapras(L):
+    """Mega Lapras - Water/Ice, Snow Warning: its shell freezes into a glacier and grows spires of ice
+    (Mega Crabominable's crystals), with an ice shard for a horn."""
+    small_src, big_src = _crab_crystals(L)
+    ice = sorted((c for c in big_src.colors() if not K.is_dark(c, 50)), key=K.lum)[1:]
+    out = L("lapras")
+    K.recolor(out, _greys(out, K.poly([(26, 24), (54, 30), (56, 48), (30, 48)])), ice)
+    big, _ = K.transform(big_src, 1.1)
+    small, _ = K.transform(small_src, 0.8)
+    out.paste(small.flip(), 45, 20)
+    out.paste(big, 32, 9)
+    horn, _ = K.transform(small_src, 0.5)
+    out.paste(horn, 10, -3)
+    out.outline((24, 40, 64))
+    back = L("lapras", back=True)
+    K.recolor(back, _greys(back, K.poly([(4, 44), (64, 44), (64, 64), (4, 64)])), ice)
+    bb, _ = K.transform(big_src.flip(), 1.3)
+    back.paste(bb, 34, 22)
+    return out, back
+
+
+# ---------------------------------------------------------------------------------------------- Mega Machamp
+
+
+def _skin(img):
+    return {p for p in img.points() if K.hsv(img.get(*p))[1] < 0.3 and not K.is_dark(img.get(*p), 40)
+            and K.hsv(img.get(*p))[2] < 0.97}
+
+
+CHROME = [(40, 44, 64), (78, 86, 112), (122, 132, 160), (168, 178, 204), (212, 220, 238), (255, 255, 255)]
+
+
+def machamp(L):
+    """Mega Machamp - Fighting/Steel, Iron Fist: a living chrome titan - its whole body turns to polished
+    steel (every muscle still there), with the gold crest and a bigger champion's belt."""
+    out = L("machamp")
+    skin = _skin(out)
+    cmap = K.ramp_map([out.get(*p) for p in skin], CHROME)
+    out.map_colors(lambda c: cmap.get(c, c), skin)
+    out.paste(part("machamp_over"), 0, 0)
+    back = L("machamp", back=True)
+    back.map_colors(lambda c: cmap.get(c, c), _skin(back))
+    return out, back
+
+
+RECIPES = {"snorlax": snorlax, "lapras": lapras, "machamp": machamp}
+NEEDS = {"snorlax": ["snorlax"], "lapras": ["lapras", "crabominable/mega"], "machamp": ["machamp"]}
 
 
 # ---------------------------------------------------------------------------------------------- loading / building
