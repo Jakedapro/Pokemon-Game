@@ -1,9 +1,9 @@
 """Adventure mode's story, side quests, Mega Stones and secrets.
 
-The plot: Professor Hazel gives you your first Pokemon. Your rival Blake picks the one that beats yours. Team Rift
+The plot: Professor Hazel gives you your first Pokemon. Your rival Blake picks the one that beats yours. Team Rocket
 is stealing Mega Stones across the Brawl region to power their machine and rig the Pokemon World Tournament.
 Hazel gives you a Key Stone so your Pokemon can Mega Evolve - collect the stones (gym leaders, hidden spots,
-side quests, stones won back from Team Rift), stop Team Rift's boss Vex on Victory Road, then win the World
+side quests, stones won back from Team Rocket), stop Team Rocket's boss Vex on Victory Road, then win the World
 Tournament: the Elite Four back to back and the Grand Final against the World Champion.
 
 Everything here is data: NPCs with a 'script' (a list of steps run by the overworld), quests and secrets.
@@ -187,21 +187,21 @@ def battle_team(world, game, key):
     if key.startswith("grunt"):
         lv = {"grunt1": 12, "grunt2": 24, "grunt3": 34, "grunt4": 40}.get(key, 20)
         team = world.team_for(["poison", "dark"], lv, 2 + (lv > 30), rng)
-        return team, {"name": "Rift Grunt", "look": "grunt", "money": 50 * lv, "ai": "normal",
-                      "lose": "No way! Team Rift lost to a kid?!"}
+        return team, {"name": "Rocket Grunt", "look": "grunt", "money": 50 * lv, "ai": "normal",
+                      "lose": "No way! Team Rocket lost to a kid?!"}
     if key == "admin":
         team = world.team_for(["poison", "dark", "ghost"], 39, 4, rng, strong=True)
-        return team, {"name": f"Rift Admin {ADMIN}", "look": "admin", "money": 4000, "ai": "hard",
+        return team, {"name": f"Rocket Admin {ADMIN}", "look": "admin", "money": 4000, "ai": "hard",
                       "lose": "Fine! Take your silly stone back!"}
     if key == "vex1":
         team = world.team_for(["dark", "psychic", "steel"], 45, 5, rng, strong=True)
-        return team, {"name": f"Rift Boss {BOSS}", "look": "boss", "money": 6000, "ai": "hard",
+        return team, {"name": f"Rocket Boss {BOSS}", "look": "boss", "money": 6000, "ai": "hard",
                       "lose": "Interesting... You are a variable I did not plan for."}
     if key == "vex2":
         team = world.team_for(["dark", "dragon", "steel"], 56, 5, rng, strong=True)
         ace = A.make_mon(dex, dex.get("garchomp"), 58, rng, shiny=False)
         ace["mega"] = dex.get("garchomp")["megas"][0]
-        return team + [ace], {"name": f"Rift Boss {BOSS}", "look": "boss", "money": 10000, "ai": "insane",
+        return team + [ace], {"name": f"Rocket Boss {BOSS}", "look": "boss", "money": 10000, "ai": "insane",
                               "lose": "Impossible... The machine... my plan..."}
     if key.startswith("e4_"):
         k = int(key[3:])
@@ -270,19 +270,19 @@ def npcs_for(world, index, game):
                                          "Hold X while you walk to run. Catch lots of Pokemon!"]),
                 ("give", "poke-ball", 5), ("give", "potion", 2), ("flag", "aide1")])
         add(id="q_charm_girl", kind="quest", quest="q_charm", look="Lass", x=3, y=len(area["rows"]) - 8, face="right")
-    if town == 1:   # Pebblecrest: Team Rift shows up
-        add(id="grunt1", kind="story", look="grunt", x=11, y=13, face="up", name="Rift Grunt", **{"if": "!grunt1"},
-            script=[("say", "Rift Grunt", ["Hey! This gym is closed! Team Rift is searching it for Mega Stones!",
+    if town == 1:   # Pebblecrest: Team Rocket shows up
+        add(id="grunt1", kind="story", look="grunt", x=11, y=13, face="up", name="Rocket Grunt", **{"if": "!grunt1"},
+            script=[("say", "Rocket Grunt", ["Hey! This gym is closed! Team Rocket is searching it for Mega Stones!",
                                            "...You want in? Then beat me!"]),
                     ("battle", "grunt1"),
-                    ("say", "Rift Grunt", ["Ugh... Whatever! The boss will get every stone in the region anyway!"]),
+                    ("say", "Rocket Grunt", ["Ugh... Whatever! The boss will get every stone in the region anyway!"]),
                     ("flag", "grunt1")])
         add(id="q_fire_boy", kind="quest", quest="q_fire", look="Youngster", x=12, y=14, face="left")
     if town == 2:   # Tidewater: the Key Stone
         add(id="hazel_key", kind="story", look="prof", x=4, y=7, name="Prof. Hazel",
             **{"if": ["badges>=2", "!keystone"]}, script=[
                 ("say", "Prof. Hazel", [f"{game['name']}! Two badges already? Wonderful!",
-                                        "Listen. Team Rift is tearing holes in the world - MEGA RIFTS.",
+                                        "Listen. Team Rocket is tearing holes in the world - MEGA RIFTS.",
                                         "Any Pokemon caught in one is forced to Mega Evolve, and goes wild.",
                                         "When a Pokemon holds its Mega Stone and its trainer has a KEY STONE,",
                                         "it can MEGA EVOLVE in battle - by choice, as a partner.",
@@ -306,9 +306,9 @@ def npcs_for(world, index, game):
             **{"if": "!red_gyarados"}, script=[("say", "", ["The water is churning... A huge red Pokemon leaps out!"]),
                                                ("wild", "gyarados", 30, True), ("flag", "red_gyarados")])
     if town == 3:   # Voltara
-        add(id="grunt2", kind="story", look="grunt", x=4, y=12, face="right", sight=4, auto=True, name="Rift Grunt",
+        add(id="grunt2", kind="story", look="grunt", x=4, y=12, face="right", sight=4, auto=True, name="Rocket Grunt",
             **{"if": "!grunt2"}, script=[
-                ("say", "Rift Grunt", ["You again?! Team Rift's admin is in Toxmire Town. Don't you dare follow!"]),
+                ("say", "Rocket Grunt", ["You again?! Team Rocket's admin is in Toxmire Town. Don't you dare follow!"]),
                 ("battle", "grunt2"), ("flag", "grunt2")])
         add(id="egg_joke", kind="talk", look="Biker", x=12, y=20, face="left",
             lines=["My Electric Pokemon stopped working yesterday.",
@@ -321,12 +321,12 @@ def npcs_for(world, index, game):
             **{"if": "!snorlax"}, script=[("say", "", ["A huge Pokemon is fast asleep in the middle of the road!",
                                                        "...It woke up! It looks angry!"]),
                                           ("wild", "snorlax", 30, False), ("flag", "snorlax")])
-    if town == 5:   # Toxmire: Team Rift's admin
+    if town == 5:   # Toxmire: Team Rocket's admin
         add(id="admin", kind="story", look="admin", x=7, y=9, face="down", sight=5, auto=True,
             name=f"Admin {ADMIN}", **{"if": "!admin"}, script=[
                 ("say", f"Admin {ADMIN}", ["So you're the brat who keeps beating our grunts.",
                                             "These Mega Stones will power Boss Vex's machine.",
-                                            "With it, Team Rift will control every battle at the World Tournament!"]),
+                                            "With it, Team Rocket will control every battle at the World Tournament!"]),
                 ("battle", "admin"),
                 ("say", f"Admin {ADMIN}", ["Grr... Here, take it! The boss has plenty more in Mindspire City!"]),
                 ("mega", QUEST_STONES["q_rift1"]), ("flag", "admin")])
@@ -338,7 +338,7 @@ def npcs_for(world, index, game):
     if town == 6:   # Mindspire: Boss Vex
         add(id="vex1", kind="story", look="boss", x=7, y=12, face="down", sight=5, auto=True, name=f"Boss {BOSS}",
             **{"if": ["admin", "!vex1"]}, script=[
-                ("say", f"Boss {BOSS}", ["I am Vex, leader of Team Rift.",
+                ("say", f"Boss {BOSS}", ["I am Vex, leader of Team Rocket.",
                                          "Mega Evolution is the ultimate power. Why should it belong to children?",
                                          "My machine tears the world open. Every Pokemon in a rift Mega Evolves...",
                                          "...and every stone it leaves behind comes to me.",
@@ -364,7 +364,7 @@ def npcs_for(world, index, game):
                 ("say", f"Boss {BOSS}", ["You came. The machine is ready.",
                                          "My Garchomp holds the last stone it needs. Watch true Mega power!"]),
                 ("battle", "vex2"),
-                ("say", f"Boss {BOSS}", ["...The machine is broken. Team Rift is finished.",
+                ("say", f"Boss {BOSS}", ["...The machine is broken. Team Rocket is finished.",
                                          "Take the stone. You've earned the right to the tournament."]),
                 ("mega", QUEST_STONES["q_vex"]), ("flag", "vex2")])
         add(id="arceus", kind="static", pokemon="arceus", level=70, x=7, y=3,
@@ -375,7 +375,7 @@ def npcs_for(world, index, game):
         add(id="mew", kind="static", pokemon="mew", level=50, x=1, y=4, **{"if": ["champion", "!mew"]},
             script=[("say", "", ["There's something hiding behind the trees... It's giggling!"]),
                     ("wild", "mew", 50, False), ("flag", "mew")])
-    if route and game.get("keystone"):   # Mega Rifts: tears Team Rift's machine leaves behind
+    if route and game.get("keystone"):   # Mega Rifts: tears Team Rocket's machine leaves behind
         key = rift_stone(dex, route)
         fid = mega_form(dex, key) if key else None
         if fid and not has(game, f"rift_{route}"):
@@ -620,9 +620,9 @@ def next_goal(game, dex):
     if b < 5:
         return f"Find Mega Stones and earn your next badge in {gym}."
     if not has(game, "admin"):
-        return f"Team Rift's Admin {ADMIN} is causing trouble in Toxmire Town!"
+        return f"Team Rocket's Admin {ADMIN} is causing trouble in Toxmire Town!"
     if not has(game, "vex1"):
-        return f"Confront Boss {BOSS} of Team Rift in Mindspire City."
+        return f"Confront Boss {BOSS} of Team Rocket in Mindspire City."
     if b < 8:
         return f"Earn your next badge at the {gym} Gym."
     if not has(game, "vex2"):

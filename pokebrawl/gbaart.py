@@ -482,7 +482,7 @@ LOOKS = {   # cap, shirt, pants, hair; cap None = no cap (hair shown)
     "leader": ((40, 40, 48), (208, 168, 64), (40, 40, 48), (40, 40, 48)),
     "guard": ((64, 80, 136), (64, 80, 136), (48, 56, 96), (72, 48, 32)),
     "villager": (None, (120, 168, 120), (104, 88, 72), (120, 80, 48)),
-    # Team Rift: black and violet with a red R-stripe cap
+    # Team Rocket (drawn-art fallback)
     "grunt": ((48, 40, 64), (64, 56, 88), (40, 36, 52), (40, 36, 52)),
     "admin": (None, (120, 56, 152), (48, 40, 64), (200, 64, 96)),
     "boss": (None, (32, 28, 40), (32, 28, 40), (232, 232, 240)),

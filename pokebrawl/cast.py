@@ -20,11 +20,11 @@ CAST = {
     "rival_late": ("blue", "rival_late", ((240, 300, 22, 1.1, 1.05),)),
     # Prof. Hazel: navy trousers
     "prof": ("prof_oak", "professor_oak", ((0, 60, 215, 1.0, 0.8),)),
-    # Team Rift: black uniforms with a violet R; Admin Morga; Boss Vex in a violet suit
-    "grunt": ("rocket_m", "rocket_grunt_m", ((330, 30, 282, 1.0, 1.0),)),
-    "grunt_f": ("rocket_f", "rocket_grunt_f", ((330, 30, 282, 1.0, 1.0),)),
-    "admin": ("rocket_f", "rocket_grunt_f", ((330, 30, 300, 1.0, 1.0), (180, 260, 330, 1.0, 1.0))),
-    "boss": ("giovanni", "leader_giovanni", ((15, 60, 275, 1.0, 0.65), (330, 15, 290, 1.0, 1.0))),
+    # Team Rocket, exactly as they are: grunts, Admin Morga and Boss Vex
+    "grunt": ("rocket_m", "rocket_grunt_m", ()),
+    "grunt_f": ("rocket_f", "rocket_grunt_f", ()),
+    "admin": ("rocket_f", "rocket_grunt_f", ()),
+    "boss": ("giovanni", "leader_giovanni", ()),
     # the eight Gym Leaders, each in their type's colours
     "leader0": ("sabrina", "leader_sabrina", _all(28, 0.9, 0.95)),        # Petra, rock
     "leader1": ("misty", "leader_misty", ((5, 50, 328, 1.0, 1.0),)),      # Coral, water: pink hair
