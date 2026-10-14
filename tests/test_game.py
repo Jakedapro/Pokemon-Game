@@ -178,3 +178,66 @@ def test_adventure_world_and_progress(dex, tmp_path, monkeypatch):
     assert A.add_caught(g, dex, r["caught"]) == "party"
     A.save(g)
     assert A.load()["party"][1]["species"] == foe["species"]
+
+
+def test_ranked_rating(tmp_path, monkeypatch):
+    from pokebrawl import profile
+    monkeypatch.setattr(profile, "PROFILE_FILE", str(tmp_path / "profile.json"))
+    monkeypatch.setattr(profile, "HOME", str(tmp_path))
+    me = profile.my_rating()
+    assert me["mmr"] == 1000 and me["games"] == 0 and me["id"] == profile.my_rating()["id"]   # id is kept
+    assert profile.mmr_rank(1000, 0)["placing"]
+    up = profile.record_ranked("Rival", {"mmr": 1400}, True)    # beating a stronger player is worth a lot
+    down = profile.record_ranked("Newbie", {"mmr": 700}, False)  # losing to a weaker one costs a lot
+    assert up["delta"] > 30 and down["delta"] < -30
+    for _ in range(5):
+        out = profile.record_ranked("Friend", {"mmr": 1000}, True)
+    assert not out["rank"].get("placing") and out["games"] == 7
+    assert profile.mmr_rank(1700, 50)["name"] == "Champion"
+    assert profile.mmr_rank(1260, 50)["label"].startswith("Ultra Ball")
+
+
+def test_story_every_area_every_stage(dex):
+    from pokebrawl import adventure as A, story as S
+    w = A.World(dex)
+    rng = random.Random(5)
+    g = A.new_game("RED", 6, dex)
+    g["party"] = [A.make_mon(dex, dex.get("charizard"), 60, rng)]
+    g["starter"] = 6
+    stages = [[], ["rival1", "keystone", "rival2", "morga_offer", "admin", "vex1"],
+              ["vex1", "rival_dark", "rival3", "vex2", "first_rift"], ["first_rift", "rift_zero", "origin_quest"]]
+    for flags in stages:
+        g["flags"] = list(flags)
+        g["champion"] = "first_rift" in flags
+        g["keystone"] = bool(flags)
+        for i, area in enumerate(w.areas):
+            rows = area["rows"]
+            spots = set()
+            for n in S.npcs_for(w, i, g):
+                x, y = n["x"], n["y"]
+                if isinstance(x, int) and isinstance(y, int):
+                    assert rows[y][x] in '.,"=_', (area.get("name"), n["id"])   # nobody stands in a wall
+                    assert (x, y) not in spots, (area.get("name"), n["id"])
+                    spots.add((x, y))
+            if area.get("route"):
+                S.hidden_items(w, i)   # every route has its hidden item (19 routes)
+    for key in ("rival_dark", "elias", "vex2"):
+        team, trainer = S.battle_team(w, g, key)
+        assert team and trainer["name"]
+    assert S.battle_team(w, g, "vex2")[0][-1].get("corrupt")
+
+
+def test_spritekit_and_mega_recipes():
+    from pokebrawl import megas, riftdex, spritekit as K
+    img = K.Img(8, 8)
+    for x, y in K.rect(2, 2, 4, 4):
+        img.set(x, y, (200, 50, 50))
+    big = K.scale2x(img)
+    assert big.w == 16 and len(big.points()) == 60   # Scale2x rounds the square's 4 corners off
+    img.outline()
+    assert img.get(1, 3) is not None and K.is_dark(img.get(1, 3))
+    fire = K.flame(K.Img(32, 32), [(16, 30), (16, 16), (18, 4)], 4, [(40, 72, 208), (72, 144, 248),
+                                                                     (150, 214, 255), (240, 252, 255)], (16, 24, 88))
+    assert len(fire.colors()) == 5
+    keys = {m[0] for m in riftdex.CUSTOM_MEGAS}
+    assert set(megas.RECIPES) == keys == set(megas.NEEDS)   # every new Mega has a recipe

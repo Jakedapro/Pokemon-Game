@@ -1027,8 +1027,10 @@ def hidden_items(world, area_index):
     if not spots:
         return []
     x, y = rng.choice(spots)
-    item = ["rare-candy", "ultra-ball", "max-revive", "rare-candy", "full-restore", "rare-candy", "max-potion",
-            "rare-candy", "master-ball"][route - 1]
+    items = ["rare-candy", "ultra-ball", "max-revive", "rare-candy", "full-restore", "rare-candy", "max-potion",
+             "rare-candy", "ultra-ball", "max-revive", "rare-candy", "full-restore", "max-potion", "rare-candy",
+             "max-revive", "full-restore", "rare-candy", "max-potion", "master-ball"]   # one per route, 19 routes
+    item = items[min(route, len(items)) - 1]
     return [{"id": f"hidden{route}", "x": x, "y": y, "item": item}]
 
 
