@@ -2,6 +2,7 @@
 Box, bag, Poke Mart, Pokedex, trainer card, evolution and the Hall of Fame.
 Controls: arrows move, Z/Enter = A, X/Esc = B. The mouse works too."""
 import math
+import random
 
 import pygame
 
@@ -1384,3 +1385,68 @@ class HallOfFame(GBAScene):
             surf.blit(img, img.get_rect(midbottom=(x, y + int((1 - k) * 20))))
             F.draw(surf, f"{A.name_of(self.app.dex, m).upper()} Lv{m['level']}", (x, y + 8), U.WHITE, (96, 64, 24),
                    scale=1, anchor="center")
+
+
+class Credits(GBAScene):
+    """The true ending's credits: the cast of the story scrolls up while your team walks along the bottom."""
+    ROLL = [("THE FIRST RIFT", None), ("", None),
+            ("PROFESSOR HAZEL", "prof"), ("who never stopped looking", None), ("", None),
+            ("BLAKE", "rival"), ("who found his way back", None), ("", None),
+            ("DR. ELIAS", "elias"), ("ten years in a rift, home at last", None), ("", None),
+            ("AURELIA", "champ"), ("who kept the title warm", None), ("", None),
+            ("GIOVANNI", "boss"), ("who opened the wounds", None), ("", None),
+            ("ADMIN MORGA", "admin"), ("who made the offer", None), ("", None),
+            ("THE ELITE FOUR", None), ("Frost - Brutus - Morrow - Drakon", None), ("", None),
+            ("18 GYM LEADERS", None), ("Petra - Hive - Coral - Patty - Zappa - Skye", None),
+            ("Fern - Knox - Nox - Pixie - Sage - Wren", None), ("Blaze - Ferris - Nieve - Raven - Terra - Draco", None),
+            ("", None), ("ARCEUS", None), ("who decided the world was worth keeping", None), ("", None), ("", None),
+            ("and YOU", None), ("", None), ("", None), ("THE END", None), ("", None), ("Thanks for playing PokeBrawl", None)]
+
+    def __init__(self, app, game):
+        super().__init__(app)
+        self.game = game
+        self.t = 0.0
+
+    def update(self, dt):
+        self.t += dt
+        AUDIO.music("showcase")
+
+    def handle(self, ev, pos):
+        if (U.is_a(ev) or U.is_b(ev)) and self.t > 3:
+            if self._done():
+                self.app.pop()
+            else:
+                self.t += 6   # skip ahead
+
+    def _done(self):
+        return self.t * 22 > len(self.ROLL) * 26 + 260
+
+    def draw(self, surf):
+        t = self.t
+        surf.fill((8, 6, 20))
+        rng = random.Random(7)
+        for _ in range(60):   # a slow starfield
+            x, y = rng.randrange(480), rng.randrange(320)
+            sp = rng.uniform(4, 16)
+            yy = int((y - t * sp) % 320)
+            surf.fill((200, 200, 255) if sp > 12 else (110, 110, 170), (x, yy, 2 if sp > 12 else 1, 2 if sp > 12 else 1))
+        off = 300 - t * 22
+        for i, (line, look) in enumerate(self.ROLL):
+            y = off + i * 26
+            if y < -40 or y > 300 or not line:
+                continue
+            big = line.isupper()
+            end = line == "THE END"
+            F.draw(surf, line, (240 + (14 if look else 0), int(y)), (248, 216, 64) if (big and not end) else U.WHITE,
+                   (60, 40, 16), scale=4 if end else 2 if big else 1, anchor="center")
+            if look:
+                img = G.person(look, "down")
+                surf.blit(img, img.get_rect(midright=(240 - F.width(line, 2) // 2 - 4, int(y))))
+        # your team walks along the bottom
+        for i, m in enumerate(self.game["party"]):
+            img = G.battle_sprite(m["species"], shiny=m.get("shiny", False), max_h=56)
+            img = pygame.transform.scale_by(img, 0.45)
+            x = (t * 40 + i * 70) % 640 - 80
+            surf.blit(img, img.get_rect(midbottom=(int(x), 318 - int(abs(math.sin(t * 6 + i)) * 4))))
+        if self._done():
+            F.draw(surf, "Press A", (240, 300), U.WHITE, (60, 40, 16), anchor="center")

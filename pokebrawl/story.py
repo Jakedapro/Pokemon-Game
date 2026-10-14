@@ -581,7 +581,7 @@ def npcs_for(world, index, game):
                 ("say", "Prof. Hazel", [f"{game['name']}... I gave you a Pokemon and asked you to fill a Pokedex.",
                                         "You brought my family home and saved the world.",
                                         "I think that counts as completing your research."]),
-                ("give", "master-ball", 3), ("flag", "arceus"), ("flag", "true_ending")])
+                ("give", "master-ball", 3), ("flag", "arceus"), ("flag", "true_ending"), ("credits",)])
     if route == 2:
         add(id="mew", kind="static", pokemon="mew", level=50, x=1, y=4, **{"if": ["champion", "!mew"]},
             script=[("say", "", ["There's something hiding behind the trees... It's giggling!"]),

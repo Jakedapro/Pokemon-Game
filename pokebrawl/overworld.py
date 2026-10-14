@@ -735,6 +735,11 @@ class OverworldScene(Scene):
                                          "turns": 99, "boss": True}, then=self._step)
         elif op == "tower":
             self._tower()
+        elif op == "credits":
+            from .adventure_ui import Credits
+            A.save(g)
+            self.app.push(Credits(self.app, g))
+            self._step()
         elif op == "pay":
             if g["money"] < st[1]:
                 self.script = None
