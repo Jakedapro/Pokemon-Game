@@ -8,6 +8,7 @@ original map files.
 
 Everything returns None when the files aren't available, and the overworld falls back to its own drawn art.
 """
+import os
 import random
 from collections import deque
 
@@ -123,10 +124,16 @@ def needed_files():
 
 
 def warm():
-    """Downloads everything (call in a background thread)."""
+    """Downloads everything (call in a background thread). Marks the download complete once the essentials -
+    the map tiles, buildings, rooms, battle screen and font - are all there."""
     frlg.prefetch(["data/layouts/layouts.json"])
     from . import battlegfx
-    frlg.prefetch(needed_files() + battlegfx.files() + EXTRA_FILES)
+    files = needed_files() + battlegfx.files() + EXTRA_FILES
+    frlg.prefetch(files)
+    essential = [f for f in files if f.startswith(("data/", "graphics/battle", "graphics/text_window",
+                                                 "graphics/fonts", "src/"))]
+    if files and all(os.path.exists(frlg.local(f)) for f in essential):
+        frlg.mark_complete()
 
 
 EXTRA_FILES = []    # battle graphics etc. register themselves here

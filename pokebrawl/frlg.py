@@ -58,20 +58,63 @@ def fetch(path, timeout=8):
         return None
 
 
+PROGRESS = [0, 0]   # files done, files to get (for the title screen's progress bar)
+MARKER = os.path.join(DIR, "complete.json")
+FILESET = 1         # bump when an update needs more files: everyone downloads just the new ones, once
+
+
 def prefetch(paths, workers=8):
     """Downloads many files at once (used when Adventure starts). Returns how many are available."""
-    todo = [p for p in paths if not os.path.exists(local(p))]
+    todo = [p for p in paths if not os.path.exists(local(p)) and p not in _failed]
     if todo and not OFFLINE:
+        PROGRESS[0], PROGRESS[1] = 0, len(todo)
+
+        def one(p):
+            fetch(p)
+            PROGRESS[0] += 1
         with ThreadPoolExecutor(workers) as ex:
-            list(ex.map(fetch, todo))
+            list(ex.map(one, todo))
     return sum(os.path.exists(local(p)) for p in paths)
 
 
+def complete():
+    """True once everything has been downloaded (then the game never needs the internet for it again)."""
+    try:
+        import json
+        with open(MARKER) as f:
+            m = json.load(f)
+        return m.get("fileset") == FILESET and m.get("commit") == COMMIT
+    except Exception:
+        return False
+
+
+def mark_complete():
+    import json
+    os.makedirs(DIR, exist_ok=True)
+    with open(MARKER, "w") as f:
+        json.dump({"fileset": FILESET, "commit": COMMIT, "missing": sorted(_failed)}, f)
+
+
+def _known_missing():
+    """Files the decomp doesn't have (remembered, so they're never asked for again)."""
+    try:
+        import json
+        with open(MARKER) as f:
+            return set(json.load(f).get("missing", []))
+    except Exception:
+        return set()
+
+
 def start(job):
-    """Runs job (which downloads files) once, in the background. is_ready() turns True when it's done."""
+    """Runs job (which downloads files) once, in the background. is_ready() turns True when it's done.
+    After one complete download the files are all on disk: it's ready at once and nothing is downloaded."""
     if _started:
         return
     _started.append(True)
+    if complete():
+        _failed.update(_known_missing())
+        _ready.set()
+        return
 
     def run():
         try:
@@ -80,6 +123,16 @@ def start(job):
             pass
         _ready.set()
     threading.Thread(target=run, daemon=True).start()
+
+
+def retry(job):
+    """After a failed download: forget what failed and try again."""
+    _started.clear()
+    _ready.clear()
+    _failed.clear()
+    _cache.clear()
+    _sets.clear()
+    start(job)
 
 
 def is_ready():

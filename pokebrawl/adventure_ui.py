@@ -65,7 +65,24 @@ class AdventureTitle(GBAScene):
         self.t += dt
         AUDIO.music("town")
 
+    @staticmethod
+    def _graphics():
+        """'ready', 'loading' or 'failed': Adventure only starts once the FireRed graphics are all there."""
+        from . import fieldmap, frlg
+        if not frlg.is_ready():
+            return "loading"
+        return "ready" if fieldmap.available() else "failed"
+
     def handle(self, ev, pos):
+        state = self._graphics()
+        if state != "ready":
+            if state == "failed" and U.is_a(ev):   # try the download again
+                from . import fieldmap, frlg
+                frlg.retry(fieldmap.warm)
+                AUDIO.play("select")
+            elif U.is_b(ev):
+                self.app.pop()
+            return
         if self.stage == "press":
             if U.is_a(ev):
                 self.stage = "menu"
@@ -105,13 +122,26 @@ class AdventureTitle(GBAScene):
         F.draw(surf, "POKeBRAWL", (34, 40), (248, 216, 64), (120, 56, 32), scale=5)
         F.draw(surf, "ADVENTURE", (40, 92), U.WHITE, (48, 64, 120), scale=3)
         F.draw(surf, "The Brawl Region", (42, 124), (232, 240, 248), (48, 64, 120))
-        from . import fieldmap, frlg
-        if not frlg.is_ready():
-            F.draw(surf, "Downloading FireRed graphics" + "." * (int(t * 3) % 4), (8, VH - 16), U.WHITE,
-                   (48, 48, 64), scale=1)
-        elif not fieldmap.available():
-            F.draw(surf, "Couldn't download the FireRed graphics - check your internet and reopen the game.",
-                   (8, VH - 16), (255, 200, 120), (48, 48, 64), scale=1)
+        state = self._graphics()
+        if state != "ready":   # the one-time download: nothing starts until it's done
+            from . import frlg
+            box = U.box(surf, (40, 214, VW - 80, 92))
+            if state == "loading":
+                done, total = frlg.PROGRESS
+                F.draw(surf, "Downloading the FireRed graphics" + "." * (int(t * 3) % 4), (box.x + 8, box.y + 4),
+                       U.TEXT, U.SHADOW)
+                bar = pygame.Rect(box.x + 8, box.y + 36, box.w - 16, 12)
+                pygame.draw.rect(surf, (64, 72, 88), bar, border_radius=4)
+                k = done / total if total else 0.05 + 0.05 * math.sin(t * 3)
+                pygame.draw.rect(surf, (88, 200, 120), (bar.x + 2, bar.y + 2, int((bar.w - 4) * k), bar.h - 4),
+                                 border_radius=3)
+                F.draw(surf, "Only the first time - after this it works offline.", (box.x + 8, box.y + 54),
+                       (120, 120, 136), None, scale=1)
+            else:
+                F.draw(surf, "Couldn't download the graphics.", (box.x + 8, box.y + 4), (200, 64, 48), U.SHADOW)
+                F.draw(surf, "Check your internet, then press Z to try again.", (box.x + 8, box.y + 36), U.TEXT,
+                       None, scale=1)
+            return
         if self.stage == "press":
             if int(t * 2) % 2 == 0:
                 F.draw(surf, "PRESS Z / ENTER", (VW // 2, 288), U.WHITE, (48, 48, 64), anchor="center")
