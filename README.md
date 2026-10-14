@@ -227,13 +227,19 @@ back to its own drawn art.
   Experience is given right after each knockout, with level-ups and new moves mid-battle, and evolutions after.
 - **Catching:** throw Poke Balls from the BAG - the ball wobbles and clicks shut, or the Pokemon breaks free.
   Rare legendaries hide on the later routes (they also go into your Legend collection). Shinies are 1 in 512.
-- **Story:** your rival Blake, Team Rocket (grunts, Admin Morga and Boss Giovanni) stealing Mega Stones, and
-  Prof. Hazel's Key Stone after your second badge.
+- **Story - "The First Rift":** ten years ago Prof. Hazel's son, Dr. Elias, vanished into a rift at the Rootleaf
+  pond. Team Rocket stole his notes and built the Rift Engine, which tears Mega Rifts open all over the region to
+  harvest Mega Stones. Your rival Blake - Elias's son - will do anything to find his dad, even take a corrupted
+  stone from Admin Morga... Stop Giovanni on Victory Road, win the World Tournament, then go into the First Rift
+  and bring Elias home. After that, something ancient waits at the summit of Victory Road: the true ending.
 - **Mega Stones:** gym leaders give one with each badge, story fights and quests give more, and some sparkle on the
   routes. With the Key Stone, press **M** in the move menu to Mega Evolve. The BAG has a Mega Stone case.
-- **Side quests:** a lost lucky charm, a letter to deliver, a lost Psyduck, Pokedex goals, a route clean sweep and
-  more. **QUESTS** in the START menu shows your next story goal and every quest.
-- **Secrets:** a few hidden things to find (there's a counter in the quest log). Hidden items too: check the ground.
+- **Side quests (15):** a lost lucky charm, a letter to deliver, a lost Psyduck, Pokedex goals, a route clean
+  sweep, a Bug Maniac, a Rift Watcher, raising a Lv 50 Pokemon, showing off a shiny, a 100-kind Pokedex, hunting
+  a brand-new Mega Stone, and an old miner who can purify a corrupted stone. **QUESTS** in the START menu shows your next story goal and every quest.
+- **Secrets (19):** legendary encounters after the credits, a Magikarp salesman, a girl in Duskmoor who isn't
+  quite there, something for trainers with a famous name, and more (there's a counter in the quest log). Every
+  town has people with something to say. Hidden items too: check the ground.
 - **The World Tournament:** with all 18 badges, enter the League and face the Elite Four back to back with no
   healing, then World Champion Aurelia in the Grand Final. Win to become the best trainer in the world.
 - **Trainers** spot you and walk over. **Gym leaders** give badges, and the road north stays closed until you

@@ -31,6 +31,7 @@ class AdventureSession:
         for fm, f in zip(foe_members, foes):   # story bosses and the Elite Four can Mega Evolve too
             if f.get("mega"):
                 fm.item, fm.mega = "mega-stone", f["mega"]
+                fm.corrupted = bool(f.get("corrupt"))   # a corrupted stone: huge power, eats away at it
         rift = None
         if self.trainer.get("rift"):   # inside a Mega Rift: a countdown, an anomaly, a raging Mega
             from . import riftdex as R

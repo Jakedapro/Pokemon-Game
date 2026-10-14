@@ -668,6 +668,7 @@ class OverworldScene(Scene):
                   ("say", S.RIVAL, ["Okay! I'll make my Pokemon fight to toughen it up!",
                                     f"{g['name']}! Gramps! Smell you later! See you at the World Tournament!"]),
                   ("flag", "rival1"), ("heal",),
+                  ("say", "Prof. Hazel", ["...That boy. He's so much like his father it hurts sometimes."]),
                   ("say", "Prof. Hazel", [f"{g['name']}, take these for your journey.",
                                           "Poke Balls catch wild Pokemon, and Potions heal them."]),
                   ("give", "poke-ball", 5), ("give", "potion", 3),
@@ -725,6 +726,35 @@ class OverworldScene(Scene):
             self._battle([foe], "wild", {"rift": True, "ai": "insane", "name": f"Wild {form['name']}",
                                          "anomaly": self.rng.choice(sorted(ANOMALIES)), "echo": npc.get("echo"),
                                          "route": self.cur.get("route")}, then=self._step)
+        elif op == "riftboss":   # a raging legendary inside a rift that won't collapse (the finale)
+            _, key, level, anomaly = st
+            e = dex.get(key)
+            foe = A.make_mon(dex, dex.all[e["species"]] if e.get("species") else e, level, self.rng, shiny=False)
+            foe["species"] = e["id"]
+            self._battle([foe], "wild", {"rift": True, "ai": "insane", "name": e["name"], "anomaly": anomaly,
+                                         "turns": 99, "boss": True}, then=self._step)
+        elif op == "pay":
+            if g["money"] < st[1]:
+                self.script = None
+                self.say([f"You need {st[1]} coins. You have {g['money']}."])
+                return
+            g["money"] -= st[1]
+            AUDIO.play("buy", 0.6)
+            self._step()
+        elif op == "purify":
+            bad = g.get("corrupted", [])
+            if not bad:
+                self._step()
+                return
+            key = bad.pop(0)
+            stones = g.setdefault("megastones", [])
+            if key not in stones:
+                stones.append(key)
+            if key in g.get("corrupt_on", []):
+                g["corrupt_on"].remove(key)
+            AUDIO.play("heal")
+            self.say([f"The {S.stone_name(dex, key).upper()} is clean again!", "Its light is calm and warm."],
+                     self._step)
         elif op == "wild":
             _, species, level, shiny = st
             e = dex.get(species)
@@ -787,11 +817,15 @@ class OverworldScene(Scene):
         steps += [("say", "Host", ["The Elite Four has fallen! The crowd is on its feet!",
                                    f"Ladies and gentlemen... the GRAND FINAL! The {S.CHAMP[1].upper()},",
                                    f"{S.CHAMP[0].upper()}!"]),
-                  ("say", S.CHAMP[0], ["So you're the one everyone's talking about.",
-                                       "I've held this title for ten years. Show me everything you have!"]),
+                  ("say", S.CHAMP[0], ["So you're the one everyone's talking about. The one who beat Team Rocket.",
+                                       "I've held this title for ten years - ever since my greatest rival vanished.",
+                                       "His name was Elias. You battle the way he did. Like the world depends on it.",
+                                       "Show me everything you have!"]),
                   ("battle", "final"),
                   ("say", "Host", [f"IT'S OVER! {self.game['name'].upper()} IS THE NEW WORLD CHAMPION!",
                                    "The best Pokemon trainer in the world!"]),
+                  ("say", S.CHAMP[0], ["Elias would have loved this battle.",
+                                       "...They say the pond in Rootleaf is glowing again. Go. Bring him home."]),
                   ("crowned",)]
         return steps
 

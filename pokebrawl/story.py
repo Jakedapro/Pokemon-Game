@@ -1,10 +1,24 @@
 """Adventure mode's story, side quests, Mega Stones and secrets.
 
-The plot: Professor Hazel gives you your first Pokemon. Your rival Blake picks the one that beats yours. Team Rocket
-is stealing Mega Stones across the Brawl region to power their machine and rig the Pokemon World Tournament.
-Hazel gives you a Key Stone so your Pokemon can Mega Evolve - collect the stones (gym leaders, hidden spots,
-side quests, stones won back from Team Rocket), stop Team Rocket's boss Giovanni on Victory Road, then win the World
-Tournament: the Elite Four back to back and the Grand Final against the World Champion.
+THE PLOT - "The First Rift"
+Ten years ago Professor Hazel's son, Dr. Elias, was studying Mega energy at the Rootleaf pond. One night the pond
+glowed purple, a rift opened - the FIRST Mega Rift - and Elias and his partner Pokemon were swallowed by it.
+Hazel never spoke of it again. Her grandson Blake (your rival) grew up wanting to be strong enough to find him.
+
+Team Rocket stole Elias's notes and built the RIFT ENGINE: a machine that tears rifts open all over the Brawl region
+to force Pokemon to Mega Evolve and harvest their Mega Stones. Boss Giovanni wants enough stones to power the Engine
+all the way - to rip the First Rift open and take the power at its heart - and to rig the World Tournament.
+
+Hazel gives you the Key Stone. You seal rifts, earn badges and stones, and keep running into Team Rocket. Admin Morga
+tempts Blake with a CORRUPTED Mega Stone ("Team Rocket can open the First Rift. Your father is inside."); Blake
+takes it, and in Duskmoor his Mega nearly destroys itself fighting you. He throws the stone away, and from then on
+he's on your side. Giovanni makes his last stand on Victory Road with a corrupted Mega Garchomp; when he loses, the
+Rift Engine overloads and the First Rift tears open in Rootleaf.
+
+You win the World Tournament - and the Champion, Aurelia, turns out to be Elias's old rival. As the new Champion you
+go into the First Rift, calm the Mega Mewtwo raging inside, and bring Elias home. He tells you what he saw in there:
+the rifts are cracks in creation itself, and something ancient at the summit of Victory Road has been watching.
+The true ending: the Origin - the guardian of the rifts, then Arceus itself.
 
 Everything here is data: NPCs with a 'script' (a list of steps run by the overworld), quests and secrets.
 Script steps:
@@ -15,7 +29,11 @@ Script steps:
   ("mega", stone_key)                  a Mega Stone
   ("keystone",)                        the Key Stone (Mega Evolution unlocked)
   ("money", n) / ("heal",)
+  ("pay", n)                           pay coins (the script stops if you can't)
+  ("purify",)                          turn a corrupted Mega Stone back into a clean one
   ("wild", species, level, shiny)      a one-off wild encounter (the Snorlax, the red Gyarados...)
+  ("gift", species id, level)          a Pokemon joins you
+  ("riftboss", key, level, anomaly)    a raging legendary inside a rift that doesn't collapse (the finale)
   ("tournament",)                      the World Tournament (Elite Four + Grand Final)
 """
 import random
@@ -23,6 +41,7 @@ import random
 from . import adventure as A
 
 RIVAL = "Blake"
+ELIAS = "Dr. Elias"
 BOSS = "Giovanni"
 ADMIN = "Morga"
 E4 = [  # (name, type, title, intro, lose, ace level)
@@ -69,6 +88,20 @@ def check(game, dex, cond):
         return game["bag"].get(cond[5:], 0) > 0
     if cond == "champion":
         return bool(game.get("champion"))
+    if cond == "shinyparty":
+        return any(m.get("shiny") for m in game["party"])
+    if cond.startswith("partylevel>="):
+        return any(m["level"] >= int(cond[12:]) for m in game["party"])
+    if cond.startswith("corrupted>="):
+        return len(game.get("corrupted", [])) >= int(cond[11:])
+    if cond.startswith("rifts>="):
+        return rifts_sealed(game) >= int(cond[7:])
+    if cond.startswith("customstone>="):
+        from .riftdex import custom_stones
+        mine = set(game.get("megastones", []))
+        return sum(1 for k, _, _ in custom_stones(dex) if k in mine) >= int(cond[13:])
+    if cond.startswith("name:"):
+        return game.get("name", "").upper() in cond[5:].split(",")
     return has(game, cond)
 
 
@@ -190,6 +223,27 @@ def battle_team(world, game, key):
     if key == "rival2":
         return rival_team(world, game, 20, 3), {"name": RIVAL, "look": "rival", "money": 2100, "ai": "normal",
                                                "lose": "Tch. You got lucky. Next time I'll crush you!"}
+    if key == "rival_dark":   # Blake with the corrupted stone Team Rocket gave him
+        team = rival_team(world, game, 47, 5)
+        ace = team[-1]
+        megas = dex.all[A.grown_species(dex, dex.all[ace["species"]], 100)["id"]].get("megas", [])
+        if megas:
+            ace["species"] = A.grown_species(dex, dex.all[ace["species"]], 100)["id"]
+            ace["mega"], ace["corrupt"] = megas[0], True
+        return team, {"name": RIVAL, "look": "rival", "money": 5000, "ai": "hard",
+                      "lose": "Stop... STOP! It's hurting itself! Make it stop!"}
+    if key == "elias":   # the post-game: Elias and the Megas the rift showed him
+        team = []
+        for nm, form in (("snorlax", "snorlax-mega"), ("arcanine", "arcanine-mega"), ("typhlosion", "typhlosion-mega"),
+                         ("lapras", "lapras-mega"), ("flygon", "flygon-mega"), ("togekiss", "togekiss-mega")):
+            e, f = dex.get(nm), dex.get(form)
+            if e:
+                mon = A.make_mon(dex, e, 76, rng, shiny=False)
+                if f:
+                    mon["mega"] = f["id"]
+                team.append(mon)
+        return team, {"name": ELIAS, "look": "elias", "money": 20000, "ai": "insane",
+                      "lose": "Ha! Ten years in a rift and I still can't beat a Champion. Well fought."}
     if key == "rival3":
         return rival_team(world, game, 60, 6), {"name": RIVAL, "look": "rival", "money": 7800, "ai": "hard",
                                                "lose": "...You're really strong. Win that tournament for both of us."}
@@ -209,9 +263,9 @@ def battle_team(world, game, key):
     if key == "vex2":
         team = world.team_for(["dark", "dragon", "steel"], 64, 5, rng, strong=True)
         ace = A.make_mon(dex, dex.get("garchomp"), 66, rng, shiny=False)
-        ace["mega"] = dex.get("garchomp")["megas"][0]
+        ace["mega"], ace["corrupt"] = dex.get("garchomp")["megas"][0], True   # the last stone, corrupted
         return team + [ace], {"name": f"Rocket Boss {BOSS}", "look": "boss", "money": 10000, "ai": "insane",
-                              "lose": "Impossible... The machine... my plan..."}
+                              "lose": "Impossible... The Engine... it's overloading!"}
     if key.startswith("e4_"):
         k = int(key[3:])
         name, typ, title, intro, lose, lv = E4[k]
@@ -255,6 +309,7 @@ def npcs_for(world, index, game):
     real_route = area.get("route")
     town = inv.get(area.get("town")) if area.get("kind") == "town" else None
     route = inv.get(real_route)
+    rtown = area.get("town") if area.get("kind") == "town" else None
 
     def add(**n):
         n.setdefault("face", "down")
@@ -265,10 +320,46 @@ def npcs_for(world, index, game):
         add(id="rival_home", kind="story", look="rival", x=7, y=12, face="down", sight=3, name=RIVAL, auto=True,
             **{"if": "!rival1"}, script=[
                 ("say", RIVAL, ["Hey! Gramps - I mean, Prof. Hazel - gave you a Pokemon too?",
-                                "Then you're battling me. Right now!"]),
+                                "Then you're battling me. Right now! I need to get strong. FAST."]),
                 ("battle", "rival1"),
-                ("say", RIVAL, ["Hmph. I'll train way harder than you. See you at the World Tournament!"]),
+                ("say", RIVAL, ["Hmph. I'll train way harder than you.",
+                                "...Someday I'm going to find out what happened to my dad. See you at the Tournament!"]),
                 ("flag", "rival1")])
+        add(id="pond_elder", kind="talk", look="villager", x=5, y=21, face="left", name="Old Man",
+            **{"if": ["!first_rift", "!rift_zero"]},
+            lines=["Ten years ago this pond glowed purple for a whole night.",
+                   "Prof. Hazel's boy, Elias, was studying it. By morning he was gone. His Pokemon too.",
+                   "Hazel never talks about it. Blake was only little... he still comes and stares at the water."])
+        add(id="pond_elder2", kind="talk", look="villager", x=5, y=21, face="left", name="Old Man",
+            **{"if": ["first_rift", "!rift_zero"]},
+            lines=["The pond! It's glowing again, just like ten years ago!",
+                   "That's no ordinary rift. Only a Champion should go near it..."])
+        add(id="pond_elder3", kind="talk", look="villager", x=5, y=21, face="left", name="Old Man",
+            **{"if": "rift_zero"},
+            lines=["Elias is home. Ten years, and he walked out of that pond like he'd popped out for milk.",
+                   "Hazel cried for an hour. Then she made him do the dishes."])
+        add(id="elias_home", kind="story", look="elias", x=11, y=8, face="down", name=ELIAS,
+            **{"if": ["rift_zero", "!elias_beaten"]}, script=[
+                ("say", ELIAS, [f"{game['name']}. I owe you my life - and my family.",
+                                "Inside the rift, time doesn't move. I saw Mega Evolutions no one has ever seen:",
+                                "Snorlax standing tall, Arcanine burning blue, Togekiss crowned with light...",
+                                "Their stones are scattered under the routes. Your Mega Radar can find them.",
+                                "But first - let a scientist see the trainer who sealed nineteen rifts. Battle me!"]),
+                ("battle", "elias"),
+                ("say", ELIAS, ["...Mother was right about you.",
+                                "Listen. The rifts weren't only Giovanni's doing. His Engine just widened cracks",
+                                "that were already there. Cracks in creation itself.",
+                                "Inside the First Rift I felt something vast watching me. Patient. Ancient.",
+                                "It's waiting at the summit of Victory Road. I think it's waiting for YOU."]),
+                ("flag", "elias_beaten"), ("flag", "origin_quest")])
+        add(id="elias_after", kind="talk", look="elias", x=11, y=8, face="down", name=ELIAS,
+            **{"if": ["elias_beaten", "!arceus"]},
+            lines=["The summit of Victory Road. Whatever is up there... it built the world we live in.",
+                   "Bring your strongest team. And Full Restores. Lots of Full Restores."])
+        add(id="elias_end", kind="talk", look="elias", x=11, y=8, face="down", name=ELIAS,
+            **{"if": "arceus"},
+            lines=["You met Arceus. You actually met Arceus.",
+                   "I'm rewriting ten years of research. Blake says I'm 'being a nerd about it'. He's right."])
         add(id="egg_sign_kid", kind="talk", look="Youngster", x=12, y=22, face="left",
             lines=["Did you know? If you talk to someone over and over, sometimes they get annoyed.",
                    "...Or they give you something. Try it!"])
@@ -285,7 +376,8 @@ def npcs_for(world, index, game):
     if town == 1:   # Pebblecrest: Team Rocket shows up
         add(id="grunt1", kind="story", look="grunt", x=11, y=13, face="up", name="Rocket Grunt", **{"if": "!grunt1"},
             script=[("say", "Rocket Grunt", ["Hey! This gym is closed! Team Rocket is searching it for Mega Stones!",
-                                           "...You want in? Then beat me!"]),
+                                           "The boss has a machine - built from some missing professor's notes -",
+                                           "and it eats Mega Stones for breakfast. ...You want in? Then beat me!"]),
                     ("battle", "grunt1"),
                     ("say", "Rocket Grunt", ["Ugh... Whatever! The boss will get every stone in the region anyway!"]),
                     ("flag", "grunt1")])
@@ -296,6 +388,10 @@ def npcs_for(world, index, game):
                 ("say", "Prof. Hazel", [f"{game['name']}! Two badges already? Wonderful!",
                                         "Listen. Team Rocket is tearing holes in the world - MEGA RIFTS.",
                                         "Any Pokemon caught in one is forced to Mega Evolve, and goes wild.",
+                                        "...I've seen one before. Ten years ago, at the pond in Rootleaf.",
+                                        "My son Elias was researching Mega energy there. Blake's father.",
+                                        "The rift took him, and his Pokemon. I've never found a trace.",
+                                        "Team Rocket's machine is built from HIS notes. I'd know them anywhere.",
                                         "When a Pokemon holds its Mega Stone and its trainer has a KEY STONE,",
                                         "it can MEGA EVOLVE in battle - by choice, as a partner.",
                                         "Take this Key Stone. With it you can see the rifts on every route.",
@@ -307,7 +403,9 @@ def npcs_for(world, index, game):
                                         "That MEGA RADAR picks up stones buried deep underground. Use it from your "
                                         "BAG on a route, follow the signal, and dig!",
                                         "Some buried stones are CORRUPTED. They give staggering power... "
-                                        "but they eat away at the Pokemon using them. Careful."])])
+                                        "but they eat away at the Pokemon using them. Careful.",
+                                        "And... keep an eye on Blake for me. He's chasing these rifts too.",
+                                        "I'm afraid of what he'd do to get his father back."])])
         add(id="hazel_key_wait", kind="talk", look="prof", x=4, y=7, name="Prof. Hazel", **{"if": "!badges>=2"},
             lines=["Oh, hello! Come and find me when you have two badges. I have something for you."])
         add(id="q_letter_man", kind="quest", quest="q_letter", look="Hiker", x=12, y=14, face="left")
@@ -316,8 +414,13 @@ def npcs_for(world, index, game):
     if route == 3:
         add(id="rival2", kind="story", look="rival", x=7, y=len(area["rows"]) // 2, face="down", sight=4, auto=True,
             name=RIVAL, **{"if": "!rival2"}, script=[
-                ("say", RIVAL, ["There you are! I've been training nonstop.", "Let's see who's stronger now!"]),
-                ("battle", "rival2"), ("flag", "rival2")])
+                ("say", RIVAL, ["There you are! I've been training nonstop.",
+                                "...Gramps told you, didn't she. About my dad.",
+                                "Don't look at me like that. If a rift took him, a rift can give him back.",
+                                "And I'll be strong enough to go in after him. Starting with beating YOU!"]),
+                ("battle", "rival2"),
+                ("say", RIVAL, ["Tch. Still not strong enough...", "Whatever. I'll find another way."]),
+                ("flag", "rival2")])
         add(id="red_gyarados", kind="static", pokemon="gyarados", level=30, shiny=True, x=_pond_edge(area), y=None,
             **{"if": "!red_gyarados"}, script=[("say", "", ["The water is churning... A huge red Pokemon leaps out!"]),
                                                ("wild", "gyarados", 30, True), ("flag", "red_gyarados")])
@@ -347,14 +450,28 @@ def npcs_for(world, index, game):
             **{"if": "!snorlax"}, script=[("say", "", ["A huge Pokemon is fast asleep in the middle of the road!",
                                                        "...It woke up! It looks angry!"]),
                                           ("wild", "snorlax", 30, False), ("flag", "snorlax")])
+    if rtown == 8:   # Brawlport: Morga makes Blake an offer
+        add(id="morga_offer", kind="story", look="admin", x=7, y=6, face="down", sight=4, auto=True,
+            name=f"Admin {ADMIN}", **{"if": ["badges>=7", "!morga_offer"]}, script=[
+                ("say", "", ["Down by the docks, a Rocket Admin is talking to someone in a dark jacket..."]),
+                ("say", f"Admin {ADMIN}", ["...a seat by the First Rift, the moment the Engine opens it.",
+                                            "All you have to do is use this. Think of what you'll find inside."]),
+                ("say", RIVAL, ["...Fine. Give it here."]),
+                ("say", f"Admin {ADMIN}", ["Smart boy. Oh look - your little friend. Too late, sweetie!",
+                                            "Come find me in Toxmire Town, if you dare."]),
+                ("say", "", ["Morga and Blake are gone before you can reach them..."]),
+                ("flag", "morga_offer")])
     if town == 5:   # Toxmire: Team Rocket's admin
         add(id="admin", kind="story", look="admin", x=7, y=9, face="down", sight=5, auto=True,
             name=f"Admin {ADMIN}", **{"if": "!admin"}, script=[
                 ("say", f"Admin {ADMIN}", ["So you're the brat who keeps beating our grunts.",
-                                            "These Mega Stones will power Boss Giovanni's machine.",
-                                            "With it, Team Rocket will control every battle at the World Tournament!"]),
+                                            "These Mega Stones will power Boss Giovanni's Rift Engine.",
+                                            "Oh, and your little friend Blake? He took my offer.",
+                                            "One corrupted stone, in exchange for a seat by the First Rift",
+                                            "when we open it. Family reunions are SO touching."]),
                 ("battle", "admin"),
-                ("say", f"Admin {ADMIN}", ["Grr... Here, take it! The boss has plenty more in Mindspire City!"]),
+                ("say", f"Admin {ADMIN}", ["Grr... Here, take it! The boss has plenty more in Mindspire City!",
+                                            "And Blake's gone to Duskmoor to try out his new toy. Hope he survives it!"]),
                 ("mega", QUEST_STONES["q_rift1"]), ("flag", "admin")])
     if route == 6:
         add(id="lost_psyduck", kind="static", pokemon="psyduck", level=0, x=_quiet_spot(area), y=None,
@@ -366,13 +483,33 @@ def npcs_for(world, index, game):
             **{"if": ["admin", "!vex1"]}, script=[
                 ("say", f"Boss {BOSS}", ["I am Giovanni, leader of Team Rocket.",
                                          "Mega Evolution is the ultimate power. Why should it belong to children?",
-                                         "My machine tears the world open. Every Pokemon in a rift Mega Evolves...",
-                                         "...and every stone it leaves behind comes to me.",
-                                         "At the World Tournament, no Mega Evolution will work... except mine."]),
+                                         "A foolish professor found the source of it ten years ago - and fell in.",
+                                         "His notes were very thorough. My Rift Engine tears the world open.",
+                                         "Every rift feeds it Mega Stones. With enough, it opens the FIRST rift,",
+                                         "and whatever power waits at its heart... will answer to me."]),
                 ("battle", "vex1"),
                 ("say", f"Boss {BOSS}", ["You are strong. Keep your stone. We will meet at Victory Road."]),
                 ("mega", QUEST_STONES["q_rift2"]), ("flag", "vex1")])
         add(id="q_psyduck_girl", kind="quest", quest="q_psyduck", look="Lass", x=12, y=14, face="left")
+    if rtown == 12:   # Duskmoor: Blake and the corrupted stone
+        add(id="rival_dark", kind="story", look="rival", x=7, y=14, face="down", sight=5, auto=True, name=RIVAL,
+            **{"if": ["vex1", "!rival_dark"]}, script=[
+                ("say", RIVAL, [f"{game['name']}. Don't try to stop me.",
+                                "Team Rocket is going to open the First Rift. Dad's in there. I KNOW he is.",
+                                "Look what Morga gave me - a corrupted Mega Stone. Feel that power!",
+                                "With this, nobody can stop me. Not even you!"]),
+                ("battle", "rival_dark"),
+                ("say", "", ["Blake's Pokemon collapses. Black energy crackles off it...",
+                             "Blake drops to his knees beside it."]),
+                ("say", RIVAL, ["No, no, no... I'm sorry. I'm so sorry, buddy.",
+                                "I was so busy chasing Dad, I didn't see what this thing was doing to you.",
+                                "...Dad would never have used something like this. Never."]),
+                ("say", "", ["Blake hurls the corrupted stone into the marsh. It sinks with a hiss.",
+                             "Slowly, his Pokemon opens its eyes."]),
+                ("say", RIVAL, [f"...Thanks, {game['name']}. You beat some sense into me.",
+                                "Team Rocket used me. I'm done with them - and I'm going to make them pay.",
+                                "Here. These are for you. Go win the stuff I can't."]),
+                ("give", "full-restore", 3), ("heal",), ("flag", "rival_dark")])
     if town == 7:
         add(id="q_dex30_sci", kind="quest", quest="q_dex30", look="prof", x=3, y=14, face="right", name="Scientist")
     if town == 8:
@@ -382,21 +519,52 @@ def npcs_for(world, index, game):
         add(id="rival3", kind="story", look="rival", x=7, y=6, face="down", sight=4, auto=True, name=RIVAL,
             **{"if": "!rival3"}, script=[
                 ("say", RIVAL, ["The World Tournament is right past Victory Road.",
-                                "Only one of us is going. Give it everything you've got!"]),
-                ("battle", "rival3"), ("flag", "rival3")])
+                                "No corrupted stones this time. No shortcuts. Just me and my team,",
+                                "the way it should've been all along. Give it everything you've got!"]),
+                ("battle", "rival3"),
+                ("say", RIVAL, ["...Yeah. You're better than me. I can live with that.",
+                                "Giovanni's waiting on Victory Road with the Rift Engine.",
+                                "I'll keep his grunts off your back. You take him down. Deal?"]),
+                ("heal",), ("flag", "rival3")])
     if route == 9:   # Victory Road
         add(id="vex2", kind="story", look="boss", x=7, y=8, face="down", sight=5, auto=True, name=f"Boss {BOSS}",
             **{"if": ["vex1", "!vex2"]}, script=[
-                ("say", f"Boss {BOSS}", ["You came. The machine is ready.",
-                                         "My Garchomp holds the last stone it needs. Watch true Mega power!"]),
+                ("say", f"Boss {BOSS}", ["You came. The Rift Engine is ready.",
+                                         "One stone left. A corrupted one - the most powerful stone in the world.",
+                                         "My Garchomp will wear it, and the First Rift will open for ME."]),
                 ("battle", "vex2"),
-                ("say", f"Boss {BOSS}", ["...The machine is broken. Team Rocket is finished.",
-                                         "Take the stone. You've earned the right to the tournament."]),
-                ("mega", QUEST_STONES["q_vex"]), ("flag", "vex2")])
-        add(id="arceus", kind="static", pokemon="arceus", level=70, x=7, y=3,
-            **{"if": ["champion", "stones>=20", "!arceus"]},
-            script=[("say", "", ["A blinding light... Something ancient was waiting for a true champion."]),
-                    ("wild", "arceus", 70, False), ("flag", "arceus")])
+                ("say", "", ["The Rift Engine shrieks. Purple light pours out of every seam!"]),
+                ("say", f"Boss {BOSS}", ["Impossible... it's overloading! Without the last stone it can't hold!",
+                                         "...Team Rocket is finished. Take the stone. Take all of it.",
+                                         "But know this: the First Rift is open now. Back where it all began."]),
+                ("say", RIVAL, [f"{game['name']}! You did it! Rocket's running for the hills!",
+                                "...Wait. 'Back where it began'? That's Rootleaf. That's the pond...",
+                                "Win the Tournament first. Become Champion. Then we go get my dad. Together."]),
+                ("mega", QUEST_STONES["q_vex"]), ("flag", "vex2"), ("flag", "first_rift")])
+        add(id="arceus", kind="static", pokemon="arceus", level=80, x=7, y=3,
+            **{"if": ["origin_quest", "!arceus"]}, script=[
+                ("say", "", ["The summit of Victory Road. The air shimmers like heat over a road...",
+                             "Every rift you ever sealed is humming in your bag, all at once."]),
+                ("say", "???", ["...CHILD OF THE RIFTS.",
+                                "YOU HAVE MENDED NINETEEN WOUNDS IN MY WORLD. ONE HUMAN'S GREED OPENED THEM.",
+                                "BUT A WORLD THAT TEARS SO EASILY... SHOULD IT BE KEPT?",
+                                "SHOW ME. FIRST, FACE THE ONE WHO GUARDS THE SPACE BETWEEN."]),
+                ("riftboss", "giratina-origin", 76, "entropy"),
+                ("say", "???", ["...THE GUARDIAN YIELDS. THEN FACE ME. I AM ARCEUS. I AM THE ORIGIN.",
+                                "IF YOU WOULD KEEP THIS WORLD, PROVE IT IS WORTH KEEPING!"]),
+                ("riftboss", "arceus", 80, "surge"),
+                ("say", "", ["The light softens. Arceus lowers its head.",
+                             "Far below, every rift scar in the Brawl region fades away, like it was never there."]),
+                ("say", "Arceus", ["THE WORLD IS WORTH KEEPING. YOU HAVE SHOWN ME WHY.",
+                                   "NO RIFT WILL OPEN AGAIN. LIVE WELL, CHAMPION OF ALL THINGS."]),
+                ("say", RIVAL, [f"{game['name']}!! You're okay! We saw the light from Rootleaf!",
+                                "Dad says that was ARCEUS. Like, THE Arceus. You battled GOD?!"]),
+                ("say", ELIAS, ["The rifts are gone. All of them. Ten years of my life, finished in an afternoon.",
+                                "Thank you. From all three of us."]),
+                ("say", "Prof. Hazel", [f"{game['name']}... I gave you a Pokemon and asked you to fill a Pokedex.",
+                                        "You brought my family home and saved the world.",
+                                        "I think that counts as completing your research."]),
+                ("give", "master-ball", 3), ("flag", "arceus"), ("flag", "true_ending")])
     if route == 2:
         add(id="mew", kind="static", pokemon="mew", level=50, x=1, y=4, **{"if": ["champion", "!mew"]},
             script=[("say", "", ["There's something hiding behind the trees... It's giggling!"]),
@@ -422,22 +590,208 @@ def npcs_for(world, index, game):
                 ("say", "", ["The sealed rift is flickering open again...", "A wild Mega Pokemon is raging inside!"]),
                 ("rift", echo["pid"], echo["lv"]),
                 ("say", "", ["The echo rift faded away."])])
-    if index == 0 and all(has(game, f"rift_{r}") for r in range(1, A.NUM_ROUTES + 1)) and \
-            not has(game, "rift_zero"):
+    if index == 0 and has(game, "first_rift") and game.get("champion") and not has(game, "rift_zero"):
         fid = mega_form(dex, "mewtwo-mega-y")
         if fid:   # sealing every rift wakes the first one, right at home
             add(id="rift_zero", kind="rift", x=3, y=23, pokemon=fid, level=75, script=[
-                ("say", "", ["...The pond is glowing. A rift is opening - bigger than any of the others.",
-                             "This must be where it all began. The FIRST rift!"]),
+                ("say", RIVAL, ["This is it. The First Rift.", "Dad's in there somewhere. Let's go. Together."]),
+                ("say", "", ["You step into the light... Inside, time stands still.",
+                             "A Mewtwo, wreathed in Mega energy, stands guard over a man in a lab coat."]),
+                ("say", ELIAS, ["...Blake? Is that... you've gotten so tall...",
+                                "Careful! Mewtwo was caught in the blast with me. It's been raging for ten years!",
+                                "Calm it down - and we can all go home!"]),
                 ("rift", fid, 75),
-                ("say", "", ["The first rift is closed for good. Every Mega Rift in the region is sealed.",
-                             "Left behind is a stone that hums with power..."]),
-                ("mega", "mewtwo-mega-y"), ("mega", "mewtwo-mega-x"), ("flag", "rift_zero")])
+                ("say", "", ["Mewtwo's Mega energy fades. The First Rift folds shut behind you."]),
+                ("say", RIVAL, ["DAD!"]),
+                ("say", ELIAS, ["Ten years... it felt like ten minutes. Blake, I'm so sorry.",
+                                f"And you - you're the one who sealed the rifts. {game['name']}, was it?",
+                                "Come find me at Mother's lab once I've had a shower. I owe you a battle."]),
+                ("say", "", ["Mewtwo left behind two stones that hum with power..."]),
+                ("mega", "mewtwo-mega-y"), ("mega", "mewtwo-mega-x"), ("flag", "rift_zero"), ("flag", "vale_home")])
+    if index == 0 and all(has(game, f"rift_{r}") for r in range(1, A.NUM_ROUTES + 1)) and \
+            not has(game, "rift_keeper"):   # sealing every rift on the routes: Hazel's thanks
+        add(id="rift_keeper", kind="story", look="prof", x=9, y=9, face="down", name="Prof. Hazel", script=[
+            ("say", "Prof. Hazel", ["Every rift on every route... sealed. You did it.",
+                                    "You're a true RIFT KEEPER. Elias would be so proud. I'm so proud.",
+                                    "Take these. Catch something legendary for me."]),
+            ("give", "master-ball", 2), ("flag", "rift_keeper")])
+    if rtown:
+        _town_extras(world, area, rtown, game, add, out)
     if index == len(world.areas) - 1:   # the League town
         add(id="league_guard", kind="talk", look="guard", x=8, y=8, face="down",
             lines=["Beyond here is the POKeMON WORLD TOURNAMENT.", "Only trainers with all 18 badges may enter."])
     # hidden Mega Stones on routes (sparkles), and the hidden items you find by checking the ground
-    return [n for n in out if check(game, dex, n.get("if")) and not (n.get("once") and has(game, n["once"]))]
+    out = [n for n in out if check(game, dex, n.get("if")) and not (n.get("once") and has(game, n["once"]))]
+    _settle(area, out)
+    return out
+
+
+WALK = set('.,"=_')
+
+
+def _settle(area, npcs):
+    """Anyone standing on a wall, tree or roof (the region grew since their spot was picked) steps to the
+    nearest free walkable tile."""
+    rows = area["rows"]
+    taken = {(n["x"], n["y"]) for n in area.get("npcs", [])}
+
+    def free(x, y):
+        return 0 <= y < len(rows) and 0 <= x < len(rows[0]) and rows[y][x] in WALK and (x, y) not in taken
+    for n in npcs:
+        x, y = n.get("x"), n.get("y")
+        if not isinstance(x, int) or not isinstance(y, int):
+            continue
+        if not free(x, y):
+            best = None
+            for r in range(1, 12):
+                ring = [(x + dx, y + dy) for dx in range(-r, r + 1) for dy in range(-r, r + 1)
+                        if max(abs(dx), abs(dy)) == r]
+                ring.sort(key=lambda p: abs(p[0] - x) + abs(p[1] - y))
+                best = next((p for p in ring if free(*p)), None)
+                if best:
+                    break
+            if best:
+                n["x"], n["y"] = best
+        taken.add((n["x"], n["y"]))
+
+
+# townsfolk with something to say, per town (real town number): (look, name, lines, condition)
+TOWN_TALK = {
+    1: [("Hiker", "Hiker", ["Pebblecrest is built on a mountain of rock. Petra's Pokemon are just as stubborn.",
+                            "Water and Grass moves crack them right open, though!"], None),
+        ("Lass", "", ["Team Rocket ran off with the museum's fossil Mega Stone display!",
+                      "...It was a replica. The real ones are in the vault. Hehe."], "grunt1")],
+    2: [("Bug Catcher", "", ["The trees here are older than the region itself, Grandpa says.",
+                             "Sometimes the leaves whisper. Like they're remembering something."], None)],
+    3: [("Swimmer", "", ["Coral's Gym floods at high tide. Bring an Electric or Grass type!"], None),
+        ("villager", "Fisherman", ["A red Gyarados jumped out of the lake on the route north of here!",
+                                   "Nobody believes me. NOBODY."], "!red_gyarados"),
+        ("villager", "Fisherman", ["You CAUGHT the red Gyarados?! I KNEW it was real!"], "red_gyarados")],
+    4: [("mom", "Baker", ["Patty's the Gym Leader AND she runs the bakery. Her Normal types are tough as dough!",
+                          "...Sorry. I've been waiting all day to say that one."], None)],
+    5: [("Biker", "", ["The power plant here runs on Electric Pokemon. They get paid in berries.",
+                       "...Better pay than me, honestly."], None),
+        ("Youngster", "", ["Up, up, down, down, left, right, left, right... B, A, START!",
+                           "...Nothing happened. My brother lied to me AGAIN."], None)],
+    6: [("Picnicker", "", ["The wind on the cliffs is so strong, Flying Pokemon practice here every day.",
+                           "Skye says if you can battle up here, you can battle anywhere."], None)],
+    7: [("Beauty", "", ["Fern grows her Grass Pokemon in the greenhouse behind the Gym.",
+                        "Fire types aren't allowed in. For obvious reasons."], None)],
+    8: [("Black Belt", "", ["Brawlport! Where sailors arm-wrestle Machamp for fun!",
+                            "I lost eleven times. Then Machamp let me win. We're best friends now."], None),
+        ("villager", "Dockhand", ["A Rocket Admin was down by the docks with some kid in a dark jacket.",
+                                  "Looked like trouble. The kid looked... sad, mostly."], "morga_offer")],
+    9: [("villager", "", ["Toxmire's marsh gas makes your eyes water. Nox says you get used to it.",
+                          "Nox has been saying that for nine years."], None)],
+    10: [("Lass", "", ["Glimmerdell's fairies only show themselves to trainers with kind Pokemon.",
+                       "...Pixie is NOT kind. Pixie is terrifying. Be careful."], None)],
+    11: [("Psychic", "", ["I foresaw your arrival. I also foresaw you'd ask about the Gym.",
+                          "Sage reads minds, so don't think about your next move. Just do it."], None),
+         ("Psychic", "", ["Giovanni stood right where you're standing. His mind was so... cold."], "vex1")],
+    12: [("villager", "Old Woman", ["Duskmoor is quiet. Too quiet. That's why the ghosts like it.",
+                                    "If a little girl asks you about her Pokemon... answer her kindly."], None)],
+    13: [("Hiker", "", ["Emberpeak's volcano hasn't erupted in a hundred years.",
+                        "Blaze says that's because her Fire Pokemon keep it happy. I believe her."], None)],
+    14: [("Ace Trainer", "", ["Steelhaven forges the region's Poke Balls. Every one passes a Ferris inspection.",
+                              "Ferris dropped one on his foot once. The BALL was fine."], None),
+         ("villager", "Engineer", ["The PC in my workshop says: TODO - ADD MORE SECRETS.",
+                                   "...I don't know who wrote that. I don't own a PC."], None)],
+    15: [("Swimmer", "", ["Swimming in Frostmere? In THIS weather? Yes. Every morning. It builds character.",
+                          "Also hypothermia. But mostly character."], None)],
+    16: [("Ace Trainer", "", ["Raven turns the Gym lights off for the whole battle.",
+                              "Dark Pokemon don't mind. Your Pokemon might."], None)],
+    17: [("Hiker", "", ["The sand here hides all kinds of things. Old stones, older bones.",
+                        "Sometimes the ground glows at night. Mega Radar folk come from all over."], None)],
+    18: [("Ace Trainer", "", ["Wyrmspire is the last Gym before the League. Draco's Dragons have never lost here.",
+                              "...Well. Not before you, anyway."], "!badges>=18"),
+         ("Ace Trainer", "", ["You beat Draco?! Then go. The World Tournament is waiting."], "badges>=18")],
+}
+SPOTS = [(2, 6), (12, 6), (1, 15), (13, 15), (3, 15), (11, 15), (2, 25), (12, 25), (4, 26), (10, 26), (1, 24),
+         (13, 24), (4, 6), (10, 6), (2, 14), (12, 14), (3, 22), (11, 22), (1, 26), (13, 26)]
+
+
+def _spot(area, used, i=0):
+    """A free, walkable standing spot in a town (not in front of a door, not taken)."""
+    rows = area["rows"]
+    taken = used | {(n["x"], n["y"]) for n in area.get("npcs", [])}
+
+    def ok(x, y):
+        return (0 < y < len(rows) - 1 and 0 < x < len(rows[0]) - 1 and rows[y][x] in ".,=_" and
+                (x, y) not in taken and rows[y - 1][x] != "D" and rows[y + 1][x] != "D")
+    cands = SPOTS[i % len(SPOTS):] + SPOTS[:i % len(SPOTS)]
+    for x, y in cands:
+        if ok(x, y):
+            return x, y
+    for y in range(4, len(rows) - 2):
+        for x in range(1, len(rows[0]) - 1):
+            if ok(x, y):
+                return x, y
+    return None
+
+
+def _town_extras(world, area, rtown, game, add, out):
+    """Townsfolk, the new side quests and the secrets of each town."""
+    used = {(n["x"], n["y"]) for n in out}
+
+    def place(i, **n):
+        xy = _spot(area, used, i)
+        if xy:
+            used.add(xy)
+            n["x"], n["y"] = xy
+            add(**n)
+    for k, (look, name, lines, cond) in enumerate(TOWN_TALK.get(rtown, [])):
+        if check(game, world.dex, cond):
+            place(rtown * 3 + k, id=f"talk{rtown}_{k}", kind="talk", look=look, name=name, lines=lines,
+                  face=["down", "left", "right"][k % 3])
+    quest = {2: ("q_bugs", "Bug Catcher", "Bug Maniac"), 6: ("q_riftwatch", "Psychic", "Rift Watcher"),
+             8: ("q_lv50", "Black Belt", "Coach"), 10: ("q_shiny", "Beauty", "Collector"),
+             14: ("q_dex100", "prof", "Hazel's Aide"), 15: ("q_newmega", "Ace Trainer", "Mega Hunter"),
+             17: ("q_purify", "Hiker", "Old Miner")}.get(rtown)
+    if quest:
+        place(rtown * 5, id=f"{quest[0]}_giver", kind="quest", quest=quest[0], look=quest[1], name=quest[2],
+              face="down")
+    if rtown == 3:   # the Magikarp salesman (it IS a good deal. probably.)
+        if not has(game, "karp_offer"):
+            place(31, id="karp_man", kind="story", look="villager", name="Salesman", face="down", script=[
+                ("say", "Salesman", ["Psst! Kid! Want a MAGIKARP? Only 500 coins! A steal!",
+                                     "Every one's a future Gyarados. Talk to me again if you want one!"]),
+                ("flag", "karp_offer")])
+        elif not has(game, "magikarp_deal"):
+            place(31, id="karp_man", kind="story", look="villager", name="Salesman", face="down", script=[
+                ("say", "Salesman", ["Back for the MAGIKARP? 500 coins, no refunds!"]), ("pay", 500),
+                ("gift", 129, 5), ("say", "Salesman", ["Pleasure doing business! ...Hehe."]),
+                ("flag", "magikarp_deal")])
+    if rtown == 4 and not has(game, "legend_name"):   # a familiar name
+        if check(game, world.dex, "name:RED,ASH,BLUE,GOLD,LEAF,GREEN,SILVER,ETHAN,LYRA"):
+            place(41, id="legend_fan", kind="story", look="Hiker", name="Old Trainer", face="down", script=[
+                ("say", "Old Trainer", [f"{game['name']}...? That name... I knew a trainer called that, long ago.",
+                                        "Never said a word. Just battled. Beat everyone. Climbed a mountain and",
+                                        "waited at the top for anyone strong enough to find him.",
+                                        "Here. He'd want you to have these."]),
+                ("give", "rare-candy", 5), ("flag", "legend_name")])
+    if rtown == 12:
+        if not has(game, "ghost_girl"):
+            place(121, id="ghost_girl", kind="story", look="Lass", name="Little Girl", face="down", script=[
+                ("say", "Little Girl", ["Have you seen my Pokemon? It's purple and it giggles.",
+                                        "We were playing hide and seek... a long, long time ago."]),
+                ("say", "", ["You blink. There's nobody there.",
+                             "...Somewhere behind you, something giggles."]),
+                ("flag", "ghost_girl")])
+        if game.get("champion") and not has(game, "darkrai"):
+            place(122, id="darkrai", kind="static", pokemon="darkrai", level=70, script=[
+                ("say", "", ["Everyone in Duskmoor is having the same nightmare.",
+                             "...The shadow at the end of the street is looking right at you."]),
+                ("wild", "darkrai", 70, False), ("flag", "darkrai")])
+    if rtown == 2 and game.get("champion") and not has(game, "celebi"):
+        place(23, id="celebi", kind="static", pokemon="celebi", level=60, script=[
+            ("say", "", ["The leaves whisper... a tiny green light drifts out from between the old trees.",
+                         "It looks like it's travelled a very long way to meet you."]),
+            ("wild", "celebi", 60, False), ("flag", "celebi")])
+    if rtown == 6 and check(game, world.dex, ["rifts>=10", "!jirachi"]):
+        place(62, id="jirachi", kind="static", pokemon="jirachi", level=50, script=[
+            ("say", "", ["A star falls out of a sealed rift and lands at your feet...",
+                         "It yawns. It's been asleep for a thousand years. It wants to grant you a wish!"]),
+            ("wild", "jirachi", 50, False), ("flag", "jirachi")])
 
 
 def _pond_edge(area):
@@ -575,6 +929,41 @@ QUESTS = {
                  "need": "stones>=10", "done": ["10 Mega Stones! You're a true Mega Maniac! Take this MASTER BALL!"],
                  "reward": [("give", "master-ball", 1)]},
 }
+QUESTS.update({
+    "q_bugs": {"name": "Bug Maniac", "giver": "Bug Maniac in Mossgrove Town",
+               "ask": ["Bugs are the BEST Pokemon. Don't argue.", "Show me a Bug-type in your party and I'll prove it!"],
+               "need": "partytype:bug", "done": ["LOOK at those legs! A true bug fan! Here, have some Great Balls!"],
+               "reward": [("give", "great-ball", 10)]},
+    "q_riftwatch": {"name": "Rift Watcher", "giver": "Rift Watcher in Gustcliff City",
+                    "ask": ["I chart the rifts from up here. They're getting worse.",
+                            "Seal five of them for me and I'll make it worth your while."],
+                    "need": "rifts>=5", "done": ["Five sealed! The sky's calmer already. Take these, hero!"],
+                    "reward": [("give", "ultra-ball", 10), ("money", 5000)]},
+    "q_lv50": {"name": "Raise a Champion", "giver": "Coach in Brawlport City",
+               "ask": ["Strength is earned, kid. Raise a Pokemon to level 50 and show me."],
+               "need": "partylevel>=50", "done": ["THAT is a trained Pokemon! You've got the spirit! Take these!"],
+               "reward": [("give", "max-revive", 3), ("give", "rare-candy", 2)]},
+    "q_shiny": {"name": "Something Shiny", "giver": "Collector in Glimmerdell Town",
+                "ask": ["I collect shiny things. Shiny POKEMON are the shiniest things of all!",
+                        "Bring one in your party and I'll pay handsomely."],
+                "need": "shinyparty", "done": ["It SPARKLES! Ohh, I could look at it forever. Here - you've earned it!"],
+                "reward": [("money", 20000), ("give", "rare-candy", 5)]},
+    "q_dex100": {"name": "Living Legend", "giver": "Hazel's aide in Steelhaven City",
+                 "ask": ["The Professor's dream is a complete Pokedex.", "Catch 100 different kinds of Pokemon!"],
+                 "need": "caught>=100", "done": ["100 kinds! The Professor wants you to have her most precious ball."],
+                 "reward": [("give", "master-ball", 1)]},
+    "q_newmega": {"name": "Born of the Rift", "giver": "Mega Hunter in Frostmere Town",
+                  "ask": ["They say there are Mega Stones no one's ever seen, buried under the routes.",
+                          "Stones for Pokemon that were never meant to Mega Evolve. Dig one up for me!"],
+                  "need": "customstone>=1",
+                  "done": ["It's REAL! A brand-new Mega Stone! The rumours were true! Take these, you legend!"],
+                  "reward": [("give", "rare-candy", 10)]},
+    "q_purify": {"name": "The Stone Cleanser", "giver": "Old Miner in Duneholt City",
+                 "ask": ["Corrupted stones... I can smell 'em on you.",
+                         "I spent forty years down the mines. I know how to clean one. Bring me a corrupted stone."],
+                 "need": "corrupted>=1", "done": ["Hold still... there. Clean as the day it was born."],
+                 "reward": [("purify",)]},
+})
 KEY_ITEMS = {"mega-radar": ("Mega Radar", "Detects Mega Stones buried on a route. Use it, follow the signal, dig."),
              "lucky-charm": ("Lucky Charm", "A lucky charm someone dropped."),
              "old-letter": ("Old Letter", "A letter for someone in Bloomfield City.")}
@@ -647,7 +1036,10 @@ def hidden_items(world, area_index):
 SECRETS = {"chatterbox": "The Chatterbox", "red_gyarados": "The Red Gyarados", "snorlax": "The Sleeping Giant",
            "shiny_charm": "Shiny Charm", "mom_gift": "Mom's Gift", "mew": "The Giggle in the Trees",
            "arceus": "The Origin", "creator_beaten": "The Creator", "rift_zero": "The First Rift",
-           "pikachu": "The Mouse Behind the Fence"}
+           "pikachu": "The Mouse Behind the Fence", "magikarp_deal": "The Magikarp Deal",
+           "legend_name": "A Familiar Name", "ghost_girl": "The Girl in Duskmoor", "celebi": "Out of Time",
+           "jirachi": "A Wish Upon a Rift", "darkrai": "The Nightmare", "rift_keeper": "Rift Keeper",
+           "elias_beaten": "Like Father, Like Son", "true_ending": "The World Worth Keeping"}
 
 
 def rifts_sealed(game):
@@ -663,6 +1055,12 @@ def next_goal(game, dex):
     b = len(game.get("badges", []))
     n = len(A.GYMS)
     gym = A.GYMS[b][0] if b < n else None
+    if game.get("champion") and has(game, "first_rift") and not has(game, "rift_zero"):
+        return "The First Rift is open at the pond in Rootleaf Town. Bring Blake's dad home."
+    if has(game, "rift_zero") and not has(game, "elias_beaten"):
+        return f"{ELIAS} is waiting outside Prof. Hazel's lab in Rootleaf Town."
+    if has(game, "origin_quest") and not has(game, "arceus"):
+        return "Something ancient waits at the summit of Victory Road..."
     if game.get("champion"):
         stones = len(game.get("megastones", []))
         from .riftdex import custom_stones
@@ -676,10 +1074,14 @@ def next_goal(game, dex):
         return "Head north to Pebblecrest City. Something is going on at the Gym..."
     if b >= 2 and not game.get("keystone"):
         return "Prof. Hazel is waiting for you in Tidewater City."
+    if b >= 7 and not has(game, "morga_offer"):
+        return "Something's going on at the docks in Brawlport City..."
     if b >= 8 and not has(game, "admin"):
         return f"Team Rocket's Admin {ADMIN} is causing trouble in Toxmire Town!"
     if b >= 10 and not has(game, "vex1"):
         return f"Confront Boss {BOSS} of Team Rocket in Mindspire City."
+    if has(game, "vex1") and b >= 11 and not has(game, "rival_dark"):
+        return f"{RIVAL} has gone to Duskmoor Town with a corrupted Mega Stone. Stop him!"
     if b < n:
         return f"Badge {b + 1} of {n}: the {A.GYMS[b][2].upper()} Gym in {gym}."
     if not has(game, "vex2"):

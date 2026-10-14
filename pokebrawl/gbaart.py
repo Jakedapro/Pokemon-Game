@@ -494,6 +494,7 @@ LOOKS = {   # cap, shirt, pants, hair; cap None = no cap (hair shown)
     "drakon": ((176, 48, 48), (64, 72, 152), (40, 40, 64), (200, 48, 48)),
     "champ": (None, (248, 216, 96), (240, 240, 248), (248, 232, 160)),
     "creator": ((40, 200, 160), (40, 40, 48), (40, 40, 48), (32, 32, 40)),
+    "elias": (None, (232, 236, 240), (56, 64, 88), (72, 56, 48)),
 }
 
 
@@ -505,7 +506,7 @@ FRLG_PEOPLE = {
     "nurse": "nurse", "clerk": "clerk", "mom": "mom", "prof": "prof_oak", "leader": "cooltrainer_m",
     "guard": "policeman", "villager": "man", "grunt": "rocket_m", "admin": "rocket_f", "boss": "giovanni",
     "ace": "cooltrainer_m", "champ": "cooltrainer_f", "creator": "gba_kid", "frost": "lorelei", "brutus": "bruno",
-    "morrow": "agatha", "drakon": "lance",
+    "morrow": "agatha", "drakon": "lance", "elias": "scientist",
 }
 # frames in a FireRed people sheet: stand down/up/left, then two steps each for down, up, left
 FRLG_FRAMES = {"down": (0, 3, 4), "up": (1, 5, 6), "left": (2, 7, 8), "right": (2, 7, 8)}
