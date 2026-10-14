@@ -1,0 +1,6 @@
+{"title": "GIGANTAMAX CLASH!", "subtitle": "WHO GETS BIGGER?",
+ "teams": [
+   {"name": "Team Kanto", "pokemon": ["charizard", "venusaur", "blastoise", "snorlax", "gengar", "machamp"]},
+   {"name": "Team Galar", "pokemon": ["lapras", "butterfree", "kingler", "garbodor", "corviknight", "toxtricity"]}
+ ],
+ "bosses": "none", "events": "none", "megas": false, "hp_mult": 12}

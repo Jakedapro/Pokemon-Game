@@ -1,0 +1,6 @@
+{"title": "MEGA MADNESS!", "subtitle": "8 MEGAS vs 8 MEGAS",
+ "teams": [
+   {"name": "Kanto Megas", "pokemon": ["charizard", "blastoise", "venusaur", "gengar", "alakazam", "gyarados", "kangaskhan", "pinsir"]},
+   {"name": "Hoenn+ Megas", "pokemon": ["tyranitar", "scizor", "heracross", "aggron", "gardevoir", "lucario", "garchomp", "salamence"]}
+ ],
+ "bosses": "none", "events": "none", "megas": true, "hp_mult": 10}
