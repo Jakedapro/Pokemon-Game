@@ -617,12 +617,12 @@ def battle_sprite(pid, back=False, shiny=False, max_h=150):
     if key in _cache:
         return _cache[key]
     from . import riftdex
-    if riftdex.is_custom(pid):   # our own Megas: the artist's sprite
+    if riftdex.is_custom(pid):   # our own Megas: the artist's / built sprite
         base_id = riftdex.base_of(pid)
         base = battle_sprite(base_id, back, shiny, max_h)
-        art = None if back else riftdex.artist_sprite(pid)
-        out = art if art is not None else riftdex.sprite_for(pid, base)   # the artist's sprite; recolour for the back
-        if art is not None or ("bs", base_id, back, shiny, max_h) in _cache:
+        art = riftdex.artist_sprite(pid, back)
+        out = art if art is not None else riftdex.sprite_for(pid, base)   # recolour until the real one is built
+        if art is not None:
             _cache[key] = out
         return out
     from . import battlegfx

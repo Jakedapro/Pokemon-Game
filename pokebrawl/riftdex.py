@@ -36,9 +36,15 @@ import os as _os
 ART_DIR = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "art", "megas")
 
 
-def art_path(base_key):
-    p = _os.path.join(ART_DIR, f"{base_key}.png")
+def art_path(base_key, back=False):
+    p = _os.path.join(ART_DIR, f"{base_key}{'_back' if back else ''}.png")
     return p if _os.path.exists(p) else None
+
+
+def has_art(base_key):
+    """Drawn by an artist, or one we build from a sprite-editing recipe (megas.py)."""
+    from . import megas
+    return bool(art_path(base_key)) or base_key in megas.RECIPES
 _custom = {}        # form id -> (base id, rules, outline colour)
 
 # ---------------------------------------------------------------------- the Rift-Born move
@@ -75,7 +81,7 @@ def install(dex):
         dex.move_by_key[RIFT_MOVE["key"]] = RIFT_MOVE
     for k, (base_key, types, delta, ability, rules, glow) in enumerate(CUSTOM_MEGAS):
         base = dex.get(base_key)
-        if base is None or not art_path(base_key):   # not drawn yet: not in the game yet
+        if base is None or not has_art(base_key):   # not drawn yet: not in the game yet
             continue
         fid = CUSTOM_BASE_ID + k
         key = f"{base['key']}-mega"
@@ -136,10 +142,16 @@ def sprite_for(pid, base_img):
     return final
 
 
-def artist_sprite(pid):
-    """The artist's front sprite for one of our Megas, at 2x (None if missing or unreadable)."""
+def artist_sprite(pid, back=False, wait=False):
+    """The sprite for one of our Megas at 2x: an artist's PNG if there is one, else the one built by its recipe
+    (built in the background on first use - None until it's ready)."""
     import pygame
-    path = art_path(_custom[pid][3])
+    from . import megas
+    key = _custom[pid][3]
+    path = art_path(key, back)
+    if not path:
+        if megas.ensure(key, wait=wait):
+            path = megas.built_path(key, back)
     if not path:
         return None
     try:

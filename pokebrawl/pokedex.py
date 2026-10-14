@@ -555,4 +555,7 @@ def download_all():
     ensure_assets()
     prefetch_cries([e["id"] for e in dex.all.values()],
                    lambda d, t: sys.stdout.write(f"\r[pokebrawl] cries [{'#' * int(30 * d / t)}{'.' * (30 - int(30 * d / t))}] {d}/{t}"))
-    print(f"\n[pokebrawl] ready: {len(dex.all)} Pokemon and {len(dex.moves)} moves cached in {HOME}")
+    from .megas import build_all
+    print("\n[pokebrawl] building PokeBrawl's own Mega Evolutions...")
+    build_all()
+    print(f"[pokebrawl] ready: {len(dex.all)} Pokemon and {len(dex.moves)} moves cached in {HOME}")

@@ -272,6 +272,17 @@ class Sprites:
 
     def base(self, pid, back=False, shiny=False):
         key = (pid, back, shiny)
+        if pid >= 30000 and key not in self.raw:   # one of our own Megas: artist's or built sprite
+            from . import megas, riftdex
+            if riftdex.is_custom(pid):
+                k = riftdex._custom[pid][3]
+                path = riftdex.art_path(k, back) or (megas.built_path(k, back) if megas.ensure(k) else None)
+                if not path:      # still being built: its base form meanwhile
+                    return self.base(riftdex.base_of(pid), back, shiny)
+                img = _plain_rgba(pygame.image.load(path))
+                r = img.get_bounding_rect()
+                self.raw[key] = _plain_rgba(img.subsurface(r)) if r.w else img
+                return self.raw[key]
         if self._ready:
             self._drop_ready()
         if key not in self.raw and self.async_load and self._missing_file(pid, back, shiny) and \
