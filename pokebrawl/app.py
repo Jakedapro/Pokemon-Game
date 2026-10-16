@@ -42,7 +42,7 @@ def try_unlock(settings, code):
 def load_settings():
     out = {}
     try:
-        with open(SETTINGS_FILE) as f:
+        with open(SETTINGS_FILE, encoding="utf-8") as f:
             for line in f:
                 if "=" in line:
                     k, v = line.rstrip("\n").split("=", 1)
@@ -54,7 +54,7 @@ def load_settings():
 
 def save_settings(d):
     os.makedirs(pokedex.HOME, exist_ok=True)
-    with open(SETTINGS_FILE, "w") as f:
+    with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
         for k, v in d.items():
             f.write(f"{k}={v}\n")
 

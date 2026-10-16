@@ -432,7 +432,7 @@ def import_showdown(dex, text):
 
 def load_saved():
     try:
-        with open(TEAMS_FILE) as f:
+        with open(TEAMS_FILE, encoding="utf-8") as f:
             data = json.load(f)
         return {name: [Member.from_dict(d) for d in team] for name, team in data.items()}
     except (OSError, ValueError, KeyError):
@@ -443,14 +443,14 @@ def save_team(name, members):
     teams = load_saved()
     teams[name] = members
     os.makedirs(HOME, exist_ok=True)
-    with open(TEAMS_FILE, "w") as f:
+    with open(TEAMS_FILE, "w", encoding="utf-8") as f:
         json.dump({n: [m.to_dict() for m in t] for n, t in teams.items()}, f, indent=1)
 
 
 def delete_team(name):
     teams = load_saved()
     teams.pop(name, None)
-    with open(TEAMS_FILE, "w") as f:
+    with open(TEAMS_FILE, "w", encoding="utf-8") as f:
         json.dump({n: [m.to_dict() for m in t] for n, t in teams.items()}, f, indent=1)
 
 

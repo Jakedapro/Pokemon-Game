@@ -81,7 +81,7 @@ def complete():
     """True once everything has been downloaded (then the game never needs the internet for it again)."""
     try:
         import json
-        with open(MARKER) as f:
+        with open(MARKER, encoding="utf-8") as f:
             m = json.load(f)
         return m.get("fileset") == FILESET and m.get("commit") == COMMIT
     except Exception:
@@ -91,7 +91,7 @@ def complete():
 def mark_complete():
     import json
     os.makedirs(DIR, exist_ok=True)
-    with open(MARKER, "w") as f:
+    with open(MARKER, "w", encoding="utf-8") as f:
         json.dump({"fileset": FILESET, "commit": COMMIT, "missing": sorted(_failed)}, f)
 
 
@@ -99,7 +99,7 @@ def _known_missing():
     """Files the decomp doesn't have (remembered, so they're never asked for again)."""
     try:
         import json
-        with open(MARKER) as f:
+        with open(MARKER, encoding="utf-8") as f:
             return set(json.load(f).get("missing", []))
     except Exception:
         return set()
@@ -217,7 +217,7 @@ def read_pal(path):
     f = fetch(path)
     if not f:
         return None
-    with open(f) as fh:
+    with open(f, encoding="utf-8") as fh:
         lines = fh.read().split()
     # JASC-PAL, 0100, count, then r g b triples
     n = int(lines[2])
@@ -353,7 +353,7 @@ def layouts():
         f = fetch("data/layouts/layouts.json")
         out = {}
         if f:
-            with open(f) as fh:
+            with open(f, encoding="utf-8") as fh:
                 for l in json.load(fh)["layouts"]:
                     if l.get("name"):
                         out[l["name"]] = l
@@ -388,7 +388,7 @@ def map_json(name):
         import json
         f = fetch(f"data/maps/{name}/map.json")
         try:
-            with open(f) as fh:
+            with open(f, encoding="utf-8") as fh:
                 _cache[key] = json.load(fh)
         except Exception:
             _cache[key] = None

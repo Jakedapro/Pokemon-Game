@@ -3,3 +3,4 @@ __pycache__/
 *.mp4
 .pytest_cache/
 dist/
+pokebrawl/_build.py

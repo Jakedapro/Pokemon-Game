@@ -100,6 +100,24 @@ def starters(dex):
             sum(e["stats"].values()) <= 330]
     return rng.sample(sorted(pool), 3)
 
+def rival_starter(dex, mine):
+    """The rival always takes the starter with the type advantage over yours (FireRed: Charmander beats
+    Bulbasaur, Squirtle beats Charmander, Bulbasaur beats Squirtle) - by real type matchups, so it also works with
+    the randomizer's starters."""
+    from .types import effectiveness
+    trio = starters(dex)
+    if mine not in trio:
+        return None
+    me = dex.all[mine]["types"]
+
+    def edge(pid):
+        them = dex.all[pid]["types"]
+        attack = max(effectiveness(t, me) for t in them)
+        defend = max(effectiveness(t, them) for t in me)
+        return (attack - defend, attack, -defend, -trio.index(pid))
+    return max((p for p in trio if p != mine), key=edge)
+
+
 # shop: key -> (name, price, description)
 SHOP = {
     "poke-ball": ("Poke Ball", 200, "Catches wild Pokemon"),
@@ -746,7 +764,8 @@ class World:
         lo, hi = area["levels"]
         npcs = []
         h = len(rows)
-        ys = sorted(rng.sample(range(6, h - 6), min(h - 12, 2 + r // 6)))
+        count = {1: 0, 2: 1}.get(r, 2 + r // 6)   # FireRed: no trainers on the first route, then it builds up
+        ys = sorted(rng.sample(range(6, h - 6), min(h - 12, count)))
         last = -9
         for y in ys:
             if y - last < 4:
@@ -869,7 +888,7 @@ def new_game(name, starter_id, dex):
 
 def load():
     try:
-        with open(SAVE_FILE) as f:
+        with open(SAVE_FILE, encoding="utf-8") as f:
             data = json.load(f)
         return data if data.get("name") and isinstance(data.get("party"), list) else None
     except (OSError, ValueError):
@@ -879,7 +898,7 @@ def load():
 def save(data):
     os.makedirs(HOME, exist_ok=True)
     tmp = SAVE_FILE + ".tmp"
-    with open(tmp, "w") as f:
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f)
     os.replace(tmp, SAVE_FILE)
 

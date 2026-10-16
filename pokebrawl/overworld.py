@@ -654,7 +654,7 @@ class OverworldScene(Scene):
         for lst in (g["seen"], g["caught"]):
             if pid not in lst:
                 lst.append(pid)
-        rival = dex.all[trio[(trio.index(pid) + 1) % 3]] if pid in trio else None
+        rival = dex.all[A.rival_starter(dex, pid)] if pid in trio else None
         nm = A.name_of(dex, mon).upper()
         AUDIO.play("win")
         AUDIO.cry(pid, 1.0)

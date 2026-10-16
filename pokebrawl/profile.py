@@ -23,7 +23,7 @@ SHINY_ODDS = 64
 
 def load():
     try:
-        with open(PROFILE_FILE) as f:
+        with open(PROFILE_FILE, encoding="utf-8") as f:
             data = json.load(f)
     except (OSError, ValueError):
         data = {}
@@ -40,7 +40,7 @@ def load():
 def save(data):
     os.makedirs(HOME, exist_ok=True)
     tmp = PROFILE_FILE + ".tmp"
-    with open(tmp, "w") as f:
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=1)
     os.replace(tmp, PROFILE_FILE)
 

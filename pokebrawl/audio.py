@@ -259,7 +259,7 @@ def ensure_assets():
         _write_wav(os.path.join(SFX_DIR, f"{name}.wav"), samples)
     for kind in ("battle", "menu", "showcase", "town", "route", "gym"):
         _write_wav(os.path.join(SFX_DIR, f"music_{kind}.wav"), _make_music(kind))
-    open(marker, "w").close()
+    open(marker, "w", encoding="utf-8").close()
 
 
 def cry_path(pid):

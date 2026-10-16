@@ -4,6 +4,11 @@ import subprocess
 
 APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 COMMITS_API = "https://api.github.com/repos/Jakedapro/Pokemon-Game/commits/HEAD"
+FROZEN = "__compiled__" in globals()   # running as the compiled PokeBrawl app (Nuitka), not from source
+try:
+    from ._build import TAG as BUILD_TAG, DATE as BUILD_DATE   # written by tools/build_app.py
+except ImportError:
+    BUILD_TAG, BUILD_DATE = None, ""
 
 
 def _git(*args, timeout=8):
@@ -13,7 +18,7 @@ def _git(*args, timeout=8):
 
 def _version_file():
     try:
-        with open(os.path.join(APP_DIR, "VERSION")) as f:
+        with open(os.path.join(APP_DIR, "VERSION"), encoding="utf-8") as f:
             parts = f.read().split(None, 1)
         return parts[0], (parts[1].strip() if len(parts) > 1 else "")
     except (OSError, IndexError):
@@ -25,7 +30,9 @@ def _is_git():
 
 
 def current():
-    """('0395c8e', 'Oct 12'), or ('dev', '') when unknown."""
+    """('0395c8e', 'Oct 12'), or ('dev', '') when unknown. The app says its release, e.g. ('v1.4', 'Oct 16')."""
+    if BUILD_TAG:
+        return BUILD_TAG, BUILD_DATE
     if _is_git():
         try:
             h = _git("rev-parse", "--short", "HEAD")

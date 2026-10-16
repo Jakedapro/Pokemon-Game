@@ -25,6 +25,14 @@ def _utf8_on_windows():
         log = open(os.path.join(home, "last-run.log"), "w", encoding="utf-8")
         sys.stdout = sys.stdout or log
         sys.stderr = sys.stderr or log
+    from .version import FROZEN
+    if FROZEN:   # the compiled app reads/writes UTF-8 explicitly; just never crash printing a name
+        for stream in (sys.stdout, sys.stderr):
+            try:
+                stream.reconfigure(errors="replace")
+            except (AttributeError, ValueError):
+                pass
+        return
     if os.name == "nt" and not sys.flags.utf8_mode and not os.environ.get("POKEBRAWL_UTF8_TRIED"):
         env = dict(os.environ, PYTHONUTF8="1", POKEBRAWL_UTF8_TRIED="1")
         sys.exit(subprocess.call([sys.executable, "-X", "utf8", "-m", "pokebrawl", *sys.argv[1:]], env=env))
@@ -91,6 +99,17 @@ def main(argv=None):
         print(f"PokeBrawl {h} ({d})")
         return
     if args.cmd == "update":
+        from .version import FROZEN
+        if FROZEN:
+            from . import appupdate
+            tag, url = appupdate.latest()
+            if not url or tag == appupdate.BUILD_TAG:
+                print(f"PokeBrawl {appupdate.BUILD_TAG} is the newest version.")
+                return
+            print(f"Downloading {tag}...")
+            appupdate.stage(tag, url)
+            appupdate.apply()
+            return
         if os.name == "nt":
             sys.exit(subprocess.call(WIN_UPDATE, shell=True))
         if os.path.isdir(os.path.join(APP_DIR, ".git")):

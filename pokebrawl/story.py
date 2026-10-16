@@ -201,8 +201,7 @@ def rival_team(world, game, level, size):
     first = dex.all[game["party"][0]["species"]] if game.get("starter") is None else dex.all[game["starter"]]
     trio = A.starters(dex)   # Kanto's three (or the randomizer's)
     mine = world.base_form(first["id"])
-    i = trio.index(mine) if mine in trio else 0
-    starter = dex.all[trio[(i + 1) % 3]]   # the one that beats yours
+    starter = dex.all[A.rival_starter(dex, mine) or trio[1]]   # the one that beats yours
     rng = random.Random(len(game["name"]) * 31 + level)
     team = world.team_for(["normal", "flying", "electric", "psychic", "dark"], level - 2, size - 1, rng, strong=True)
     ace = A.make_mon(dex, A.grown_species(dex, starter, level), level, rng, shiny=False)
@@ -840,7 +839,7 @@ def _room_npcs(world, kind, area, door, game):
     if kind == "lab" and area == 0 and (game.get("starter") or not game.get("party")):   # chosen in the lab
         trio = A.starters(world.dex)
         mine = game.get("starter")
-        theirs = trio[(trio.index(mine) + 1) % 3] if mine in trio else None
+        theirs = A.rival_starter(world.dex, mine)
         for i, (x, y) in enumerate(LAB_BALLS):
             if trio[i] in (mine, theirs):
                 continue

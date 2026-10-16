@@ -14,8 +14,8 @@ import sys
 import tarfile
 import threading
 
-from . import pokedex
-from .version import APP_DIR, COMMITS_API, _git, _is_git, _version_file
+from . import appupdate, pokedex
+from .version import APP_DIR, BUILD_TAG, COMMITS_API, FROZEN, _git, _is_git, _version_file
 
 OWNER_REPO = "Jakedapro/Pokemon-Game"
 TARBALL = "https://codeload.github.com/" + OWNER_REPO + "/tar.gz/{sha}"
@@ -72,15 +72,15 @@ def stage(sha, date_text):
         raise ValueError("update download looks wrong")
     os.rename(os.path.join(tmp, tops[0]), STAGE)
     shutil.rmtree(tmp, ignore_errors=True)
-    with open(os.path.join(STAGE, "VERSION"), "w") as f:
+    with open(os.path.join(STAGE, "VERSION"), "w", encoding="utf-8") as f:
         f.write(f"{sha} {date_text}\n")
-    with open(READY, "w") as f:
+    with open(READY, "w", encoding="utf-8") as f:
         f.write(sha)
 
 
 def _read(path):
     try:
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             return f.read()
     except OSError:
         return ""
@@ -89,6 +89,9 @@ def _read(path):
 def apply_staged(log=print):
     """Called first thing at startup: swap in a downloaded update, then restart into it.
     Returns quietly when there's nothing to do; rolls back if anything goes wrong."""
+    if FROZEN:
+        appupdate.apply(log)
+        return
     if not os.path.isfile(READY) or not installed():
         return
     shutil.rmtree(OLD, ignore_errors=True)
@@ -123,6 +126,9 @@ def apply_staged(log=print):
 
 def restart():
     """Start the game again in this same process slot (picks up new code)."""
+    if FROZEN:
+        appupdate.apply()
+        return
     try:
         import pygame
         pygame.quit()
@@ -149,6 +155,9 @@ class AutoUpdater:
         return self.state in ("available", "downloading", "ready", "error")
 
     def _run(self):
+        if FROZEN:
+            self._run_app()
+            return
         try:
             if os.path.isfile(READY):
                 self.state = "ready"
@@ -166,5 +175,25 @@ class AutoUpdater:
             stage(latest, time.strftime("%b %d"))
             self.state = "ready"
         except Exception as e:  # noqa: BLE001 - offline, rate limited...: just try again next launch
+            self.error = str(e)
+            self.state = "error" if self.state == "downloading" else "current"
+
+    def _run_app(self):
+        """The compiled app: compare against the latest GitHub release instead of commits."""
+        try:
+            tag, url = appupdate.latest()
+            if not tag or tag == BUILD_TAG or not url:
+                self.state = "current"
+                return
+            if appupdate.ready_tag() == tag:
+                self.state = "ready"
+                return
+            if not (self.auto and appupdate.supported()):
+                self.state = "available"
+                return
+            self.state = "downloading"
+            appupdate.stage(tag, url)
+            self.state = "ready"
+        except Exception as e:  # noqa: BLE001
             self.error = str(e)
             self.state = "error" if self.state == "downloading" else "current"

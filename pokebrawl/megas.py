@@ -512,7 +512,7 @@ def build(base_key):
         path = os.path.join(cache_dir(), f"{base_key}{suffix}.png")
         pygame.image.save(img.to_surface(), path + ".part.png")
         os.replace(path + ".part.png", path)
-    with open(os.path.join(cache_dir(), "version.txt"), "w") as f:
+    with open(os.path.join(cache_dir(), "version.txt"), "w", encoding="utf-8") as f:
         f.write(VERSION)
     return True
 
@@ -523,7 +523,7 @@ _busy = set()
 
 def _stale():
     try:
-        with open(os.path.join(cache_dir(), "version.txt")) as f:
+        with open(os.path.join(cache_dir(), "version.txt"), encoding="utf-8") as f:
             return f.read().strip() != VERSION
     except OSError:
         return True

@@ -57,7 +57,7 @@ def list_presets():
     out = []
     for path in sorted(glob.glob(os.path.join(SHOWCASE_DIR, "*.json"))):
         try:
-            with open(path) as f:
+            with open(path, encoding="utf-8") as f:
                 cfg = json.load(f)
             out.append((path, cfg.get("title", os.path.basename(path))))
         except (OSError, ValueError):
@@ -70,7 +70,7 @@ def load_config(path_or_dict):
     if isinstance(path_or_dict, dict):
         cfg.update(path_or_dict)
     else:
-        with open(path_or_dict) as f:
+        with open(path_or_dict, encoding="utf-8") as f:
             cfg.update(json.load(f))
     return cfg
 

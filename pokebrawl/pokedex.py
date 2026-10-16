@@ -361,7 +361,7 @@ def build_dex(progress=print):
             e["abilities"] = list(entries[base]["abilities"])
     dex = {"version": DEX_VERSION, "pokemon": sorted(entries.values(), key=lambda e: e["id"]),
            "moves": sorted(moves.values(), key=lambda m: m["id"])}
-    with open(DEX_FILE, "w") as f:
+    with open(DEX_FILE, "w", encoding="utf-8") as f:
         json.dump(dex, f, separators=(",", ":"))
     try:
         os.remove(os.path.join(DATA_DIR, "pokemon_moves.csv"))  # 10 MB, no longer needed
@@ -454,7 +454,7 @@ def load_dex(progress=print):
     if _dex is None:
         data = None
         if os.path.exists(DEX_FILE):
-            with open(DEX_FILE) as f:
+            with open(DEX_FILE, encoding="utf-8") as f:
                 data = json.load(f)
             if data.get("version") != DEX_VERSION:
                 data = None
