@@ -17,7 +17,7 @@ import threading
 from . import pokedex
 from .version import APP_DIR, COMMITS_API, _git, _is_git, _version_file
 
-OWNER_REPO = "jamalmusialla81-hub/Pokemon-Game"
+OWNER_REPO = "Jakedapro/Pokemon-Game"
 TARBALL = "https://codeload.github.com/" + OWNER_REPO + "/tar.gz/{sha}"
 STAGE = APP_DIR + ".new"
 OLD = APP_DIR + ".old"

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # PokeBrawl one-command installer (macOS, also works on Linux).
 #
-#   curl -fsSL https://raw.githubusercontent.com/jamalmusialla81-hub/Pokemon-Game/HEAD/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/Jakedapro/Pokemon-Game/HEAD/install.sh | bash
 #
 # Installs into ~/.pokebrawl, adds a `pokebrawl` command and a PokeBrawl app in ~/Applications.
 # Re-running it updates the game.
@@ -10,7 +10,7 @@
 # - the game is installed from that folder instead of being downloaded.
 set -euo pipefail
 
-REPO="${POKEBRAWL_REPO:-https://github.com/jamalmusialla81-hub/Pokemon-Game.git}"
+REPO="${POKEBRAWL_REPO:-https://github.com/Jakedapro/Pokemon-Game.git}"
 BRANCH="${POKEBRAWL_BRANCH:-}"
 ROOT="${POKEBRAWL_HOME:-$HOME/.pokebrawl}"
 APP="$ROOT/app"
@@ -189,7 +189,7 @@ cat > "$BIN/pokebrawl" <<EOF
 #!/usr/bin/env bash
 export PYTHONPATH="$APP\${PYTHONPATH:+:\$PYTHONPATH}"
 if [ "\${1:-}" = "update" ]; then
-  script="\$(curl -fsSL https://raw.githubusercontent.com/jamalmusialla81-hub/Pokemon-Game/HEAD/install.sh)" || {
+  script="\$(curl -fsSL https://raw.githubusercontent.com/Jakedapro/Pokemon-Game/HEAD/install.sh)" || {
     echo "Can't reach the PokeBrawl update server right now. Get the latest PokeBrawl zip, unzip it and run:"
     echo "  bash ~/Downloads/PokeBrawl/install.sh"
     exit 1

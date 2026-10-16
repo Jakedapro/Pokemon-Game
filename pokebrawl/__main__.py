@@ -31,7 +31,7 @@ def _utf8_on_windows():
 
 
 WIN_UPDATE = ("powershell -NoProfile -ExecutionPolicy Bypass -Command "
-              "\"irm https://raw.githubusercontent.com/jamalmusialla81-hub/Pokemon-Game/HEAD/install.ps1 | iex\"")
+              "\"irm https://raw.githubusercontent.com/Jakedapro/Pokemon-Game/HEAD/install.ps1 | iex\"")
 
 
 def main(argv=None):

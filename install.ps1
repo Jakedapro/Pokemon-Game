@@ -1,6 +1,6 @@
 # PokeBrawl one-command installer for Windows 10/11. Paste this into PowerShell:
 #
-#   irm https://raw.githubusercontent.com/jamalmusialla81-hub/Pokemon-Game/HEAD/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/Jakedapro/Pokemon-Game/HEAD/install.ps1 | iex
 #
 # Installs into %USERPROFILE%\.pokebrawl with its own private Python (nothing else on your PC is touched), adds a
 # `pokebrawl` command and PokeBrawl shortcuts on the Desktop and in the Start menu. Re-running it updates the game.
@@ -11,7 +11,7 @@ $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"   # Invoke-WebRequest is very slow with its progress bar on
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
-$OwnerRepo = if ($env:POKEBRAWL_REPO) { $env:POKEBRAWL_REPO } else { "jamalmusialla81-hub/Pokemon-Game" }
+$OwnerRepo = if ($env:POKEBRAWL_REPO) { $env:POKEBRAWL_REPO } else { "Jakedapro/Pokemon-Game" }
 $Branch = if ($env:POKEBRAWL_BRANCH) { $env:POKEBRAWL_BRANCH } else { "HEAD" }
 $Root = if ($env:POKEBRAWL_HOME) { $env:POKEBRAWL_HOME } else { Join-Path $env:USERPROFILE ".pokebrawl" }
 $App = Join-Path $Root "app"

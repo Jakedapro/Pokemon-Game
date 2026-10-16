@@ -24,7 +24,7 @@ The real-time arena is used only for showcases.
 Open **Terminal** and paste:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/jamalmusialla81-hub/Pokemon-Game/HEAD/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Jakedapro/Pokemon-Game/HEAD/install.sh | bash
 ```
 
 Then type `pokebrawl` (or open **PokeBrawl** from `~/Applications`).
@@ -41,7 +41,7 @@ The installer:
 Open **PowerShell** (Start menu, type *PowerShell*) and paste:
 
 ```powershell
-irm https://raw.githubusercontent.com/jamalmusialla81-hub/Pokemon-Game/HEAD/install.ps1 | iex
+irm https://raw.githubusercontent.com/Jakedapro/Pokemon-Game/HEAD/install.ps1 | iex
 ```
 
 Then double-click **PokeBrawl** on your Desktop (or in the Start menu), or type `pokebrawl` in a new window.

@@ -3,7 +3,7 @@ import os
 import subprocess
 
 APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-COMMITS_API = "https://api.github.com/repos/jamalmusialla81-hub/Pokemon-Game/commits/HEAD"
+COMMITS_API = "https://api.github.com/repos/Jakedapro/Pokemon-Game/commits/HEAD"
 
 
 def _git(*args, timeout=8):
