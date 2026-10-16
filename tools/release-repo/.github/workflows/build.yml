@@ -1,0 +1,112 @@
+# Builds the PokeBrawl app for Mac (Apple Silicon + Intel) and Windows and publishes it as a GitHub release.
+# Runs whenever release.txt changes:   tag=v1.2.0   source=<commit of the game's source repo to build>
+# The source repo may be private: then add a SOURCE_TOKEN secret here (a fine-grained token that can read it).
+name: Build PokeBrawl
+
+on:
+  push:
+    paths: [release.txt]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-15-intel, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: rel
+        shell: bash
+        run: |
+          echo "tag=$(sed -n 's/^tag=//p' release.txt | tr -d '\r ')" >> "$GITHUB_OUTPUT"
+          echo "sha=$(sed -n 's/^source=//p' release.txt | tr -d '\r ')" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          repository: Jakedapro/Pokemon-Game
+          ref: ${{ steps.rel.outputs.sha }}
+          token: ${{ secrets.SOURCE_TOKEN || github.token }}
+          path: src
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build
+        shell: bash
+        working-directory: src
+        env:
+          TAG: ${{ steps.rel.outputs.tag }}
+        run: |
+          set -o pipefail
+          python -m pip install --quiet nuitka ordered-set zstandard -r requirements.txt 2>&1 | tee -a "$RUNNER_TEMP/build.log"
+          python tools/build_app.py --tag "$TAG" 2>&1 | tee -a "$RUNNER_TEMP/build.log"
+
+      - name: Windows installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        working-directory: src
+        env:
+          TAG: ${{ steps.rel.outputs.tag }}
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress | Out-Null }
+          $ver = $env:TAG.TrimStart("v")
+          & $iscc "/DAppVersion=$ver" "/DSrc=$PWD\dist\PokeBrawl-windows" "/DOut=$PWD\dist" "/DIcon=$PWD\build\PokeBrawl.ico" tools\PokeBrawl.iss *>> "$env:RUNNER_TEMP\build.log"
+          if ($LASTEXITCODE -ne 0) { Get-Content "$env:RUNNER_TEMP\build.log" -Tail 60; exit 1 }
+
+      - name: Smoke test
+        shell: bash
+        working-directory: src
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then exe=dist/PokeBrawl-windows/PokeBrawl.exe
+          else unzip -q dist/PokeBrawl-mac-*.zip -d "$RUNNER_TEMP/app" && exe="$RUNNER_TEMP/app/PokeBrawl.app/Contents/MacOS/PokeBrawl"; fi
+          "$exe" version 2>&1 | tee -a "$RUNNER_TEMP/build.log"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-${{ matrix.os }}
+          path: |
+            src/dist/PokeBrawl-mac-*.zip
+            src/dist/PokeBrawl-windows-setup.exe
+          if-no-files-found: error
+
+      - name: Save the log where it can be read without signing in (branch ci-log-<os>)
+        if: always()
+        shell: bash
+        env:
+          TAG: ${{ steps.rel.outputs.tag }}
+          STATUS: ${{ job.status }}
+        run: |
+          cd "$RUNNER_TEMP" && mkdir -p log && cd log && cp ../build.log . 2>/dev/null || echo "no log" > build.log
+          echo "$STATUS $TAG" > status.txt
+          git init -q && git add . && git -c user.name=ci -c user.email=ci@pokebrawl commit -qm "log ${{ matrix.os }}"
+          git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" HEAD:refs/heads/ci-log-${{ matrix.os }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag=$(sed -n 's/^tag=//p' release.txt | tr -d '\r ')
+          notes=$(sed -n 's/^notes=//p' release.txt)
+          ls -la out
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" out/* --clobber
+          else
+            gh release create "$tag" out/* --title "PokeBrawl $tag" --notes "${notes:-New version of PokeBrawl.}"
+          fi
