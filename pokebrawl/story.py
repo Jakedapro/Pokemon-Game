@@ -102,6 +102,10 @@ def check(game, dex, cond):
         return sum(1 for k, _, _ in custom_stones(dex) if k in mine) >= int(cond[13:])
     if cond.startswith("name:"):
         return game.get("name", "").upper() in cond[5:].split(",")
+    if cond == "starter_final":   # your first partner is still with you, fully evolved
+        from .journey import partner
+        mon = partner(game, dex)
+        return bool(mon) and not dex.all[mon["species"]].get("evo")
     return has(game, cond)
 
 
@@ -663,6 +667,29 @@ def npcs_for(world, index, game):
 WALK = set('.,"=_')
 
 
+def journey_steps(dex, game):
+    """The Wandering Sage's story: your first partner leads you to Starter's Haven, and MEW leaves its Mega
+    Stone(s) on the altar (Rare Candies if it has none, or you have them all already)."""
+    from .journey import partner
+    mon = partner(game, dex)
+    if not mon:
+        return None
+    nm = A.name_of(dex, mon).upper()
+    mine = set(game.get("megastones", []))
+    keys = [dex.all[f]["key"] for f in dex.all[mon["species"]].get("megas", [])
+            if f in dex.all and "primal" not in dex.all[f]["key"] and not dex.all[f].get("custom")]
+    reward = [("mega", k) for k in keys if k not in mine] or [("give", "rare-candy", 5)]
+    return [("say", "Wandering Sage", [f"That {nm}... it was your very first Pokemon, wasn't it?",
+                                       "Long ago, every trainer's first partner knew the way to a hidden shrine:",
+                                       "STARTER'S HAVEN. Only a first partner can find it.",
+                                       f"Look at it. Your {nm} already knows the way. Go on - follow it!"]),
+            ("journey",),
+            ("say", "", [f"On the altar, where MEW was, lies the gift it left for {nm}..."])] + reward + [
+            ("say", "Wandering Sage", [f"You came back! And your {nm} looks... prouder, somehow.",
+                                       "Few trainers ever see the Haven. Fewer still meet MEW. Treasure that."]),
+            ("flag", "journey")]
+
+
 def _settle(area, npcs):
     """Anyone standing on a wall, tree or roof (the region grew since their spot was picked) steps to the
     nearest free walkable tile."""
@@ -773,6 +800,13 @@ def _town_extras(world, area, rtown, game, add, out):
             used.add(xy)
             n["x"], n["y"] = xy
             add(**n)
+    if check(game, world.dex, ["badges>=5", "starter_final", "!journey"]):   # the Starter's Journey
+        steps = journey_steps(world.dex, game)
+        xy = _open_spot(area, used)
+        if steps and xy:
+            used.add(xy)
+            add(id="journey_sage", kind="story", look="Psychic", name="Wandering Sage", face="down",
+                x=xy[0], y=xy[1], script=steps)
     for k, (look, name, lines, cond) in enumerate(TOWN_TALK.get(rtown, [])):
         if check(game, world.dex, cond):
             place(rtown * 3 + k, id=f"talk{rtown}_{k}", kind="talk", look=look, name=name, lines=lines,
@@ -835,6 +869,24 @@ def _pond_edge(area):
             if ch == "~" and 0 < y and rows[y - 1][x] in ".,":
                 return (x, y - 1)
     return (2, len(rows) // 2)
+
+
+def _open_spot(area, used):
+    """A spot out in the open near the bottom of town (where you walk in), with room all round it to walk up
+    and talk."""
+    rows = area["rows"]
+    taken = used | {(n["x"], n["y"]) for n in area.get("npcs", [])}
+    mid = len(rows[0]) // 2
+
+    def free(x, y):
+        return (0 < y < len(rows) - 1 and 0 < x < len(rows[0]) - 1 and rows[y][x] in ".,=_"
+                and (x, y) not in taken)
+    for y in range(len(rows) - 4, 3, -1):
+        for x in sorted(range(1, len(rows[0]) - 1), key=lambda x: abs(x - mid)):
+            if free(x, y) and all(free(x + dx, y + dy) for dx in (-1, 0, 1) for dy in (-1, 0, 1)) \
+                    and rows[y - 1][x] != "D" and rows[y + 1][x] != "D":
+                return x, y
+    return None
 
 
 def _quiet_spot(area):

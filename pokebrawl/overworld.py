@@ -751,6 +751,13 @@ class OverworldScene(Scene):
                                          "turns": 99, "boss": True}, then=self._step)
         elif op == "tower":
             self._tower()
+        elif op == "journey":   # the Starter's Journey cutscene; the script goes on once it's over
+            from .journey import JourneyScene, partner
+            mon = partner(g, dex)
+            A.save(g)
+            if mon:
+                self.app.push(JourneyScene(self.app, g, mon))
+            self._step()
         elif op == "credits":
             from .adventure_ui import Credits
             A.save(g)
