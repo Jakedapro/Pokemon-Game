@@ -38,6 +38,8 @@ CAMEOS = {"ocean": ("lapras", "mantine", "tentacool"),
           "sky": ()}
 EM_FLYERS = {  # Emerald's own flying overworld sprites: name -> (path, frame size)
     "wingull": ("graphics/object_events/pics/pokemon/wingull.png", 16),
+    "mew": ("graphics/object_events/pics/pokemon/mew.png", 16, 32),
+    "statue": ("graphics/object_events/pics/misc/statue.png", 16, 32),
     "latias": ("graphics/object_events/pics/pokemon/latias_latios.png", 32),
     "hooh": ("graphics/object_events/pics/pokemon/ho_oh.png", 32),
 }
@@ -55,7 +57,8 @@ MAP_ROUTES = {
 
 def em_frames(name):
     """Frames of one of Emerald's flying Pokemon sprites (colour 0 transparent), or []."""
-    path, size = EM_FLYERS[name]
+    path, size, *tall = EM_FLYERS[name]
+    hgt = tall[0] if tall else size
     f = emerald.fetch(path)
     if not f:
         return []
@@ -66,7 +69,7 @@ def em_frames(name):
         img = G._rgba(img)
     except Exception:  # noqa: BLE001
         return []
-    return [img.subsurface((x, 0, size, size)).copy() for x in range(0, img.get_width() - size + 1, size)]
+    return [img.subsurface((x, 0, size, hgt)).copy() for x in range(0, img.get_width() - size + 1, size)]
 OW_URL = ("https://raw.githubusercontent.com/rh-hideout/pokeemerald-expansion/"
           "73b3fbeb574327cd9420c89e56bef5aa3c08fead/graphics/pokemon/{}/overworld.png")
 BA = "graphics/battle_anims/sprites/"
@@ -280,6 +283,9 @@ def dense_woods(trail, blocked):
     return out
 
 
+ALTAR = (376, 56)   # the middle of Mt. Pyre's summit altar
+HAVEN_FLOWERS = {c: 4 for c in [(19, 5), (20, 6), (26, 6), (27, 5), (19, 7), (27, 7), (20, 3), (26, 3)]
+                 + [(x, y) for y in range(9, 30, 2) for x in (21, 25)]}   # red flowers round the shrine and stairs
 HAVEN_SWAP = {804: 1, 805: 1, 161: 113}   # Mt. Pyre's summit without its gravestones (or the sky round it)
 
 
@@ -424,7 +430,9 @@ class JourneyScene(GBAScene):
             if r:
                 self.field = r
                 self.path = Path([(4, 60), (14, 44), (22, 30), (36, 14), (40, -6)])
-        self.haven = emerald.render("MtPyre_Summit_Layout", swap=HAVEN_SWAP)
+        self.haven = emerald.render("MtPyre_Summit_Layout", swap=HAVEN_SWAP, cells=HAVEN_FLOWERS)
+        self.mew_in = self.mew_out = self.blaze = None
+        self._mew_flash = False
 
     # ------------------------------------------------------------------ timing
     def _walk_d(self, tt):
@@ -458,7 +466,22 @@ class JourneyScene(GBAScene):
             AUDIO.cry(self.pid, 1.0)
             self.text = U.TextBox(["You've arrived at STARTER'S HAVEN.",
                                    f"{self.nm} walks up to the old shrine. It has always known the way.",
-                                   "Something on the shrine is glowing..."], self.app.pop)
+                                   "The altar blazes with light... Something is coming!",
+                                   f"MEW appeared! It loops around {self.nm}, laughing.",
+                                   "MEW leaves something glowing on the altar... and vanishes."], self.app.pop)
+        if self.finished and self.text is not None:   # the shrine's story moves with the words
+            ht = self.t - self.arrived
+            pages = self.text.pages
+            words = str(pages[min(self.text.page, len(pages) - 1)]) if pages else ""
+            if self.blaze is None and ("blazes" in words or "MEW" in words):
+                self.blaze = ht
+                AUDIO.play("hit_super", 0.5)
+            if self.mew_in is None and "MEW" in words:
+                self.mew_in = ht
+                self.flash = 1.0
+                AUDIO.cry(151, 1.0)
+            if self.mew_out is None and "vanishes" in words:
+                self.mew_out = ht
         for a in self.anims:
             a["x"] += a["vx"] * dt
             a["y"] += a["vy"] * dt
@@ -947,6 +970,7 @@ class JourneyScene(GBAScene):
 
     # --- Starter's Haven: the shrine on Mt. Pyre's summit
     def _draw_haven(self, s, t):
+        """The shrine on Mt. Pyre's summit: you climb to the altar, it blazes, and MEW appears."""
         if not self.haven:
             return
         under, over, _ = self.haven
@@ -954,13 +978,68 @@ class JourneyScene(GBAScene):
         py = 330 - 210 * walk
         cam = (256, int(max(0, min(under.get_height() - LH, py - 112))))
         s.blit(under, (-cam[0], -cam[1]))
-        self._halo(s, (376 - cam[0], 50 - cam[1]), t, 0.9)   # the altar, glowing
-        if self.rng.random() < 0.3:
-            self._anim("sparkle", 376 + self.rng.uniform(-30, 30), 60 + self.rng.uniform(-10, 20), fps=10, vy=-12)
+        ax, ay = ALTAR[0] - cam[0], ALTAR[1] - cam[1]
+        statue = self.fly.get("statue")
+        if statue:   # stone guardians either side of the altar
+            for cx in (20, 26):
+                s.blit(statue[0], statue[0].get_rect(midbottom=(cx * 16 + 8 - cam[0], 5 * 16 - cam[1])))
+        blaze = 0.0 if self.blaze is None else min(1.0, (t - self.blaze) / 1.0)
+        if blaze:   # a pillar of light out of the altar
+            p = 0.7 + 0.3 * math.sin(t * 9)
+            for w, c in ((22, (40, 36, 16)), (12, (70, 64, 30)), (4, (120, 110, 60))):
+                s.fill(tuple(int(v * blaze * p) for v in c), (ax - w // 2, 0, w, ay + 4),
+                       special_flags=pygame.BLEND_ADD)
+            if self.rng.random() < 0.2:
+                self._anim("glint", ALTAR[0] + self.rng.uniform(-10, 10), ALTAR[1] + self.rng.uniform(-4, 8),
+                           fps=8, vy=-40)
+        self._halo(s, (ax, ay), t, 0.45 + 0.15 * blaze, 0.8)
+        if self.rng.random() < 0.1:
+            self._anim("glint", ALTAR[0] + self.rng.uniform(-50, 50), ALTAR[1] + self.rng.uniform(0, 60), fps=6)
         self._draw_anims(s, cam)
         step = int(t * 5) % 2 if walk < 1 else 0
         mon = self.mf["up"][step]
         you = self.pf["walk"]["up"][(1 + step) if walk < 1 and int(t * 10) % 2 else 0]
-        s.blit(mon, mon.get_rect(midbottom=(386 - cam[0], int(py - cam[1]))))
+        mx, my = 386 - cam[0], int(py - cam[1])
+        s.blit(mon, mon.get_rect(midbottom=(mx, my)))
         s.blit(you, you.get_rect(midbottom=(364 - cam[0], int(py + 4 - cam[1]))))
         s.blit(over, (-cam[0], -cam[1]))
+        self._mew(s, t, (ax, ay), (mx, my - 14))
+
+    def _mew(self, s, t, altar, partner):
+        """MEW: it shimmers into being over the altar, loops playfully round your starter, then vanishes."""
+        fr = self.fly.get("mew")
+        if not fr or self.mew_in is None:
+            return
+        age = t - self.mew_in
+        gone = None if self.mew_out is None else t - self.mew_out
+        if gone is not None and gone > 1.2:
+            return
+        if age < 1.0:   # appearing over the altar
+            x, y = altar[0], altar[1] - 16
+            alpha = age
+        elif gone is None or gone < 0.6:   # looping round your starter
+            a = (age - 1.0) * 2.4
+            r = min(1.0, (age - 1.0) / 0.8)
+            x = altar[0] + (partner[0] - altar[0]) * 0.5 * r + math.sin(a) * 34 * r
+            y = altar[1] - 16 + (partner[1] - altar[1]) * 0.5 * r + math.sin(a * 2) * 14 * r
+            alpha = 1.0
+        else:   # back to the altar, and gone
+            x, y = altar[0], altar[1] - 16
+            alpha = max(0.0, 1 - (gone - 0.6) / 0.6)
+        if gone is not None and 0.55 < gone < 0.65 and not self._mew_flash:
+            self._mew_flash = True
+            self.flash = 1.0
+            for k in range(6):
+                self._anim("sparkle", ALTAR[0] + math.cos(k) * 12, ALTAR[1] - 16 + math.sin(k) * 8, fps=10)
+        y += math.sin(t * 3) * 3
+        img = fr[(0, 1)[int(t * 4) % 2] % len(fr)].copy()
+        img.set_alpha(int(255 * max(0.0, min(1.0, alpha))))
+        self._sprite_glow(s, (x, y + 8), alpha)
+        s.blit(img, img.get_rect(center=(int(x), int(y))))
+
+    def _sprite_glow(self, s, pos, k):
+        halo = self.fx.get("halo")
+        if halo and k > 0:
+            g = pygame.transform.scale_by(halo[0], 0.45)
+            g.set_alpha(int(110 * k))
+            s.blit(g, g.get_rect(center=(int(pos[0]), int(pos[1]))))
