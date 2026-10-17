@@ -155,10 +155,9 @@ class AdventureSession:
             bm = self.battle.sides[0].mons[i]
             if bm.fainted:
                 continue
-            gain = A.xp_yield(dex, foe["species"], foe["level"], p["level"], trainer)
-            if i not in fought:
-                gain //= 2
-            gain = max(1, gain)
+            if i not in fought and not A.exp_all_on(self.game):
+                continue   # FireRed: only the Pokemon that fought learn something - until you get the Exp. All
+            gain = max(1, A.xp_yield(dex, foe["species"], foe["level"], p["level"], trainer))
             before = p["level"]
             p["cur_hp"] = bm.hp
             events = A.gain_xp(dex, p, gain)
@@ -205,9 +204,9 @@ class AdventureSession:
             for i, p in enumerate(game["party"]):
                 if A.fainted(dex, p):
                     continue
+                if i not in fought and not A.exp_all_on(game):
+                    continue   # with the Exp. All the whole party gets the full amount
                 gain = A.xp_yield(dex, foe["species"], foe["level"], p["level"], trainer)
-                if i not in fought:
-                    gain //= 2      # the rest of the party learns by watching (like the Exp. Share)
                 xp[i] = xp.get(i, 0) + max(1, gain)
         out = {"won": b.winner == 0, "lost": b.winner == 1, "ran": b.ran, "caught": None, "xp": xp,
                "kind": self.kind, "trainer": self.trainer, "collapsed": b.collapsed}

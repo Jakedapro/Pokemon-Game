@@ -856,6 +856,10 @@ class BagScene(GBAScene):
             elif k == "mega-radar":   # back to the field with the radar switched on
                 self.game["_radar"] = True
                 self.app.pop()
+            elif k == "exp-all":   # switch it on and off
+                self.game["expall_off"] = not self.game.get("expall_off")
+                AUDIO.play("select", 0.5)
+                self.msg = "The EXP. ALL was turned " + ("OFF." if self.game["expall_off"] else "ON.")
             elif k in A.BALL_KEYS:
                 self.msg = "Throw it at a wild POKeMON in battle!"
             elif k not in A.SHOP:

@@ -419,6 +419,10 @@ def npcs_for(world, index, game):
                                         "Take this Key Stone. With it you can see the rifts on every route.",
                                         "Calm the Pokemon inside and the rift seals... leaving its Mega Stone!"]),
                 ("keystone",), ("flag", "keystone"), ("give", "mega-radar", 1),
+                ("say", "Prof. Oak", ["And one more thing. You'll be facing tougher trainers from here on.",
+                                        "This is the EXP. ALL. Keep it in your BAG and your whole team learns",
+                                        "from every battle - even the ones waiting in their Poke Balls!"]),
+                ("give", "exp-all", 1), ("flag", "expall"),
                 ("say", "Prof. Oak", ["In battle, press M (or the MEGA button) before picking a move.",
                                         "Gym Leaders have stones too. And some are hidden on the routes - look for "
                                         "sparkles on the ground!",
@@ -428,6 +432,12 @@ def npcs_for(world, index, game):
                                         "but they eat away at the Pokemon using them. Careful.",
                                         "And... keep an eye on Blake for me. He's chasing these rifts too.",
                                         "I'm afraid of what he'd do to get his father back."])])
+        add(id="oak_expall", kind="story", look="prof", x=4, y=7, name="Prof. Oak",
+            **{"if": ["keystone", "!expall"]}, script=[   # saves from before the Exp. All existed
+                ("say", "Prof. Oak", [f"{game['name']}! I nearly forgot - I made this for you.",
+                                        "The EXP. ALL. Keep it in your BAG and your whole team learns",
+                                        "from every battle - even the ones waiting in their Poke Balls!"]),
+                ("give", "exp-all", 1), ("flag", "expall")])
         add(id="hazel_key_wait", kind="talk", look="prof", x=4, y=7, name="Prof. Oak", **{"if": "!badges>=2"},
             lines=["Oh, hello! Come and find me when you have two badges. I have something for you."])
         add(id="q_letter_man", kind="quest", quest="q_letter", look="Hiker", x=12, y=14, face="left")
@@ -989,6 +999,8 @@ QUESTS.update({
                  "reward": [("purify",)]},
 })
 KEY_ITEMS = {"mega-radar": ("Mega Radar", "Detects Mega Stones buried on a route. Use it, follow the signal, dig."),
+             "exp-all": ("Exp. All", "Every Pokemon in your party gets full experience from each battle - even if it "
+                                     "didn't fight."),
              "lucky-charm": ("Lucky Charm", "A lucky charm someone dropped."),
              "old-letter": ("Old Letter", "A letter for someone in Bloomfield City.")}
 

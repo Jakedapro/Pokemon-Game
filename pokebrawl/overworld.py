@@ -1027,6 +1027,10 @@ class OverworldScene(Scene):
             foe = A.make_mon(dex, legend, hi + 6, rng)
         else:
             lv = rng.randint(lo, hi)
+            met = self.game.get("wilds_met", 0)
+            if met < 4 and area["route"] <= 2:   # your first few wild Pokemon: level 1, 2, 3, 4 - then it picks up
+                lv = met + 1
+            self.game["wilds_met"] = met + 1
             charm = S.has(self.game, "shiny_charm")
             foe = A.make_mon(dex, A.grown_species(dex, dex.all[self.world.wild_species(area, rng)], lv - 4), lv, rng,
                              shiny=rng.randrange(50 if charm else A.SHINY_ODDS) == 0)

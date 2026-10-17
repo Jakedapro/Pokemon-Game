@@ -243,6 +243,11 @@ def moves_at(dex, entry, level):
     return out or [dex.move("tackle")["id"]]
 
 
+def exp_all_on(game):
+    """True when you have the Exp. All in your bag and it's switched on."""
+    return bool(game.get("bag", {}).get("exp-all")) and not game.get("expall_off")
+
+
 def make_mon(dex, entry, level, rng, shiny=None, origin=""):
     level = max(1, min(MAX_LEVEL, int(level)))
     abil = [a for a, hidden in entry.get("abilities", []) if not hidden] or [best_ability(entry)]
@@ -697,6 +702,8 @@ class World:
     def route_levels(r):
         if r >= NUM_ROUTES:   # Victory Road
             return (60, 66)
+        if r == 1:
+            return (1, 4)     # the very first route: a gentle start
         lo = 2 + round(3.2 * (r - 1))
         return (lo, lo + 3)
 
@@ -711,7 +718,7 @@ class World:
         lo, hi = self.route_levels(r)
         cand = []
         types = route_types(r)
-        cap = 330 + 16 * r
+        cap = 300 if r == 1 else 330 + 16 * r   # Route 1: only weak little Pokemon
         starters = {i for trio in STARTERS.values() for i in trio}
         for e in self.dex.all.values():
             if e["id"] in starters or e["species"] in SPECIAL_IDS:
