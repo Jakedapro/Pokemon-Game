@@ -47,6 +47,20 @@ def best_damage(user, target, weather=None):
     return max((est_damage(user, target, m, weather) for m in user.moves), default=0.0)
 
 
+def _pointless(me, foe, mv):
+    """A status move that can't do anything right now: lowering a stat already at -6 (or -2 for an easy
+    trainer - nobody spams Growl in FireRed), raising one already maxed, or a status the foe already has."""
+    if mv.get("cls") != "status" or not mv.get("stats"):
+        return False
+    target = me if mv.get("target") == "user" or mv.get("cat") == "net-good-stats" else foe
+    stages = getattr(target, "stages", {}) or {}
+    for k, v in mv["stats"].items():
+        cur = stages.get(k, 0)
+        if (v < 0 and cur > -2) or (v > 0 and cur < 6):
+            return False
+    return True
+
+
 class TurnBot:
     def __init__(self, difficulty="normal", seed=None):
         self.level = difficulty
@@ -88,8 +102,9 @@ class TurnBot:
         if self.level == "easy":
             if req["can_mega"] and self.rng.random() < 0.3:
                 mega = True
+            useful = [m for m in usable if m["slot"] == -1 or not _pointless(me, foe, me.moves[m["slot"]])] or usable
             if self.rng.random() < 0.75:
-                return {"type": "move", "slot": self.rng.choice(usable)["slot"], "mega": mega}
+                return {"type": "move", "slot": self.rng.choice(useful)["slot"], "mega": mega}
         if usable[0]["slot"] == -1:
             return {"type": "move", "slot": -1, "mega": False}
         w = battle.weather

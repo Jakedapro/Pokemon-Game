@@ -660,15 +660,17 @@ class OverworldScene(Scene):
         nm = A.name_of(dex, mon).upper()
         AUDIO.play("win")
         AUDIO.cry(pid, 1.0)
-        got = [f"{g['name'].upper()} received the {nm} from PROF. HAZEL!"]
+        got = [f"{g['name'].upper()} received the {nm} from PROF. OAK!"]
         if mon.get("shiny"):
             got.insert(0, f"...Wait, it's sparkling! It's a SHINY {nm}!")
         steps = [("say", "Prof. Oak", ["This Pokemon is really energetic!"]), ("say", "", got)]
         if rival:
             steps += [("say", S.RIVAL, ["I'll take this one, then!"]),
-                      ("say", "", [f"{S.RIVAL.upper()} received the {rival['name'].upper()} from PROF. HAZEL!"])]
+                      ("say", "", [f"{S.RIVAL.upper()} received the {rival['name'].upper()} from PROF. OAK!"])]
         steps += [("say", S.RIVAL, [f"Wait, {g['name']}! Let's check out our Pokemon!", "Come on, I'll take you on!"]),
                   ("battle", "rival1"),
+                  ("ifwon", [("say", S.RIVAL, ["WHAT? Unbelievable! I picked the wrong Pokemon!"])],
+                   [("say", S.RIVAL, ["Yeah! Am I great or what?"])]),
                   ("say", S.RIVAL, ["Okay! I'll make my Pokemon fight to toughen it up!",
                                     f"{g['name']}! Gramps! Smell you later! See you at the World Tournament!"]),
                   ("flag", "rival1"), ("heal",),
@@ -709,6 +711,10 @@ class OverworldScene(Scene):
             if st[1] == "rival1":
                 trainer["practice"] = True   # the first battle goes on win or lose
             self._battle(team, "story", trainer, then=self._step)
+        elif op == "ifwon":   # ("ifwon", steps if you won the last battle, steps if you lost)
+            won = bool((getattr(self, "last_battle", None) or {}).get("won"))
+            self.script[0:0] = list(st[1] if won else st[2])
+            self._step()
         elif op == "gift":   # a Pokemon that joins you
             _, species, level = st
             mon = A.make_mon(dex, dex.all[species], level, self.rng, shiny=self.rng.randrange(32) == 0)
@@ -779,7 +785,9 @@ class OverworldScene(Scene):
             g["bag"][item] = g["bag"].get(item, 0) + n
             AUDIO.play("catch", 0.6)
             name = A.SHOP.get(item, S.KEY_ITEMS.get(item, (item,)))[0]
-            self.say([f"{g['name']} received {n} x {name.upper()}!"], self._step)
+            self.say([f"{g['name']} received {n} x {name}!" if n > 1 else
+                      f"{g['name']} received {'an' if name[0] in 'AEIOU' else 'a'} {name}!"],
+                     self._step)
         elif op == "take":
             g["bag"].pop(st[1], None)
             self._step()
@@ -921,7 +929,8 @@ class OverworldScene(Scene):
         g["bag"][it["item"]] = g["bag"].get(it["item"], 0) + it["count"]
         AUDIO.play("catch", 0.6)
         name = A.SHOP.get(it["item"], S.KEY_ITEMS.get(it["item"], (it["item"],)))[0]
-        self.say([f"{g['name']} found {it['count']} x {name}!", f"{g['name']} put the {name} in the BAG."])
+        found = f"{it['count']} x {name}" if it["count"] > 1 else (f"an {name}" if name[0] in "AEIOU" else f"a {name}")
+        self.say([f"{g['name']} found {found}!", f"{g['name']} put {'them' if it['count'] > 1 else 'it'} in the BAG."])
 
     # ------------------------------------------------------------------ trainers
     def _trainer_spots(self):
@@ -1066,7 +1075,8 @@ class OverworldScene(Scene):
             def wake():
                 self.warp = {"t": 0.0, "go": lambda: (self._load_area(area, x, y), self._heal_all(), A.save(g))}
             self.say([f"{g['name']} is out of usable Pokemon!", f"{g['name']} panicked and dropped {lost} coins...",
-                      "...", f"{g['name']} scurried to a Pokemon Center, protecting the exhausted Pokemon."], wake)
+                      "...", f"{g['name']} scurried home, protecting the exhausted Pokemon." if area == 0 else
+                      f"{g['name']} scurried to a Pokemon Center, protecting the exhausted Pokemon."], wake)
             return
         lines = []
         if r["caught"]:

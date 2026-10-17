@@ -815,7 +815,7 @@ class World:
             "Super effective moves do double damage. Water beats Fire, Fire beats Grass...",
             "The gym leader here is tough. Bring Pokemon with a type advantage!",
             "Shiny Pokemon have different colors. They're super rare!",
-            "Press Esc to open your menu - party, bag, Pokedex and saving.",
+            "Press ENTER (or Esc) to open your menu - party, bag, Pokedex and saving.",
         ]
         npcs = []
         spots = [(x, y) for y in range(len(rows)) for x in range(1, COLS - 1) if rows[y][x] in ".," and
@@ -1052,7 +1052,8 @@ def room(world, kind, area_index, door=None):
     elif kind == "house":
         seed = t * 7 + 1 + (door[0] * 31 + door[1] * 17 if door else 0)
         rng = random.Random(seed)
-        lines = rng.sample(HOUSE_LINES, 2)
+        pool = [ln for ln in HOUSE_LINES if t >= 1 or "Gym" not in ln]   # Rootleaf has no Gym to talk about
+        lines = rng.sample(pool, 2)
         looks = rng.sample(HOUSE_PEOPLE, 2)
         npcs.append({"id": f"h{t}-{seed}", "kind": "talk", "x": 8, "y": 5, "face": "down", "name": "",
                      "look": looks[0], "lines": [lines[0]]})

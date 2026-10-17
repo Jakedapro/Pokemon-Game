@@ -391,7 +391,7 @@ def npcs_for(world, index, game):
         add(id="aide1", kind="story", look="prof", x=7, y=len(area["rows"]) - 3, face="up", name="Oak's Aide",
             **{"if": "!aide1"}, script=[
                 ("say", "Oak's Aide", ["Oh! You're the new trainer! The Professor told me all about you.",
-                                         "Some tips: hold X while you walk to run, and press ENTER for your menu.",
+                                         "Some tips: hold X while you walk to run, and press ENTER (or Esc) for your menu.",
                                          "Weaken a wild Pokemon before you throw a Poke Ball - it's much easier!"]),
                 ("flag", "aide1")])
         add(id="q_charm_girl", kind="quest", quest="q_charm", look="Lass", x=3, y=len(area["rows"]) - 8, face="right")
@@ -1002,6 +1002,11 @@ def quest_script(game, dex, qid):
         return [("say", "", ["Thanks again for your help!"])]
     if st is None:
         state[qid] = "active"
+        if not q.get("start") and check(game, dex, q["need"]):   # you've already got what they're after
+            steps = [("say", "", q["ask"][:1]), ("say", "", q["done"])] + q["reward"]
+            if q.get("take"):
+                steps.append(("take", q["take"]))
+            return steps + [("quest_done", qid)]
         return [("say", "", q["ask"])] + q.get("start", []) + [("say", "", [f"Quest started: {q['name']}"])]
     if check(game, dex, q["need"]):
         steps = [("say", "", q["done"])] + q["reward"]

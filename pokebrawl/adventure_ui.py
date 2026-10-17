@@ -307,7 +307,7 @@ class NewGame(GBAScene):
         A.use_options({"opts": self.opts})
         self.stage = "talk"
         self._talk("prof", ["Hello there! Glad to meet you! Welcome to the world of POKeMON!",
-                            "My name is HAZEL. Everyone around here calls me the POKeMON PROF."], self._part2)
+                            "My name is OAK. Everyone around here calls me the POKeMON PROF."], self._part2)
 
     def _part2(self):
         AUDIO.cry(self.SPEECH_MON, 0.8)
@@ -1135,12 +1135,15 @@ class MartScene(GBAScene):
                     self.stage = "buy"
 
     def draw(self, surf):
-        bg(surf, (152, 200, 232), (224, 240, 248))
-        # the shop counter and clerk
-        pygame.draw.rect(surf, (104, 144, 232), (0, 150, VW, 20))
-        pygame.draw.rect(surf, (240, 232, 216), (0, 170, VW, 70))
-        clerk = pygame.transform.scale_by(G.person("clerk", "down", 0), 3)
-        surf.blit(clerk, clerk.get_rect(midbottom=(80, 160)))
+        below = self.app.stack[-2] if len(self.app.stack) > 1 and self.app.stack[-1] is self else None
+        if below is not None and type(below).__name__ == "OverworldScene":   # FireRed: the menus open over the shop
+            text, below.text = below.text, None
+            below.draw(surf)
+            below.text = text
+        else:
+            bg(surf, (152, 200, 232), (224, 240, 248))
+            clerk = pygame.transform.scale_by(G.person("clerk", "down", 0), 3)
+            surf.blit(clerk, clerk.get_rect(midbottom=(80, 160)))
         g = self.game
         inner = U.box(surf, (4, 4, 170, 52))
         F.draw(surf, "MONEY", (inner.x + 8, inner.y + 2), U.TEXT, U.SHADOW, scale=1)
@@ -1392,7 +1395,7 @@ class HallOfFame(GBAScene):
 class Credits(GBAScene):
     """The true ending's credits: the cast of the story scrolls up while your team walks along the bottom."""
     ROLL = [("THE FIRST RIFT", None), ("", None),
-            ("PROFESSOR HAZEL", "prof"), ("who never stopped looking", None), ("", None),
+            ("PROFESSOR OAK", "prof"), ("who never stopped looking", None), ("", None),
             ("BLAKE", "rival"), ("who found his way back", None), ("", None),
             ("DR. ELIAS", "elias"), ("ten years in a rift, home at last", None), ("", None),
             ("AURELIA", "champ"), ("who kept the title warm", None), ("", None),

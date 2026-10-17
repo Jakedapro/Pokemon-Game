@@ -63,10 +63,11 @@ class AdventureSession:
         self.battle.choose(1, {"type": "switch", "index": 0})
         intro = {"wild": (f"The rift tore open! A raging {A.name_of(dex, foes[0]).upper()} burst out!"
                           if self.trainer.get("rift") else f"A wild {A.name_of(dex, foes[0])} appeared!"),
-                 "gym": f"Gym Leader {self.trainer.get('leader', '')} wants to battle!",
-                 "champion": f"Champion {self.trainer.get('leader', '')} wants to battle!"}.get(
-            kind, f"{self.names[1]} wants to battle!")
-        self._advance([{"t": intro, "a": None}])
+                 "gym": f"Gym Leader {self.trainer.get('leader', '')} would like to battle!",
+                 "champion": f"Champion {self.trainer.get('leader', '')} would like to battle!"}.get(
+            kind, f"{self.names[1]} would like to battle!")
+        # a plain wild one: the battle screen itself says "Wild X appeared!"
+        self._advance([{"t": intro, "a": None}] if kind != "wild" or self.trainer.get("rift") else None)
 
     # ------------------------------------------------------------------ the session API the battle screen uses
     def _bots(self):

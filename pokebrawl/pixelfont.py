@@ -124,7 +124,8 @@ def _real(kind="normal"):
 
 _WORDS = [("POKeMON", "Pokémon"), ("POKéMON", "Pokémon"), ("POKEMON", "Pokémon"), ("POKeDEX", "Pokédex"),
           ("POKéDEX", "Pokédex"), ("POKEDEX", "Pokédex"), ("POKe MART", "Poké Mart"), ("POKE MART", "Poké Mart"),
-          ("POKe BALL", "Poké Ball"), ("POKE BALL", "Poké Ball"), ("POKeBRAWL", "PokéBrawl"), ("POKe", "Poké"),
+          ("POKe BALLS", "Poké Balls"), ("POKE BALLS", "POKé BALLS"), ("POKe BALL", "Poké Ball"),
+          ("POKE BALL", "POKé BALL"), ("POKeBRAWL", "PokéBrawl"), ("POKe", "Poké"),
           ("Pokemon", "Pokémon"), ("Pokedex", "Pokédex"), ("Poke ", "Poké ")]
 
 

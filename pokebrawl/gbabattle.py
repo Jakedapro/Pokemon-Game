@@ -145,8 +145,7 @@ class GBABattle(Scene):
                     self.queue.insert(0, [f"Wild{shiny} {A.name_of(self.dex, m).upper()} appeared!", None])
                     if m.get("shiny"):
                         self._shine(1)
-                else:
-                    self.queue.insert(0, [f"{self.trainer.get('name', 'Trainer')} would like to battle!", None])
+                # trainers: the session's own "... would like to battle!" line is already first in the queue
             return
         if self.mode != "play":
             return
@@ -489,7 +488,7 @@ class GBABattle(Scene):
         mx = self.me_at[0] + int((1 - e) * 400)
         self._platform(surf, fx, self.foe_at[1] - 6, 92, 20)
         self._platform(surf, mx, self.me_at[1] - 8, 110, 24)
-        if self.mode == "intro" and self.s.kind != "wild":   # trainers standing on their platforms
+        if self.s.kind != "wild" and (self.mode == "intro" or self.vis[1] is None):   # trainers on their platforms
             look = self.trainer.get("look") or "Youngster"
             img = pygame.transform.scale_by(G.person(look, "down", 0), 2)
             surf.blit(img, img.get_rect(midbottom=(fx, self.foe_at[1] - 4)))
@@ -519,7 +518,7 @@ class GBABattle(Scene):
         e = 1 - (1 - k) ** 3
         fx = self.foe_at[0] + int((1 - e) * -400)
         mx = self.me_at[0] + int((1 - e) * 400)
-        if self.mode == "intro" and self.s.kind != "wild":   # the trainer, in their battle picture
+        if self.s.kind != "wild" and (self.mode == "intro" or self.vis[1] is None):   # the trainer stays until they send out
             look = self.trainer.get("look") or "Youngster"
             img = BG.trainer_pic(look)
             if img is None:
