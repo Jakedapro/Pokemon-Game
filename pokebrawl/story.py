@@ -31,7 +31,10 @@ Script steps:
   ("money", n) / ("heal",)
   ("pay", n)                           pay coins (the script stops if you can't)
   ("purify",)                          turn a corrupted Mega Stone back into a clean one
-  ("wild", species, level, shiny)      a one-off wild encounter (the Snorlax, the red Gyarados...)
+  ("wild", species, level, shiny)      a one-off wild encounter (the Snorlax, the red Gyarados...); the rest of
+                                       the script (its flag) only runs once you've caught it
+                                       (add "leaves" and it goes on either way, like the Snorlax on the road)
+  ("ifcaught", steps if you caught the last wild Pokemon, steps if not)
   ("gift", species id, level)          a Pokemon joins you
   ("riftboss", key, level, anomaly)    a raging legendary inside a rift that doesn't collapse (the finale)
   ("tournament",)                      the World Tournament (Elite Four + Grand Final)
@@ -485,7 +488,9 @@ def npcs_for(world, index, game):
         add(id="snorlax", kind="static", pokemon="snorlax", level=30, x=7, y=len(area["rows"]) // 2 + 3,
             **{"if": "!snorlax"}, script=[("say", "", ["A huge Pokemon is fast asleep in the middle of the road!",
                                                        "...It woke up! It looks angry!"]),
-                                          ("wild", "snorlax", 30, False), ("flag", "snorlax")])
+                                          ("wild", "snorlax", 30, False, "leaves"),   # never left blocking the road
+                                          ("ifcaught", [], [("say", "", ["SNORLAX lumbered off into the trees."])]),
+                                          ("flag", "snorlax")])
     if rtown == 8:   # Brawlport: Morga makes Blake an offer
         add(id="morga_offer", kind="story", look="admin", x=7, y=6, face="down", sight=4, auto=True,
             name=f"Admin {ADMIN}", **{"if": ["badges>=7", "!morga_offer"]}, script=[

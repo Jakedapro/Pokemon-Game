@@ -717,6 +717,10 @@ class OverworldScene(Scene):
             if st[1] == "rival1":
                 trainer["practice"] = True   # the first battle goes on win or lose
             self._battle(team, "story", trainer, then=self._step)
+        elif op == "ifcaught":
+            caught = bool((getattr(self, "last_battle", None) or {}).get("caught"))
+            self.script[0:0] = list(st[1] if caught else st[2])
+            self._step()
         elif op == "ifwon":   # ("ifwon", steps if you won the last battle, steps if you lost)
             won = bool((getattr(self, "last_battle", None) or {}).get("won"))
             self.script[0:0] = list(st[1] if won else st[2])
@@ -786,10 +790,17 @@ class OverworldScene(Scene):
             self.say([f"The {S.stone_name(dex, key).upper()} is clean again!", "Its light is calm and warm."],
                      self._step)
         elif op == "wild":
-            _, species, level, shiny = st
+            _, species, level, shiny, *how = st
             e = dex.get(species)
             foe = A.make_mon(dex, e, level, self.rng, shiny=shiny)
-            self._battle([foe], "wild", None, then=self._step)
+
+            def after():   # a one-off Pokemon only leaves for good once it's caught
+                if (getattr(self, "last_battle", None) or {}).get("caught") or "leaves" in how:
+                    self._step()
+                else:
+                    self.script = None
+                    self.say([f"The {e['name'].upper()} got away...", "It might be back if you look again."])
+            self._battle([foe], "wild", None, then=after)
         elif op == "flag":
             S.set_flag(g, st[1])
             self._step()
