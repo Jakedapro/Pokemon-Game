@@ -179,11 +179,13 @@ def layout(name):
     return out
 
 
-def render(name, x=0, y=0, w=None, h=None, scale=1, swap=None):
+def render(name, x=0, y=0, w=None, h=None, scale=1, swap=None, cells=None):
     """Part of a real Emerald map: (under, over, blocked), like frlg.render. swap: {metatile: metatile} to
-    change pieces of the map (say, gravestones into grass)."""
+    change pieces of the map (say, gravestones into grass); cells: {(x, y): metatile} to repaint single cells
+    (blocked is then left as the original map has it)."""
     swap = swap or {}
-    key = ("render", name, x, y, w, h, scale, tuple(sorted(swap.items())))
+    cells = cells or {}
+    key = ("render", name, x, y, w, h, scale, tuple(sorted(swap.items())), tuple(sorted(cells.items())))
     if key in _cache:
         return _cache[key]
     lay = layout(name)
@@ -199,7 +201,7 @@ def render(name, x=0, y=0, w=None, h=None, scale=1, swap=None):
             row = []
             for xx in range(w):
                 b = lay["blocks"][(y + yy) * lay["w"] + x + xx]
-                mid = swap.get(b & 0x3FF, b & 0x3FF)
+                mid = cells.get((x + xx, y + yy), swap.get(b & 0x3FF, b & 0x3FF))
                 under.blit(ts.metatile(mid, "under"), (xx * 16, yy * 16))
                 top = ts.metatile(mid, "over")
                 if top is not None:

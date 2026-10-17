@@ -33,9 +33,31 @@ MAP_T, TRAVEL_T = 7.0, 34.0
 OCEAN = {"water", "ice"}
 FOREST = {"grass", "bug", "poison", "fairy"}
 ROUTE_NAME = {"ocean": "the SEA", "forest": "the FOREST", "sky": "the MOUNTAINS"}
-CAMEOS = {"ocean": ("wingull", "lapras", "mantine", "tentacool"),
-          "forest": ("wurmple", "shroomish", "slakoth", "taillow", "silcoon", "pikachu"),
-          "sky": ("pidgey", "skarmory")}
+CAMEOS = {"ocean": ("lapras", "mantine", "tentacool"),
+          "forest": ("wurmple", "shroomish", "slakoth", "silcoon", "pikachu"),
+          "sky": ()}
+EM_FLYERS = {  # Emerald's own flying overworld sprites: name -> (path, frame size)
+    "wingull": ("graphics/object_events/pics/pokemon/wingull.png", 16),
+    "latias": ("graphics/object_events/pics/pokemon/latias_latios.png", 32),
+    "hooh": ("graphics/object_events/pics/pokemon/ho_oh.png", 32),
+}
+BANNERS = {"ocean": (0.1, 14.9), "forest": (11.1,), "sky": (0.1, 14.9)}   # the HM-style move banner
+
+
+def em_frames(name):
+    """Frames of one of Emerald's flying Pokemon sprites (colour 0 transparent), or []."""
+    path, size = EM_FLYERS[name]
+    f = emerald.fetch(path)
+    if not f:
+        return []
+    try:
+        img = pygame.image.load(f)
+        if img.get_bitsize() <= 8:
+            img.set_colorkey(img.get_palette_at(0))
+        img = G._rgba(img)
+    except Exception:  # noqa: BLE001
+        return []
+    return [img.subsurface((x, 0, size, size)).copy() for x in range(0, img.get_width() - size + 1, size)]
 OW_URL = ("https://raw.githubusercontent.com/rh-hideout/pokeemerald-expansion/"
           "73b3fbeb574327cd9420c89e56bef5aa3c08fead/graphics/pokemon/{}/overworld.png")
 BA = "graphics/battle_anims/sprites/"
@@ -97,7 +119,7 @@ def lines_for(biome, nm, player):
                 (5.5, "Wild POK\u00e9MON peek out from between the trees..."),
                 (11.0, f"A tree blocks the path! {nm} used VINE WHIP!"),
                 (16.5, f"{nm} hums softly. The forest makes way for it."),
-                (23.0, "Sunlight breaks through the leaves. The trees open up..."),
+                (23.0, "Sunlight breaks through the leaves. The way is clear..."),
                 (28.5, f"{nm}'s flower is glowing. It knows the way.")]
     return [(0.5, f"{nm} spreads its wings. {player} holds on tight."),
             (5.5, "One beat of its wings and the ground drops away!"),
@@ -225,6 +247,29 @@ def _splice(name, spans):
     return under, over, blocked
 
 
+def dense_woods(trail, blocked):
+    """Petalburg Woods' cells repainted so every 2x2 block is one of its trees, except along the trail (and a
+    tree's base or crown tip where it meets the trail, the way the woods' own edges are drawn)."""
+    h, w = len(blocked), len(blocked[0])
+    open_blocks = {(x // 2, y // 2) for x, y in trail}
+    out = {}
+    for y in range(h):
+        for x in range(w):
+            bx, by = x // 2, y // 2
+            if (bx, by) in open_blocks:
+                if y % 2 and (bx, by + 1) not in open_blocks and y + 1 < h:
+                    out[(x, y)] = 454 + (x % 2)          # the tip of the tree crown below
+                elif blocked[y][x]:
+                    out[(x, y)] = 1                      # half a tree left on the trail: grass instead
+                continue
+            top, odd = y % 2 == 0, x % 2
+            if not top and (bx, by + 1) in open_blocks:
+                out[(x, y)] = 484 + odd                  # a tree's base, meeting the trail
+            else:
+                out[(x, y)] = (468 if top else 476) + odd
+    return out
+
+
 HAVEN_SWAP = {804: 1, 805: 1, 161: 113}   # Mt. Pyre's summit without its gravestones (or the sky round it)
 
 
@@ -286,6 +331,10 @@ class JourneyScene(GBAScene):
         self.fx = {k: fx_frames(k) for k in FX}
         self.fx["cloud"] = [self._whiten(c) for c in self.fx["cloud"]]
         self.cameo = {}
+        self.fly = {k: em_frames(k) for k in EM_FLYERS}
+        self.front = None
+        self.shake = 0.0
+        self.banner_cry = set()
         threading.Thread(target=self._load_cameos, daemon=True).start()
         self.overview = region_map()
         self._setup()
@@ -304,6 +353,12 @@ class JourneyScene(GBAScene):
         return out
 
     def _load_cameos(self):
+        try:
+            from . import battlegfx
+            img = battlegfx.mon(self.pid, shiny=bool(self.mon.get("shiny")))
+            self.front = pygame.transform.scale(img, (64, 64)) if img else None
+        except Exception:  # noqa: BLE001
+            self.front = None
         for name in CAMEOS[self.biome]:
             e = self.dex.get(name)
             if e:
@@ -332,6 +387,8 @@ class JourneyScene(GBAScene):
                 starts = [(x, y) for y in range(h - 1, 0, -1) for x in range(w) if not blocked[y][x]][:1]
                 cells = _route(blocked, starts, lambda x, y: y <= 5,
                                prefer=((0, -1), (-1, 0), (1, 0), (0, 1))) if starts else None
+                if cells:   # the same woods, grown dense: trees everywhere but a narrow trail
+                    r = emerald.render("PetalburgWoods_Layout", cells=dense_woods(cells, blocked))
                 self.field, self.path = r, Path(cells) if cells else None
                 if self.path:   # two trees in the way, for Vine Whip to clear
                     for when in (12.6, 19.5):
@@ -459,6 +516,55 @@ class JourneyScene(GBAScene):
         img = fr[face][int(self.t * speed) % 2]
         s.blit(img, img.get_rect(midbottom=(x, y + 2 - lift)))
 
+    def _flyer(self, s, name, frames, pos, fps, flip=False, rot=0, shadow=None):
+        """One of Emerald's flying Pokemon, wings beating, with its shadow on the ground below."""
+        fr = self.fly.get(name)
+        if not fr:
+            return
+        if shadow:
+            self._sprite(s, "shadow_s" if fr[0].get_width() <= 16 else "shadow", 0, shadow, alpha=110)
+        img = fr[frames[int(self.t * fps) % len(frames)] % len(fr)]
+        if flip:
+            img = pygame.transform.flip(img, True, False)
+        if rot:
+            img = pygame.transform.rotate(img, rot)
+        s.blit(img, img.get_rect(center=(int(pos[0]), int(pos[1]))))
+
+    def _banner(self, s, tt):
+        """The HM move banner, as FireRed shows it when a Pokemon uses a field move: a band streaks across the
+        screen and your Pokemon's picture flies in, cries, and flies off."""
+        for start in BANNERS[self.biome]:
+            age = tt - start
+            if not 0 <= age < 1.5 or self.front is None:
+                continue
+            if start not in self.banner_cry:
+                self.banner_cry.add(start)
+                AUDIO.cry(self.pid, 1.0)
+            open_ = min(1.0, age / 0.12) * min(1.0, (1.5 - age) / 0.12)
+            hh = int(28 * open_)
+            cy = 62
+            band = pygame.Rect(0, cy - hh, LW, hh * 2)
+            s.fill((184, 216, 248), band)
+            for k in range(14):   # the streaks rushing past
+                y = cy - hh + 2 + (k * 37) % max(1, hh * 2 - 4)
+                x = (k * 71 - age * 720) % (LW + 80) - 40
+                s.fill((248, 252, 255) if k % 3 else (136, 176, 232), (int(x), y, 24 + (k * 13) % 40, 1))
+            s.fill((64, 96, 168), (0, cy - hh - 1, LW, 1))
+            s.fill((64, 96, 168), (0, cy + hh, LW, 1))
+            s.fill((248, 248, 248), (0, cy - hh - 2, LW, 1))
+            s.fill((248, 248, 248), (0, cy + hh + 1, LW, 1))
+            if hh > 8:
+                if age < 0.25:
+                    x = LW + 40 - (LW + 40 - 120) * (age / 0.25)
+                elif age < 1.15:
+                    x = 120
+                else:
+                    x = 120 - (age - 1.15) / 0.35 * 200
+                clip = s.get_clip()
+                s.set_clip(band)
+                s.blit(self.front, self.front.get_rect(center=(int(x), cy)))
+                s.set_clip(clip)
+
     def _field(self, s, cam, layer):
         s.blit(self.field[layer], (-int(cam[0]), -int(cam[1])))
 
@@ -479,7 +585,10 @@ class JourneyScene(GBAScene):
             elif self.t >= MAP_T and self.field and self.path:
                 tt = self.t - MAP_T
                 {"ocean": self._draw_ocean, "forest": self._draw_forest, "sky": self._draw_sky}[self.biome](s, tt)
-            surf.blit(pygame.transform.scale(s, (LW * K, LH * K)), (0, 0))
+                self._banner(s, tt)
+            shake = self._shake_amount()
+            off = (self.rng.randint(-shake, shake) * K, self.rng.randint(-shake, shake) * K) if shake else (0, 0)
+            surf.blit(pygame.transform.scale(s, (LW * K, LH * K)), off)
             if self.finished:
                 fade = 1 - (self.t - self.arrived) / 0.8
             else:
@@ -496,6 +605,21 @@ class JourneyScene(GBAScene):
             surf.blit(fl, (0, 0))
         if self.text is not None:
             self.text.draw(surf, self.t)
+
+    def _shake_amount(self):
+        """How hard the screen shakes right now (pixels): Thunder, Hydro Pump and Flamethrower hit hard."""
+        if self.finished or self.t < MAP_T:
+            return 0
+        tt = self.t - MAP_T
+        if self.flash > 0.5:
+            return 2
+        if self.biome in ("ocean", "sky") and 16.5 < tt < 17.1:
+            return 2
+        if self.biome in ("ocean", "sky") and 16.5 < tt < 20.5:
+            return 1
+        if self.biome == "forest" and any(0 <= tt - c[1] < 0.5 for c in self.cut):
+            return 1
+        return 0
 
     # --- the overview: the camera pans up from home, over the three ways, to the Haven
     def _draw_map(self, surf, t):
@@ -566,11 +690,11 @@ class JourneyScene(GBAScene):
             s.blit(sit, sit.get_rect(midbottom=(sx - 8 * (1 if face == "right" else -1), sy - 9)))
         self._draw_anims(s, cam, ("spray", "bigsplash", "glint"))
         self._field(s, cam, 1)
-        if tt < 10 or tt > 24:   # Wingull riding the wind, their shadows on the water
-            for k in range(3):
-                wx = (tt * (40 + k * 6) + k * 80) % (LW + 60) - 30
-                wy = 48 + k * 14 + math.sin(tt * 2 + k) * 3
-                self._cameo(s, "wingull", "right", (wx, wy), 6, shadow=True, lift=24)
+        if tt < 10 or tt > 24:   # a flock of Wingull riding the wind, their shadows on the water
+            for k in range(4):
+                wx = (tt * (46 + k * 7) + k * 70) % (LW + 60) - 30
+                wy = 30 + k * 13 + math.sin(tt * 2 + k) * 3
+                self._flyer(s, "wingull", (4, 5), (wx, wy), 7 + k, flip=True, shadow=(wx + 6, wy + 30))
         if 24 < tt < 26.4:   # a Mantine leaps
             f = (tt - 24) / 2.4
             mx, my = 150 + f * 50, 108
@@ -637,19 +761,18 @@ class JourneyScene(GBAScene):
                                vx=self.rng.uniform(-36, 36), vy=self.rng.uniform(-50, -10), g=70)
         for name, at, side, face in (("wurmple", 3.0, 1, "left"), ("shroomish", 6.0, -1, "right"),
                                      ("slakoth", 9.5, 1, "down"), ("silcoon", 14.0, -1, "down"),
-                                     ("pikachu", 21.0, 1, "left"), ("taillow", 25.0, -1, "right")):
+                                     ("pikachu", 21.0, 1, "left")):
             cx, cy, _ = self.path.point(self._walk_d(at) + 64)
             pos = [cx + 24 * side - cam[0], cy - cam[1]]
             if name == "pikachu" and tt > 21:   # it scampers off into the trees
                 pos[0] += min(3.0, tt - 21) * 30
-            lift = int(14 + 4 * math.sin(tt * 3)) if name == "taillow" else 0
-            self._cameo(s, name, face, pos, 4, shadow=bool(lift), lift=lift)
+            self._cameo(s, name, face, pos, 4)
+        self._field(s, cam, 1)   # the trail is narrow: you walk in front of the tree crowns, not under them
         mon = self.mf[mface][int(tt * 4) % 2]
         you = self.pf["walk"][pface][(1 + int(tt * 4) % 2) if int(tt * 8) % 2 else 0]
         for img, (x, y) in sorted(((mon, (mx, my)), (you, (px, py))), key=lambda e: e[1][1]):
             s.blit(img, img.get_rect(midbottom=(int(x - cam[0]), int(y - cam[1]) + 2)))
         self._draw_anims(s, cam, ("vine", "cutleaf"))
-        self._field(s, cam, 1)
         if self.rng.random() < 0.12:   # leaves drifting down through the canopy
             self._anim("leaf", cam[0] + self.rng.uniform(0, LW), cam[1] - 8, fps=6, life=4.0,
                        vx=self.rng.uniform(-12, 4), vy=self.rng.uniform(18, 30))
@@ -684,14 +807,17 @@ class JourneyScene(GBAScene):
             for k in range(4):
                 s.blit(img, (int((k * 90 - tt * 34) % (LW + 160) - 80), int((k * 57 + tt * 46) % (LH + 160) - 80)))
 
-        if 3 < tt < 11 or tt > 21:   # a flock of Pidgey keeping pace
-            for k in range(3):
-                bx = sx - 36 - k * 18 + math.sin(tt + k) * 4
-                by = sy - alt + 14 + k * 10 + math.sin(tt * 3 + k) * 2
-                self._sprite(s, "shadow_s", 0, (bx + 10, by + alt), alpha=110)
-                self._cameo(s, "pidgey", "up", (bx, by), 8)
-        if 5 < tt < 10:
-            self._cameo(s, "skarmory", "down", (LW - 40 - (tt - 5) * 20, (tt - 5) * 40 - 10), 6)
+        if 3 < tt < 10.5:   # Latias swoops in and flies alongside you
+            f = min(1.0, (tt - 3) / 1.5) * min(1.0, (10.5 - tt) / 1.0)
+            bx = sx - 30 - (1 - f) * 120 + math.sin(tt * 1.3) * 4
+            by = sy - alt - 6 + math.sin(tt * 2.2) * 3
+            self._flyer(s, "latias", (0, 1, 2), (bx, by), 6, rot=180, shadow=(bx + 8, by + alt + 8))
+        if tt > 21.5:   # at sunset, Ho-Oh crosses the sky, scattering sparkles
+            f = (tt - 21.5) / 7
+            hx, hy = sx + 70 - f * 40, sy - alt + 40 - f * 150
+            self._flyer(s, "hooh", (0, 1), (hx, hy), 4, rot=180, shadow=(hx + 10, hy + alt + 14))
+            if self.rng.random() < 0.5:
+                self._anim("glint", hx + cam[0] + self.rng.uniform(-8, 8), hy + cam[1] + 12, fps=6, vy=20)
         cy = sy - alt + int(round(math.sin(tt * 2.5) * 2))
         mon = self.mf["up"][int(tt * 6) % 2]
         s.blit(mon, mon.get_rect(midbottom=(sx, cy)))
