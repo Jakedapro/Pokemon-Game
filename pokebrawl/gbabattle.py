@@ -707,6 +707,8 @@ class GBABattle(Scene):
         mon = v["name"] if v else "It"
         stone = S.stone_name(self.dex, self.dex.all[pid]["key"]) if pid in self.dex.all else "Mega Stone"
         who = self.g["name"] if side == 0 else self.trainer.get("name", "the trainer")
+        if pid in self.dex.all and self.dex.all[pid]["key"] == "rayquaza-mega":   # no stone: Dragon Ascent (ORAS)
+            return f"{who}'s fervent wish has reached {mon}!"
         return f"{mon}'s {stone} is reacting to {who}'s Key Stone!"
 
     def _mega_tick(self):
