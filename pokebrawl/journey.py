@@ -1,14 +1,14 @@
 """The Starter's Journey: your starter carries you to Starter's Haven, the way only it can.
 
     Blastoise (water)  - you ride its shell across the sea (Route 20), through a storm, firing Hydro Pump
-    Venusaur  (grass)  - it leads you through the dark of Viridian Forest, clearing trees with Vine Whip
+    Venusaur  (grass)  - it leads you through Petalburg Woods, clearing trees with Vine Whip
     Charizard (fire)   - you fly on its back over Mt. Ember, through the clouds, at sunset
 
 Any other starter (the randomizer) takes the route that suits its type. It is all real Pokemon art, drawn the
-way the handheld draws a cutscene: real FireRed maps seen from above (frlg.render), the Pokemon's own overworld
+way the handheld draws a cutscene: real FireRed and Emerald maps seen from above, the Pokemon's own overworld
 sprites (pokeemerald-expansion), your Surf sitting sprite, FireRed's weather (rain, fog, clouds), field effects
 (ripples, shadows, Cut) and battle animation sprites (Hydro Pump, Flamethrower, Vine Whip, Thunder, sparkles).
-Starter's Haven is Birth Island.
+Starter's Haven is the shrine on Mt. Pyre's summit (Emerald, see emerald.py).
 """
 import math
 import os
@@ -19,6 +19,7 @@ from collections import deque
 import pygame
 
 from . import adventure as A
+from . import emerald
 from . import frlg
 from . import gbaart as G
 from . import gbaui as U
@@ -33,7 +34,7 @@ OCEAN = {"water", "ice"}
 FOREST = {"grass", "bug", "poison", "fairy"}
 ROUTE_NAME = {"ocean": "the SEA", "forest": "the FOREST", "sky": "the MOUNTAINS"}
 CAMEOS = {"ocean": ("wingull", "lapras", "mantine", "tentacool"),
-          "forest": ("pikachu", "caterpie", "weedle", "butterfree", "metapod"),
+          "forest": ("wurmple", "shroomish", "slakoth", "taillow", "silcoon", "pikachu"),
           "sky": ("pidgey", "skarmory")}
 OW_URL = ("https://raw.githubusercontent.com/rh-hideout/pokeemerald-expansion/"
           "73b3fbeb574327cd9420c89e56bef5aa3c08fead/graphics/pokemon/{}/overworld.png")
@@ -42,7 +43,7 @@ FX = {  # name: (path, frame w, frame h)
     "fire": (BA + "fire.png", 32, 32), "ember": (BA + "small_ember.png", 32, 32),
     "pump": (BA + "water_column.png", 16, 32), "spray": (BA + "water_droplet_2.png", 32, 32),
     "bolt": (BA + "lightning.png", 32, 32), "vine": (BA + "vine.png", 32, 32),
-    "sparkle": (BA + "sparkle_1.png", 32, 32), "star": (BA + "sparkle_4.png", 32, 32),
+    "sparkle": (BA + "sparkle_1.png", 32, 32), "leaf": (BA + "leaf.png", 16, 16), "star": (BA + "sparkle_4.png", 32, 32),
     "halo": (BA + "round_white_halo.png", 64, 64), "eye": (BA + "small_red_eye.png", 8, 8),
     "ripple": ("graphics/field_effects/pics/ripple.png", 16, 16),
     "bigsplash": ("graphics/field_effects/pics/jump_big_splash.png", 16, 16),
@@ -90,20 +91,20 @@ def lines_for(biome, nm, player):
                 (11.0, "The sky turns black. A storm rolls in over the sea!"),
                 (16.5, f"{nm} used HYDRO PUMP! You rocket over the waves!"),
                 (23.0, "The storm breaks. Sunlight sparkles on the water."),
-                (28.5, "Far out at sea, something is glowing. That's it!")]
+                (28.5, "A sacred mountain rises from the sea. Its peak is glowing!")]
     if biome == "forest":
-        return [(0.5, f"No light gets through these trees. {nm} leads the way."),
-                (5.5, "Eyes blink in the dark. Something is watching..."),
+        return [(0.5, f"The woods are deep and old. {nm} leads the way."),
+                (5.5, "Wild POK\u00e9MON peek out from between the trees..."),
                 (11.0, f"A tree blocks the path! {nm} used VINE WHIP!"),
-                (16.5, f"{nm} hums softly. The shadows let you pass."),
-                (23.0, "Light breaks through the leaves. The trees open up..."),
+                (16.5, f"{nm} hums softly. The forest makes way for it."),
+                (23.0, "Sunlight breaks through the leaves. The trees open up..."),
                 (28.5, f"{nm}'s flower is glowing. It knows the way.")]
     return [(0.5, f"{nm} spreads its wings. {player} holds on tight."),
             (5.5, "One beat of its wings and the ground drops away!"),
             (11.0, "You plunge into a cloud. Everything turns white..."),
             (16.5, f"...and burst out above it! {nm} used FLAMETHROWER!"),
             (23.0, "The sun sinks behind the peaks. Everything turns gold."),
-            (28.5, "Past the summit, out at sea, a light shines. The Haven!")]
+            (28.5, "On the highest peak of all, a light shines. The Haven!")]
 
 
 # ---------------------------------------------------------------------- sprites
@@ -224,26 +225,30 @@ def _splice(name, spans):
     return under, over, blocked
 
 
+HAVEN_SWAP = {804: 1, 805: 1, 161: 113}   # Mt. Pyre's summit without its gravestones (or the sky round it)
+
+
 def region_map():
-    """The overview, built from real towns and routes: Birth Island up north, then Viridian Forest, the open sea
+    """The overview, built from real towns and routes: Mt. Pyre's shrine up north, then Petalburg Woods, the open sea
     and Mt. Ember side by side, and a Pallet-style home town in the south. (surface, {zone: rect}) or None."""
-    birth = frlg.layout("BirthIsland_Exterior_Layout")
-    if not birth:
+    sea_map = frlg.layout("Route20_Layout")
+    if not sea_map:
         return None
-    sea = birth["blocks"][0] & 0x3FF
+    sea = sea_map["blocks"][0] & 0x3FF
     w, h = 30, 58
     out = pygame.Surface((w * 16, h * 16))
     over = pygame.Surface((w * 16, h * 16), pygame.SRCALPHA)
-    tile = birth["tiles"].metatile(sea, "under")
+    tile = sea_map["tiles"].metatile(sea, "under")
     for y in range(h):
         for x in range(w):
             out.blit(tile, (x * 16, y * 16))
-    for name, x, y, cw, ch, cx, cy in (("BirthIsland_Exterior_Layout", 3, 2, 24, 19, 3, 0),
-                                       ("ViridianForest_Layout", 2, 16, 10, 19, 0, 19),
-                                       ("Route20_Layout", 2, 1, 10, 19, 10, 19),
-                                       ("MtEmber_Exterior_Layout", 0, 0, 10, 19, 20, 19),
-                                       ("PalletTown_Layout", 0, 0, 24, 20, 3, 38)):
-        r = frlg.render(name, x, y, cw, ch, scale=1)
+    for src, name, x, y, cw, ch, cx, cy in ((emerald, "MtPyre_Summit_Layout", 8, 0, 30, 19, 0, 0),
+                                            (emerald, "PetalburgWoods_Layout", 0, 12, 10, 19, 0, 19),
+                                            (frlg, "Route20_Layout", 2, 1, 10, 19, 10, 19),
+                                            (frlg, "MtEmber_Exterior_Layout", 0, 0, 10, 19, 20, 19),
+                                            (frlg, "PalletTown_Layout", 0, 0, 24, 20, 3, 38)):
+        r = (emerald.render(name, x, y, cw, ch, swap=HAVEN_SWAP) if src is emerald and "Pyre" in name
+             else src.render(name, x, y, cw, ch, scale=1))
         if not r:
             return None
         out.blit(r[0], (cx * 16, cy * 16))
@@ -320,11 +325,12 @@ class JourneyScene(GBAScene):
                 cells = _route(blocked, [(0, row)], lambda x, y: x == len(blocked[0]) - 1)
                 self.field, self.path = r, Path(cells) if cells else None
         elif self.biome == "forest":
-            r = frlg.render("ViridianForest_Layout", scale=1)
+            r = emerald.render("PetalburgWoods_Layout")
             if r:
                 blocked = r[2]
-                starts = [(x, y) for y in range(62, 50, -1) for x in range(25, 34) if not blocked[y][x]][:1]
-                cells = _route(blocked, starts, lambda x, y: y <= 8 and x <= 12,
+                h, w = len(blocked), len(blocked[0])
+                starts = [(x, y) for y in range(h - 1, 0, -1) for x in range(w) if not blocked[y][x]][:1]
+                cells = _route(blocked, starts, lambda x, y: y <= 5,
                                prefer=((0, -1), (-1, 0), (1, 0), (0, 1))) if starts else None
                 self.field, self.path = r, Path(cells) if cells else None
                 if self.path:   # two trees in the way, for Vine Whip to clear
@@ -335,7 +341,7 @@ class JourneyScene(GBAScene):
             if r:
                 self.field = r
                 self.path = Path([(4, 60), (14, 44), (22, 30), (36, 14), (40, -6)])
-        self.haven = frlg.render("BirthIsland_Exterior_Layout", scale=1)
+        self.haven = emerald.render("MtPyre_Summit_Layout", swap=HAVEN_SWAP)
 
     # ------------------------------------------------------------------ timing
     def _walk_d(self, tt):
@@ -519,7 +525,7 @@ class JourneyScene(GBAScene):
                 c = zones[key].move(0, -cam).center
                 F.draw(surf, label, (c[0], c[1] - 40), (248, 232, 96) if key == self.biome else U.WHITE,
                        (24, 32, 56), anchor="center")
-        self._halo(surf, (248, 170 - cam), t, 0.7)   # the Haven's stone, glowing
+        self._halo(surf, (248, 56 - cam), t, 0.7)   # the Haven's stone, glowing
         if cam < 120:
             F.draw(surf, "STARTER'S HAVEN", (240, max(8, 100 - cam)), (255, 240, 180), (80, 48, 16), anchor="center")
         if t > 3.2:
@@ -607,71 +613,60 @@ class JourneyScene(GBAScene):
                 ey = oy + back[1] * (12 + n * 15) + (n * n * 0.5 if back[1] == 0 else 0)
                 self._anim("spray", ex + cam[0], ey + cam[1], fps=14, flip=back[0] > 0)
 
-    # --- the forest: following it through the dark of Viridian Forest
+    # --- the forest: following it through Petalburg Woods
     def _draw_forest(self, s, tt):
-        glow = max(0.0, min(1.0, (tt - 22) / 5))
-        mx, my, mface = self.path.point(self._walk_d(tt) + 22)   # it walks just ahead of you
+        mx, my, mface = self.path.point(self._walk_d(tt) + 30)   # it walks just ahead of you
         px, py, pface = self.path.point(self._walk_d(tt))
         cam = self._cam(px, py, self.field[0].get_size(), 120, 84)
         self._field(s, cam, 0)
-        for c in self.cut:   # trees in the way: Vine Whip, then they're cut down
+        for c in self.cut:   # trees in the way: Vine Whip lashes out, then they're cut down
             tx, ty, _ = self.path.point(c[0])
             age = tt - c[1]
             pos = (tx - cam[0], ty - cam[1] + 2)
-            if age < 0.5:
+            if age < 0.7:
                 self._sprite(s, "cuttree", 0, pos, anchor="midbottom")
                 if age >= 0 and not c[2]:
                     c[2] = True
-                    self._anim("vine", tx, ty - 10, fps=12, flip=mface == "left")
+                    for k in range(3):
+                        self._anim("vine", tx + (k - 1) * 6, ty - 8 - k * 3, fps=10, life=0.7)
                     AUDIO.play("hit", 0.5)
-            elif age < 0.9:
-                self._sprite(s, "cuttree", 1 + int((age - 0.5) * 8), pos, anchor="midbottom")
-                if self.rng.random() < 0.6:
-                    self._anim("cutleaf", tx + self.rng.uniform(-6, 6), ty - 8, fps=4, life=0.6,
-                               vx=self.rng.uniform(-30, 30), vy=self.rng.uniform(-40, -10), g=60)
-        for name, at, side in (("caterpie", 4.0, 1), ("weedle", 9.0, -1), ("pikachu", 14.5, 1),
-                               ("metapod", 20.0, -1), ("butterfree", 25.0, 1)):
-            cx, cy, _ = self.path.point(self._walk_d(at) + 70)
-            pos = (cx + 26 * side - cam[0], cy - cam[1])
-            if name == "pikachu" and tt > 14.5:   # it scampers off into the trees
-                pos = (pos[0] + min(3.0, tt - 14.5) * 30, pos[1])
-            lift = int(10 + 4 * math.sin(tt * 3)) if name == "butterfree" else 0
-            self._cameo(s, name, "left" if side > 0 else "right", pos, 4, shadow=bool(lift), lift=lift)
+            elif age < 1.1:
+                self._sprite(s, "cuttree", 1 + int((age - 0.7) * 8), pos, anchor="midbottom")
+                if self.rng.random() < 0.7:
+                    self._anim("cutleaf", tx + self.rng.uniform(-6, 6), ty - 8, fps=4, life=0.7,
+                               vx=self.rng.uniform(-36, 36), vy=self.rng.uniform(-50, -10), g=70)
+        for name, at, side, face in (("wurmple", 3.0, 1, "left"), ("shroomish", 6.0, -1, "right"),
+                                     ("slakoth", 9.5, 1, "down"), ("silcoon", 14.0, -1, "down"),
+                                     ("pikachu", 21.0, 1, "left"), ("taillow", 25.0, -1, "right")):
+            cx, cy, _ = self.path.point(self._walk_d(at) + 64)
+            pos = [cx + 24 * side - cam[0], cy - cam[1]]
+            if name == "pikachu" and tt > 21:   # it scampers off into the trees
+                pos[0] += min(3.0, tt - 21) * 30
+            lift = int(14 + 4 * math.sin(tt * 3)) if name == "taillow" else 0
+            self._cameo(s, name, face, pos, 4, shadow=bool(lift), lift=lift)
         mon = self.mf[mface][int(tt * 4) % 2]
         you = self.pf["walk"][pface][(1 + int(tt * 4) % 2) if int(tt * 8) % 2 else 0]
         for img, (x, y) in sorted(((mon, (mx, my)), (you, (px, py))), key=lambda e: e[1][1]):
             s.blit(img, img.get_rect(midbottom=(int(x - cam[0]), int(y - cam[1]) + 2)))
         self._draw_anims(s, cam, ("vine", "cutleaf"))
         self._field(s, cam, 1)
-        # the dark: like a cave before Flash, only a small circle of light around you
-        r = int(36 + glow * 130 + (10 if 15.5 < tt < 19 else 0))
-        dark = pygame.Surface((LW, LH), pygame.SRCALPHA)
-        dark.fill((8, 16, 24, int(235 * (1 - glow * 0.9))))
-        c = (int((px + mx) / 2 - cam[0]), int((py + my) / 2 - cam[1]) - 8)
-        pygame.draw.circle(dark, (8, 16, 24, int(120 * (1 - glow))), c, r + 10)
-        pygame.draw.circle(dark, (0, 0, 0, 0), c, r)
-        s.blit(dark, (0, 0))
-        if 4.5 < tt < 20:   # eyes in the dark
-            for i in range(6):
-                if (int(tt * 1.7) + i) % 4:
-                    ex, ey = (i * 41 + 20) % LW, 16 + (i * 29) % 90
-                    if math.hypot(ex - c[0], ey - c[1]) > r + 14:
-                        self._sprite(s, "eye", 0, (ex, ey))
-                        self._sprite(s, "eye", 0, (ex + 9, ey))
-        if 15.5 < tt < 19 and self.rng.random() < 0.3:   # its hum: a sparkle of light
-            self._anim("sparkle", mx, my - 20, fps=12)
+        if self.rng.random() < 0.12:   # leaves drifting down through the canopy
+            self._anim("leaf", cam[0] + self.rng.uniform(0, LW), cam[1] - 8, fps=6, life=4.0,
+                       vx=self.rng.uniform(-12, 4), vy=self.rng.uniform(18, 30))
+        if 15.5 < tt < 19 and self.rng.random() < 0.3:   # its hum: sparkles of light
+            self._anim("sparkle", mx + self.rng.uniform(-8, 8), my - 20, fps=12)
         if tt > 22 and self.rng.random() < 0.25:
             self._anim("glint", cam[0] + self.rng.uniform(0, LW), cam[1] + self.rng.uniform(10, 110), fps=6)
         if tt > 26:   # the flower glows
             self._halo(s, (mx - cam[0], my - cam[1] - 22), tt, 0.4)
-        self._draw_anims(s, cam, ("sparkle", "glint"))
+        self._draw_anims(s, cam, ("leaf", "sparkle", "glint"))
 
     # --- the mountains: flying on its back over Mt. Ember
     def _draw_sky(self, s, tt):
         sun = max(0.0, min(1.0, (tt - 21) / 6))
         gx, gy, _ = self.path.point(self._walk_d(tt))
         alt = 34
-        cam = self._cam(gx, gy - alt, self.field[0].get_size(), 120, 70)
+        cam = self._cam(gx, gy - alt, self.field[0].get_size(), 120, 96)
         self._field(s, cam, 0)
         self._field(s, cam, 1)
         sx, sy = gx - cam[0], gy - cam[1]
@@ -683,6 +678,12 @@ class JourneyScene(GBAScene):
             for k in range(3):
                 s.blit(sh, (int((k * 110 - tt * 22) % (LW + 140) - 70), int((k * 70 + tt * 30) % (LH + 120) - 60)))
         self._sprite(s, "shadow", 0, (sx, sy), alpha=150)   # its shadow far below
+        if cloud and not 11 < tt < 16:   # clouds drifting past below you
+            img = pygame.transform.scale_by(cloud[0], 2)
+            img.set_alpha(150)
+            for k in range(4):
+                s.blit(img, (int((k * 90 - tt * 34) % (LW + 160) - 80), int((k * 57 + tt * 46) % (LH + 160) - 80)))
+
         if 3 < tt < 11 or tt > 21:   # a flock of Pidgey keeping pace
             for k in range(3):
                 bx = sx - 36 - k * 18 + math.sin(tt + k) * 4
@@ -695,41 +696,58 @@ class JourneyScene(GBAScene):
         mon = self.mf["up"][int(tt * 6) % 2]
         s.blit(mon, mon.get_rect(midbottom=(sx, cy)))
         sit = self.pf["sit"]["up"]
-        s.blit(sit, sit.get_rect(midbottom=(sx, cy - 4)))
-        if 16.5 < tt < 20.5:   # Flamethrower, roaring out ahead
-            if self.rng.random() < 0.7:
-                self._anim("ember", gx + self.rng.uniform(-3, 3), gy - alt - 30, fps=14,
-                           vy=-150 + self.rng.uniform(-20, 20), vx=self.rng.uniform(-14, 14))
-            self._sprite(s, "fire", int(tt * 14), (sx, cy - 34))
+        s.blit(sit, sit.get_rect(midbottom=(sx, cy + 3)))
+        if 16.5 < tt < 20.5:   # Flamethrower: the battle animation's embers, streaming out of its mouth
+            self._flamethrower(s, sx, cy - 30, tt - 16.5)
         self._draw_anims(s, cam)
         cl = max(0.0, 1 - abs(tt - 13.5) / 2.3)   # flying through a cloud
         self._fog(s, 250 * cl, tt, 90)
-        if cloud and not 11 < tt < 16:   # clouds drifting past below you
-            img = pygame.transform.scale_by(cloud[0], 2)
-            img.set_alpha(150)
-            for k in range(4):
-                s.blit(img, (int((k * 90 - tt * 34) % (LW + 160) - 80), int((k * 57 + tt * 46) % (LH + 160) - 80)))
         if sun:
             s.fill(tuple(int(255 - (255 - c) * sun) for c in (255, 184, 136)), special_flags=pygame.BLEND_MULT)
         if tt > 27:
             self._halo(s, (150, 18), tt, 0.5, min(1.0, (tt - 27) / 2))
 
-    # --- Starter's Haven: Birth Island
+    def _flamethrower(self, s, x, y, age):
+        """A roaring stream pouring forward (up the screen): the battle animation's small embers at its mouth,
+        swelling into big flames further out, in two strands that twist round each other."""
+        ember, fire = self.fx.get("ember"), self.fx.get("fire")
+        if not ember or not fire:
+            return
+        reach = min(1.0, age / 0.3) * (1.0 if age < 3.6 else max(0.0, (4.0 - age) / 0.4))
+        puffs = []
+        for strand in (0, 1):
+            for k in range(10):
+                f = (age * 2.4 + k / 10 + strand * 0.05) % 1.0
+                if f > reach:
+                    continue
+                d = 2 + f * 96
+                wob = math.sin(age * 10 + k * 1.3 + strand * math.pi) * (1 + f * 7)
+                puffs.append((f, x + wob, y - d))
+        for f, px, py in sorted(puffs, key=lambda p: -p[0]):   # the far, big flames behind the near ones
+            if f < 0.3:
+                img = ember[min(len(ember) - 1, int(f / 0.3 * len(ember)))]
+                img = pygame.transform.scale_by(img, 0.6 + f * 1.3)
+            else:
+                img = fire[int((f - 0.3) / 0.7 * len(fire)) % len(fire)]
+                img = pygame.transform.scale_by(img, 0.55 + (f - 0.3) * 0.7)
+            s.blit(img, img.get_rect(center=(int(px), int(py))))
+
+    # --- Starter's Haven: the shrine on Mt. Pyre's summit
     def _draw_haven(self, s, t):
         if not self.haven:
             return
         under, over, _ = self.haven
-        walk = min(1.0, t / 3.0)
-        py = 330 - 90 * walk
-        cam = (128, int(max(0, min(under.get_height() - LH, py - 100))))
+        walk = min(1.0, t / 6.0)
+        py = 330 - 210 * walk
+        cam = (256, int(max(0, min(under.get_height() - LH, py - 112))))
         s.blit(under, (-cam[0], -cam[1]))
-        self._halo(s, (248 - cam[0], 166 - cam[1]), t, 0.9)
+        self._halo(s, (376 - cam[0], 50 - cam[1]), t, 0.9)   # the altar, glowing
         if self.rng.random() < 0.3:
-            self._anim("sparkle", 248 + self.rng.uniform(-40, 40), 176 + self.rng.uniform(-10, 20), fps=10, vy=-12)
+            self._anim("sparkle", 376 + self.rng.uniform(-30, 30), 60 + self.rng.uniform(-10, 20), fps=10, vy=-12)
         self._draw_anims(s, cam)
-        step = int(t * 4) % 2 if walk < 1 else 0
+        step = int(t * 5) % 2 if walk < 1 else 0
         mon = self.mf["up"][step]
-        you = self.pf["walk"]["up"][(1 + step) if walk < 1 and int(t * 8) % 2 else 0]
-        s.blit(mon, mon.get_rect(midbottom=(258 - cam[0], int(py - 8 - cam[1]))))
-        s.blit(you, you.get_rect(midbottom=(240 - cam[0], int(py - cam[1]))))
+        you = self.pf["walk"]["up"][(1 + step) if walk < 1 and int(t * 10) % 2 else 0]
+        s.blit(mon, mon.get_rect(midbottom=(386 - cam[0], int(py - cam[1]))))
+        s.blit(you, you.get_rect(midbottom=(364 - cam[0], int(py + 4 - cam[1]))))
         s.blit(over, (-cam[0], -cam[1]))
