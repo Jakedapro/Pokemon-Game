@@ -68,10 +68,40 @@ UTILITY = ["u-turn", "volt-switch", "flip-turn", "stealth-rock", "will-o-wisp", 
            "spikes", "defog", "rapid-spin", "parting-shot", "spore", "leech-seed", "wish"]
 
 
+# the real names (Gen 6/7, Legends Z-A and its Mega Dimension), by species
+MEGA_STONES = {
+    "venusaur": "Venusaurite", "charizard": "Charizardite", "blastoise": "Blastoisinite", "beedrill": "Beedrillite",
+    "pidgeot": "Pidgeotite", "alakazam": "Alakazite", "slowbro": "Slowbronite", "gengar": "Gengarite",
+    "kangaskhan": "Kangaskhanite", "pinsir": "Pinsirite", "gyarados": "Gyaradosite", "aerodactyl": "Aerodactylite",
+    "mewtwo": "Mewtwonite", "ampharos": "Ampharosite", "steelix": "Steelixite", "scizor": "Scizorite",
+    "heracross": "Heracronite", "houndoom": "Houndoominite", "tyranitar": "Tyranitarite", "sceptile": "Sceptilite",
+    "blaziken": "Blazikenite", "swampert": "Swampertite", "gardevoir": "Gardevoirite", "sableye": "Sablenite",
+    "mawile": "Mawilite", "aggron": "Aggronite", "medicham": "Medichamite", "manectric": "Manectite",
+    "sharpedo": "Sharpedonite", "camerupt": "Cameruptite", "altaria": "Altarianite", "banette": "Banettite",
+    "absol": "Absolite", "glalie": "Glalitite", "salamence": "Salamencite", "metagross": "Metagrossite",
+    "latias": "Latiasite", "latios": "Latiosite", "lopunny": "Lopunnite", "garchomp": "Garchompite",
+    "lucario": "Lucarionite", "abomasnow": "Abomasite", "gallade": "Galladite", "audino": "Audinite",
+    "diancie": "Diancite", "clefable": "Clefablite", "victreebel": "Victreebelite", "starmie": "Starminite",
+    "dragonite": "Dragoninite", "meganium": "Meganiumite", "feraligatr": "Feraligite", "skarmory": "Skarmorite",
+    "froslass": "Froslassite", "emboar": "Emboarite", "excadrill": "Excadrite", "scolipede": "Scolipite",
+    "scrafty": "Scraftinite", "eelektross": "Eelektrossite", "chandelure": "Chandelurite",
+    "chesnaught": "Chesnaughtite", "delphox": "Delphoxite", "greninja": "Greninjite", "pyroar": "Pyroarite",
+    "floette": "Floettite", "malamar": "Malamarite", "barbaracle": "Barbaracite", "dragalge": "Dragalgite",
+    "hawlucha": "Hawluchanite", "zygarde": "Zygardite", "drampa": "Drampanite", "falinks": "Falinksite",
+    "raichu": "Raichunite", "chimecho": "Chimechite", "staraptor": "Staraptite", "heatran": "Heatranite",
+    "darkrai": "Darkranite", "golurk": "Golurkite", "meowstic": "Meowsticite", "crabominable": "Crabominite",
+    "golisopod": "Golisopite", "magearna": "Magearnite", "zeraora": "Zeraorite", "scovillain": "Scovillainite",
+    "glimmora": "Glimmoranite", "tatsugiri": "Tatsugirinite", "baxcalibur": "Baxcalibrite"}
+
+
 def mega_item_name(dex, form):
     """'Charizardite X', 'Blue Orb', etc. for a transformation form."""
     if "primal" in form["key"]:
         return "Blue Orb" if "kyogre" in form["key"] else "Red Orb"
+    suffix = form["key"].rsplit("-", 1)[-1]
+    real = MEGA_STONES.get(form["key"].split("-")[0])
+    if real:
+        return real + (f" {suffix.upper()}" if suffix in ("x", "y", "z") else "")
     base = dex.all[form["base"]]["name"] if form.get("base") else form["name"]
     stem = base.split()[0]
     stem = stem[:-1] if stem.endswith("e") else stem

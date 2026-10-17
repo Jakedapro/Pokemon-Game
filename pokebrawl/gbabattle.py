@@ -574,7 +574,7 @@ class GBABattle(Scene):
         self._mega_mark(surf, v, x + 166, y + 19)
         if v.get("shiny"):   # a shiny gets a star on its box
             self._star(surf, x + 8, y + 22)
-        F.draw(surf, self._short(v["name"]).upper()[:9], (x + 16, y + 10), ink, shade, small=True)
+        self._name(surf, v["name"], (x + 16, y + 10), ink, shade)
         F.draw(surf, str(v["level"]), (x + 128, y + 10), ink, shade, small=True)   # right after the box's own "Lv"
         if self.s.kind == "wild" and self.s.foes[0]["species"] in self.g["caught"]:
             U.ball(surf, (x + 14, y + 38), 4)
@@ -589,7 +589,7 @@ class GBABattle(Scene):
         self._mega_mark(surf, v, x + 182, y + 19)
         if v.get("shiny"):   # a shiny gets a star on its box
             self._star(surf, x + 24, y + 22)
-        F.draw(surf, self._short(v["name"]).upper()[:9], (x + 32, y + 10), ink, shade, small=True)
+        self._name(surf, v["name"], (x + 32, y + 10), ink, shade)
         F.draw(surf, str(v["level"]), (x + 144, y + 10), ink, shade, small=True)
         frac = self.frac.get((0, v["idx"]), 1.0)
         U.hp_bar(surf, x + 70, y + 32, 96, frac)
@@ -605,6 +605,18 @@ class GBABattle(Scene):
     @staticmethod
     def _short(name):
         return name[5:] if name.startswith("Mega ") else name
+
+    def _name(self, surf, name, pos, ink, shade, width=92):
+        """A Pokemon's name in capitals, all of it (up to 10 letters like FireRed): a long one is squeezed a
+        little to fit before the box's "Lv" instead of being cut off."""
+        text = self._short(name).upper()[:10]
+        w = F.width(text, small=True)
+        if w <= width:
+            F.draw(surf, text, pos, ink, shade, small=True)
+            return
+        tmp = pygame.Surface((w + 4, 30), pygame.SRCALPHA)
+        F.draw(tmp, text, (0, 0), ink, shade, small=True)
+        surf.blit(pygame.transform.scale(tmp, (int((w + 4) * width / w), 30)), pos)
 
     def _mega_mark(self, surf, v, cx, cy):
         """A little rainbow Mega mark on the healthbox of a Mega Evolved Pokemon."""

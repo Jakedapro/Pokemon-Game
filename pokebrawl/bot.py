@@ -50,6 +50,8 @@ def best_damage(user, target, weather=None):
 def _pointless(me, foe, mv):
     """A status move that can't do anything right now: lowering a stat already at -6 (or -2 for an easy
     trainer - nobody spams Growl in FireRed), raising one already maxed, or a status the foe already has."""
+    if mv.get("cls") == "status" and (mv.get("cat") == "heal" or mv.get("healing")) and mv.get("key") != "rest":
+        return me.hp_frac() > 0.9   # healing at (nearly) full HP does nothing
     if mv.get("cls") != "status" or not mv.get("stats"):
         return False
     target = me if mv.get("target") == "user" or mv.get("cat") == "net-good-stats" else foe
@@ -150,7 +152,7 @@ class TurnBot:
                     if "powder" in mv["flags"] and "grass" in foe.types:
                         sc = 0
                 elif mv["cat"] == "heal" or mv["healing"]:
-                    sc = 90 if me.hp_frac() < 0.5 else 0
+                    sc = 90 if me.hp_frac() < 0.5 else -50 if me.hp_frac() > 0.9 else 0
                 elif mv["stats"] and (mv["target"] == "user" or mv["cat"] == "net-good-stats"):
                     up = sum(v for v in mv["stats"].values() if v > 0)
                     cur = max(me.stages.values())

@@ -1083,7 +1083,10 @@ class OverworldScene(Scene):
             return
         if r["lost"]:
             self.script = None
-            lost = g["money"] // 2
+            # FireRed: you drop (your best Pokemon's level x a badge-based amount), never more than half your money
+            mult = [8, 16, 24, 36, 48, 64, 80, 100, 120][min(8, len(g["badges"]) // 2)]
+            top = max((m["level"] for m in g["party"]), default=5)
+            lost = min(g["money"] // 2, top * mult)
             g["money"] -= lost
             area, x, y = g["center"]
 

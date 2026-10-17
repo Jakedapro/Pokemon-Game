@@ -447,7 +447,7 @@ def npcs_for(world, index, game):
         add(id="rival2", kind="story", look="rival", x=7, y=len(area["rows"]) // 2, face="down", sight=4, auto=True,
             name=RIVAL, **{"if": "!rival2"}, script=[
                 ("say", RIVAL, ["There you are! I've been training nonstop.",
-                                "...Gramps told you, didn't she. About my dad.",
+                                "...Gramps told you, didn't he. About my dad.",
                                 "Don't look at me like that. If a rift took him, a rift can give him back.",
                                 "And I'll be strong enough to go in after him. Starting with beating YOU!"]),
                 ("battle", "rival2"),

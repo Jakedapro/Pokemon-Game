@@ -461,7 +461,30 @@ def load_dex(progress=print):
         if data is None:
             data = build_dex(progress)
         _dex = Dex(data)
+        _plain_names(_dex)
     return _dex
+
+
+# a Pokemon's usual form is just "Pyroar", not "Pyroar Male" or "Giratina Altered"
+_FORM_WORDS = ("male", "female", "normal", "plant", "altered", "land", "red-striped", "standard", "incarnate",
+               "ordinary", "aria", "shield", "average", "50", "baile", "midday", "solo", "red-meteor", "disguised",
+               "amped", "ice", "full-belly", "single-strike", "family-of-four", "green-plumage", "zero", "curly",
+               "two-segment", "red", "overcast", "west", "altered", "50-power-construct")
+
+
+def _plain_names(dex):
+    for e in dex.all.values():
+        key = e["key"]
+        for w in _FORM_WORDS:
+            if key.endswith("-" + w):
+                base = key[:-len(w) - 1]
+                if e["default"]:
+                    e["name"] = pretty_name(base)
+                elif "-mega" in key or "-gmax" in key:
+                    pass
+                break
+        if not e["default"] and ("-male-mega" in key or "-female-mega" in key or "-curly-mega" in key):
+            e["name"] = e["name"].replace(" Male", "").replace(" Female", "").replace(" Curly", "")
 
 
 def sprite_path(pid):
