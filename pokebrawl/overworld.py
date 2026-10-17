@@ -492,9 +492,23 @@ class OverworldScene(Scene):
                     return
             if i + 1 < len(self.world.areas):
                 nxt = self.world.areas[i + 1]
-                self.warp = {"t": 0.0, "go": lambda: self._load_area(i + 1, nx, len(nxt["rows"]) - 1)}
+                y = len(nxt["rows"]) - 1
+                x = self._landing(nxt, nx, y)
+                self.warp = {"t": 0.0, "go": lambda: self._load_area(i + 1, x, y)}
         elif i > 0:
-            self.warp = {"t": 0.0, "go": lambda: self._load_area(i - 1, nx, 0)}
+            x = self._landing(self.world.areas[i - 1], nx, 0)
+            self.warp = {"t": 0.0, "go": lambda: self._load_area(i - 1, x, 0)}
+
+    @staticmethod
+    def _landing(area, x, y):
+        """Where you come out on the next map's edge: the same column if you can stand there, otherwise the
+        nearest spot you can (towns are open all along their edges, routes only along the road - walking off a
+        town's corner used to drop you inside the trees, stuck for good)."""
+        row = area["rows"][y]
+        if 0 <= x < len(row) and row[x] in OUT_WALK:
+            return x
+        cands = [c for c, ch in enumerate(row) if ch in OUT_WALK]
+        return min(cands, key=lambda c: abs(c - x)) if cands else x
 
     def _arrived(self, x, y):
         ch = self.tile(x, y)

@@ -672,7 +672,7 @@ class World:
         if randomized() and OPTS.get("r_types") == "RANDOM":
             types = ["normal", "fire", "water", "grass", "electric", "ice", "fighting", "poison", "ground", "flying",
                      "psychic", "bug", "rock", "ghost", "dragon", "dark", "steel", "fairy"]
-            self.gym_types = random.Random(self.rseed + 7).sample(types, 8)
+            self.gym_types = random.Random(self.rseed + 7).sample(types, len(GYMS))   # one type per Gym, all different
         rng = random.Random(seed)
         towns = ["Rootleaf Town"] + [g[0] for g in GYMS] + ["Pokemon League"]
         self._parents = {}

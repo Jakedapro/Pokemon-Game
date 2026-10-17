@@ -241,3 +241,35 @@ def test_spritekit_and_mega_recipes():
     assert len(fire.colors()) == 5
     keys = {m[0] for m in riftdex.CUSTOM_MEGAS}
     assert set(megas.RECIPES) == keys == set(megas.NEEDS)   # every new Mega has a recipe
+
+
+@pytest.mark.parametrize("rand", [False, True])
+def test_no_area_edge_softlocks(dex, rand):
+    """Walking off any open tile at the top or bottom of an area lands you on ground you can move from."""
+    from pokebrawl import adventure as A
+    from pokebrawl.overworld import OUT_WALK, OverworldScene
+    A.OPTS.clear()
+    A.OPTS.update(A.default_options())
+    if rand:
+        A.OPTS.update({"random": "ON", "rseed": 12345})
+    w = A.World(dex)
+
+    def stuck(area, x, y):
+        rows = area["rows"]
+        if rows[y][x] not in OUT_WALK:
+            return True
+        open_ = [(x + dx, y + dy) for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1))
+                 if 0 <= y + dy < len(rows) and 0 <= x + dx < len(rows[0]) and rows[y + dy][x + dx] in OUT_WALK]
+        return not open_
+    try:
+        for i in range(len(w.areas) - 1):
+            here, nxt = w.areas[i], w.areas[i + 1]
+            for x, ch in enumerate(here["rows"][0]):   # going north
+                if ch in OUT_WALK:
+                    y = len(nxt["rows"]) - 1
+                    assert not stuck(nxt, OverworldScene._landing(nxt, x, y), y), (here["name"], x)
+            for x, ch in enumerate(nxt["rows"][-1]):   # going south
+                if ch in OUT_WALK:
+                    assert not stuck(here, OverworldScene._landing(here, x, 0), 0), (nxt["name"], x)
+    finally:
+        A.OPTS.clear()
