@@ -448,8 +448,8 @@ class OverworldScene(Scene):
                 return
 
     def _try_move(self, d):
-        if self.warp is not None:   # a door / map change / blackout is already taking you somewhere
-            return
+        if self.warp is not None or self.walking_npc is not None or self.emote is not None:
+            return   # a door / map change / blackout is taking you somewhere, or a trainer is coming over
         g = self.game
         g["face"] = d
         dx, dy = DIRS[d]
@@ -1030,13 +1030,20 @@ class OverworldScene(Scene):
         dx, dy = DIRS[n["face"]]
         nx, ny = n["x"] + dx, n["y"] + dy
         if (nx, ny) == (self.game["x"], self.game["y"]):
+            n.pop("_walked", None)
             self.walking_npc = None
             self.game["face"] = OPP[n["face"]]
+            self._challenge(n)
+            return
+        if not self.walkable(nx, ny) or n.get("_walked", 0) > n.get("sight", 4) + 2:
+            n.pop("_walked", None)   # something's in the way (or you're not there any more): battle from here
+            self.walking_npc = None
             self._challenge(n)
             return
         p += dt * 4.0
         if p >= 1:
             n["x"], n["y"] = nx, ny
+            n["_walked"] = n.get("_walked", 0) + 1
             p = 0.0
         self.walking_npc[1] = p
 
