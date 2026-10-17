@@ -106,6 +106,7 @@ class OverworldScene(Scene):
     # ------------------------------------------------------------------ places
     def _load_area(self, index, x, y, first=False):
         g = self.game
+        self.move = None   # a step that was under way belongs to the map we just left
         g["room"] = None
         g["area"], g["x"], g["y"] = index, x, y
         self.cur = self.world.areas[index]
@@ -194,6 +195,7 @@ class OverworldScene(Scene):
 
     def _load_room(self, kind, area_index, door, x=None, y=None):
         g = self.game
+        self.move = None
         self.cur = A.room(self.world, kind, area_index, door)
         self.blds = []
         self.field, self.field_missing = None, []
@@ -446,6 +448,8 @@ class OverworldScene(Scene):
                 return
 
     def _try_move(self, d):
+        if self.warp is not None:   # a door / map change / blackout is already taking you somewhere
+            return
         g = self.game
         g["face"] = d
         dx, dy = DIRS[d]
