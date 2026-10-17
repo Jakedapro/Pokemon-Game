@@ -864,7 +864,7 @@ class TurnBattle:
                     self._boost(foe_i, hb)
         v["_hit"] = landed > 0
         if hits > 1:
-            self.emit(f"The Pokemon was hit {landed} time(s)!")
+            self.emit(f"It hit {landed} time{'s' if landed != 1 else ''}!")
         if eff > 1:
             self.emit("It's super effective!")
         elif 0 < eff < 1:

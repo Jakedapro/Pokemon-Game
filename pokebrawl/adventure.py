@@ -201,6 +201,19 @@ TRAINER_CLASSES = ["Youngster", "Lass", "Bug Catcher", "Hiker", "Swimmer", "Ace 
                    "Picnicker", "Fisher", "Biker", "Beauty"]
 TRAINER_NAMES = ["Joey", "Mia", "Leo", "Ava", "Sam", "Kai", "Zoe", "Ben", "Ivy", "Max", "Lily", "Tom", "Nia", "Eli",
                  "Ruby", "Finn", "Jade", "Owen", "Rosa", "Dex", "Luna", "Jax", "Cleo", "Rex"]
+# the kind of trainer you meet in a Gym of each type
+GYM_CLASSES = {"bug": ["Bug Catcher"], "rock": ["Hiker", "Black Belt"], "ground": ["Hiker", "Black Belt"],
+               "water": ["Swimmer", "Fisher", "Picnicker"], "grass": ["Lass", "Beauty", "Picnicker"],
+               "electric": ["Biker", "Youngster"], "psychic": ["Psychic", "Beauty"], "ghost": ["Psychic"],
+               "fighting": ["Black Belt"], "fire": ["Biker", "Black Belt"], "poison": ["Biker", "Psychic"],
+               "ice": ["Ace Trainer", "Beauty"], "dragon": ["Ace Trainer"], "steel": ["Hiker", "Ace Trainer"],
+               "dark": ["Biker"], "fairy": ["Lass", "Beauty"], "flying": ["Youngster", "Ace Trainer"],
+               "normal": ["Youngster", "Lass"]}
+
+
+def gym_trainer_count(k):
+    """How many trainers stand in Gym k (0-based) before the leader: one in the first, building up to four."""
+    return 1 if k == 0 else 2 if k <= 3 else 3 if k <= 5 else 4
 
 
 # ====================================================================== Pokemon in your party
@@ -763,6 +776,7 @@ class World:
     def _route_trainers(self, r, rows, path, area, rng):
         lo, hi = area["levels"]
         npcs = []
+        used = set()
         h = len(rows)
         count = {1: 0, 2: 1}.get(r, 2 + r // 6)   # FireRed: no trainers on the first route, then it builds up
         ys = sorted(rng.sample(range(6, h - 6), min(h - 12, count)))
@@ -777,7 +791,8 @@ class World:
             if not (1 <= x <= COLS - 2) or rows[y][x] in "~#vrf":
                 continue
             cls = rng.choice(TRAINER_CLASSES)
-            nm = rng.choice(TRAINER_NAMES)
+            nm = rng.choice([n for n in TRAINER_NAMES if n not in used] or TRAINER_NAMES)   # never two Joeys on a route
+            used.add(nm)
             size = rng.randint(1, min(3, 1 + r // 2))
             team = self.team_for(self.dex.all[self.wild_species(area, rng)]["types"], hi + (1 if r > 2 else 0),
                                  size, rng)
@@ -1069,11 +1084,13 @@ def room(world, kind, area_index, door=None):
         rng = random.Random(500 + k)
         npcs.append({"id": f"gym{k}", "kind": "leader", "x": 7, "y": 3, "face": "down", "name": leader,
                      "look": f"leader{k}", "gym": k})
-        for j, (x, y, face) in enumerate(((4, 6, "right"), (10, 9, "left"))):
+        names = rng.sample(TRAINER_NAMES, 6)
+        classes = GYM_CLASSES.get(typ, ["Ace Trainer"])
+        for j, (x, y, face) in enumerate(((4, 6, "right"), (10, 9, "left"))[:min(2, gym_trainer_count(k))]):
             team = world.team_for([typ], ace - 6 + j * 2, 1 + (k > 2) + (k > 5), rng)
+            cls = classes[j % len(classes)]
             npcs.append({"id": f"gym{k}-t{j}", "kind": "trainer", "x": x, "y": y, "face": face,
-                         "name": f"{rng.choice(['Ace Trainer', 'Black Belt', 'Psychic', 'Hiker', 'Lass'])} "
-                                 f"{rng.choice(TRAINER_NAMES)}", "cls": "Ace Trainer", "team": team, "sight": 4,
+                         "name": f"{cls} {names[j]}", "cls": cls, "look": cls, "team": team, "sight": 4,
                          "intro": f"You want to see {leader}? You'll have to beat me first!",
                          "lose": f"{leader} is way stronger than me...", "money": 40 * ace})
     elif kind == "league":

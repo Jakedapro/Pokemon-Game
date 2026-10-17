@@ -251,10 +251,16 @@ class OverworldScene(Scene):
             k = self.world.areas[area_index].get("town", 1) - 1
             town, leader, typ, ace, *_ = A.GYMS[k]
             rng = random.Random(900 + k)
-            for j, (sx, sy, face, gfx) in enumerate(trainer_spots[:2]):   # two gym trainers, then the leader
+            have = sum(1 for n in out if n["kind"] == "trainer")
+            taken = {n["name"].split()[-1] for n in out if n["kind"] == "trainer"}
+            names = [nm for nm in rng.sample(A.TRAINER_NAMES, 8) if nm not in taken]
+            classes = A.GYM_CLASSES.get(typ, ["Ace Trainer"])
+            extra = max(0, A.gym_trainer_count(k) - have)   # later Gyms have more trainers before the leader
+            for j, (sx, sy, face, gfx) in enumerate(trainer_spots[:extra]):
                 team = self.world.team_for([typ], ace - 7 + j, 1 + (k > 2) + (k > 5), rng)
+                cls = classes[(j + have) % len(classes)]
                 out.append({"id": f"gym{k}-x{j}", "kind": "trainer", "x": sx, "y": sy, "face": face,
-                            "name": f"Gym Trainer {rng.choice(A.TRAINER_NAMES)}", "cls": "Ace Trainer", "look": gfx,
+                            "name": f"{cls} {names[j]}", "cls": cls, "look": cls,
                             "team": team, "sight": 4, "intro": f"{leader} won't have to lift a finger against you!",
                             "lose": f"Fine... go on and face {leader}.", "money": 40 * ace})
         cur["npcs"] = out
@@ -999,6 +1005,9 @@ class OverworldScene(Scene):
         self.walking_npc[1] = p
 
     def _challenge(self, n):
+        if getattr(self, "_challenging", None) == n["id"] or n["id"] in self.game["beaten"]:
+            return   # already on its way to a battle (spotted you and you pressed A at the same moment)
+        self._challenging = n["id"]
         trainer = {"name": n["name"], "id": n["id"], "lose": n["lose"], "money": n["money"],
                    "look": n.get("cls", "Youngster")}
         team = [dict(m) for m in n["team"]]
@@ -1029,6 +1038,7 @@ class OverworldScene(Scene):
             return
         self.battle_then = then
         if A.lead_alive(self.game, self.app.dex) is None:
+            self._challenging = None
             self.say(["Your Pokemon are too tired to battle! Heal them at a Pokemon Center."])
             return
 
@@ -1047,6 +1057,7 @@ class OverworldScene(Scene):
         g = self.game
         r = s.results()
         self.last_battle = r
+        self._challenging = None
         then, self.battle_then = getattr(self, "battle_then", None), None
         rt = r.get("trainer") or {}
         if rt.get("echo"):
