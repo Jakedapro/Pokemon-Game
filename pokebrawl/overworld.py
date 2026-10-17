@@ -194,7 +194,7 @@ class OverworldScene(Scene):
 
     def _load_room(self, kind, area_index, door, x=None, y=None):
         g = self.game
-        self.cur = A.room(self.world, kind, area_index)
+        self.cur = A.room(self.world, kind, area_index, door)
         self.blds = []
         self.field, self.field_missing = None, []
         real = None
@@ -422,9 +422,11 @@ class OverworldScene(Scene):
                 self.move = None
                 self.jumping = False
                 g["x"], g["y"] = tx, ty
+                self._carry = min(p - 1, 0.5)   # keep walking without losing the leftover bit of this frame
                 self._arrived(tx, ty)
                 if self.move is None and self.text is None and self.trans is None:
                     self._held_move()
+                self._carry = 0.0
             else:
                 self.move = (fx, fy, tx, ty, p)
             return
@@ -460,13 +462,13 @@ class OverworldScene(Scene):
         if d == "down" and not self.inside and self.tile(nx, ny) == "v":   # hop down a ledge
             if self.walkable(nx, ny + 1):
                 AUDIO.play("click", 0.5)
-                self.move = (x, y, nx, ny + 1, 0.0)
+                self.move = (x, y, nx, ny + 1, getattr(self, "_carry", 0.0))
                 self.jumping = True
             return
         if not self.walkable(nx, ny):
             return
         self.jumping = False
-        self.move = (x, y, nx, ny, 0.0)
+        self.move = (x, y, nx, ny, getattr(self, "_carry", 0.0))
         self.step = 1 - self.step
         self.trail.append((x, y))
         self.trail = self.trail[-3:]
@@ -1195,10 +1197,12 @@ class OverworldScene(Scene):
 
     # ------------------------------------------------------------------ drawing
     def _player_px(self):
+        """Where you are, snapped to whole GBA pixels (2 canvas px) so you and the camera always move together -
+        no 1-pixel shimmer between you and the map while walking."""
         g = self.game
         if self.move is not None:
             fx, fy, tx, ty, p = self.move
-            return (fx + (tx - fx) * p) * T, (fy + (ty - fy) * p) * T, p
+            return (round((fx + (tx - fx) * p) * T / 2) * 2, round((fy + (ty - fy) * p) * T / 2) * 2, p)
         return g["x"] * T, g["y"] * T, 0.0
 
     def draw(self, surf):
@@ -1381,7 +1385,7 @@ class OverworldScene(Scene):
     def _follower_px(self, p):
         if self.move is not None and len(self.trail) >= 2:
             (fx, fy), (tx, ty) = self.trail[-2], self.trail[-1]
-            return (fx + (tx - fx) * p) * T, (fy + (ty - fy) * p) * T
+            return round((fx + (tx - fx) * p) * T / 2) * 2, round((fy + (ty - fy) * p) * T / 2) * 2
         tx, ty = self.trail[-1] if self.trail else (self.game["x"], self.game["y"] + 1)
         return tx * T, ty * T
 

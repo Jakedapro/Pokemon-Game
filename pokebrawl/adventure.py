@@ -1013,8 +1013,30 @@ ROOMS = {
 ROOM_WALK = set("_x")
 
 
-def room(world, kind, area_index):
-    """The inside of a building: its tiles and the people in it."""
+HOUSE_PEOPLE = ["villager", "mom", "Hiker", "Picnicker", "Lass", "Youngster", "Fisher", "Beauty"]
+HOUSE_LINES = [
+    "My kid wants to be a Pokemon trainer just like you!",
+    "Have you seen a shiny Pokemon? They sparkle when they come out!",
+    "Trainers who look at you will want to battle. Watch out on the routes!",
+    "If your Pokemon all faint, you'll wake up at the last Pokemon Center you used.",
+    "Some Pokemon only evolve at a high level. Be patient!",
+    "Type matchups matter. Electric moves don't touch Ground types at all!",
+    "I used to battle too, you know. Then my knees started complaining.",
+    "Ever since those rifts started opening, my Pokemon won't sleep through the night.",
+    "Status moves win battles. Sleep, paralysis... a Pokemon that can't move can't hurt you.",
+    "My grandpa says Mega Evolution used to be a legend. Now kids do it every day!",
+    "The Poke Mart sells Potions, but nothing beats a nap at the Pokemon Center.",
+    "Don't tell anyone, but I talk to my Pokemon more than I talk to people.",
+    "A Pokemon holding the right item can turn a battle around. Try a few!",
+    "I keep finding Poke Balls in the grass. Who keeps dropping them?",
+    "The Gym Leader here is tough. Bring a Pokemon with a type advantage!",
+    "Every route has secrets. Press Z on anything that looks a bit odd.",
+]
+
+
+def room(world, kind, area_index, door=None):
+    """The inside of a building: its tiles and the people in it. Each house is its own home with its own
+    people (seeded by its door), so two houses in a town never say the same thing."""
     area = world.areas[area_index]
     rows = ROOMS[kind]
     t = area.get("town", 0)
@@ -1028,16 +1050,15 @@ def room(world, kind, area_index):
         npcs.append({"id": f"m{t}a", "kind": "talk", "x": 9, "y": 5, "face": "up", "name": "", "look": "Lass",
                      "lines": ["Poke Balls work better when the Pokemon is weak. Try making it fall asleep!"]})
     elif kind == "house":
-        rng = random.Random(t * 7 + 1)
-        npcs.append({"id": f"h{t}", "kind": "talk", "x": 8, "y": 5, "face": "down", "name": "",
-                     "look": rng.choice(["villager", "mom", "Hiker", "Picnicker"]),
-                     "lines": [rng.choice([
-                         "My kid wants to be a Pokemon trainer just like you!",
-                         "Have you seen a shiny Pokemon? They sparkle when they come out!",
-                         "Trainers who look at you will want to battle. Watch out on the routes!",
-                         "If your Pokemon all faint, you'll wake up at the last Pokemon Center you used.",
-                         "Some Pokemon only evolve at a high level. Be patient!",
-                         "Type matchups matter. Electric moves don't touch Ground types at all!"])]})
+        seed = t * 7 + 1 + (door[0] * 31 + door[1] * 17 if door else 0)
+        rng = random.Random(seed)
+        lines = rng.sample(HOUSE_LINES, 2)
+        looks = rng.sample(HOUSE_PEOPLE, 2)
+        npcs.append({"id": f"h{t}-{seed}", "kind": "talk", "x": 8, "y": 5, "face": "down", "name": "",
+                     "look": looks[0], "lines": [lines[0]]})
+        if rng.random() < 0.6:   # sometimes someone else is home too
+            npcs.append({"id": f"h{t}-{seed}b", "kind": "talk", "x": 4, "y": 4, "face": "right", "name": "",
+                         "look": looks[1], "lines": [lines[1]]})
     elif kind == "lab":
         npcs.append({"id": "prof", "kind": "prof", "x": 7, "y": 4, "face": "down", "name": "Prof. Hazel",
                      "look": "prof"})

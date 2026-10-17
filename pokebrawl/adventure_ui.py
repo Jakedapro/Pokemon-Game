@@ -61,8 +61,10 @@ class AdventureTitle(GBAScene):
         self.confirm = None
         opts = ([("continue", "CONTINUE")] if self.save else []) + [("new", "NEW GAME"), ("back", "BACK")]
         self.menu = U.Menu(opts)
-        from . import fieldmap, frlg
+        from . import battlegfx, fieldmap, frlg
         frlg.start(fieldmap.warm)   # the graphics download in the background the first time
+        import threading
+        threading.Thread(target=battlegfx.prefetch_mons, daemon=True).start()   # FireRed Pokemon sprites too
 
     def update(self, dt):
         self.t += dt

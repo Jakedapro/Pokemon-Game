@@ -505,7 +505,7 @@ FRLG_PEOPLE = {
     "Black Belt": "black_belt", "Picnicker": "picnicker", "Fisher": "fisher", "Biker": "biker", "Beauty": "beauty",
     "nurse": "nurse", "clerk": "clerk", "mom": "mom", "prof": "prof_oak", "leader": "cooltrainer_m",
     "guard": "policeman", "villager": "man", "grunt": "rocket_m", "admin": "rocket_f", "boss": "giovanni",
-    "ace": "cooltrainer_m", "champ": "cooltrainer_f", "creator": "gba_kid", "frost": "lorelei", "brutus": "bruno",
+    "ace": "cooltrainer_m", "champ": "cooltrainer_f", "creator": "boy", "frost": "lorelei", "brutus": "bruno",
     "morrow": "agatha", "drakon": "lance", "elias": "scientist",
 }
 # frames in a FireRed people sheet: stand down/up/left, then two steps each for down, up, left

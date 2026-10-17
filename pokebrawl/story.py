@@ -154,7 +154,12 @@ def route_stones(dex):
     taken = {gym_stone(dex, k) for k in range(len(A.GYMS))} | set(QUEST_STONES.values())
     free = [s for s in stones if s not in taken]
     random.Random(77).shuffle(free)
-    return {r: free[(r - 1) * 2:(r - 1) * 2 + 2] for r in range(1, A.NUM_ROUTES + 1)}
+    out = {r: free[(r - 1) * 2:(r - 1) * 2 + 2] for r in range(1, A.NUM_ROUTES + 1)}
+    early = out[1] + out[2]   # none lying around before you can even Mega Evolve: they move further along
+    out[1], out[2] = [], []
+    for k, stone in enumerate(early):
+        out[min(A.NUM_ROUTES, 3 + k)] = out.get(min(A.NUM_ROUTES, 3 + k), []) + [stone]
+    return out
 
 
 def rift_stone(dex, r):
@@ -385,9 +390,10 @@ def npcs_for(world, index, game):
     if route == 1:
         add(id="aide1", kind="story", look="prof", x=7, y=len(area["rows"]) - 3, face="up", name="Hazel's Aide",
             **{"if": "!aide1"}, script=[
-                ("say", "Hazel's Aide", ["Oh! You're the new trainer! The Professor asked me to give you these.",
-                                         "Hold X while you walk to run. Catch lots of Pokemon!"]),
-                ("give", "poke-ball", 5), ("give", "potion", 2), ("flag", "aide1")])
+                ("say", "Hazel's Aide", ["Oh! You're the new trainer! The Professor told me all about you.",
+                                         "Some tips: hold X while you walk to run, and press ENTER for your menu.",
+                                         "Weaken a wild Pokemon before you throw a Poke Ball - it's much easier!"]),
+                ("flag", "aide1")])
         add(id="q_charm_girl", kind="quest", quest="q_charm", look="Lass", x=3, y=len(area["rows"]) - 8, face="right")
     if town == 1:   # Pebblecrest: Team Rocket shows up
         add(id="grunt1", kind="story", look="grunt", x=11, y=13, face="up", name="Rocket Grunt", **{"if": "!grunt1"},
@@ -1023,11 +1029,12 @@ def route_extras(world, area_index, game):
     rng = random.Random(route * 101)
     spots = [(x, y) for y in range(4, len(rows) - 4) for x in range(1, A.COLS - 1) if rows[y][x] in ".,"]
     rng.shuffle(spots)
-    for k, stone in enumerate(route_stones(dex).get(route, [])):
+    stones = route_stones(dex).get(route, [])
+    for k, stone in enumerate(stones):
         if k < len(spots):
             x, y = spots[k]
             out.append({"id": f"stone-{stone}", "x": x, "y": y, "item": stone, "count": 1, "mega": True})
-    if route == 2 and k + 1 < len(spots):
+    if route == 2 and len(stones) < len(spots):
         x, y = spots[-1]
         out.append({"id": "lucky-charm", "x": x, "y": y, "item": "lucky-charm", "count": 1})
     return out

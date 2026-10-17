@@ -211,19 +211,51 @@ def mon(pid, back=False, shiny=False):
     if key not in _mon_wait:
         _mon_wait.add(key)
         import threading
-
-        def get():
-            try:
-                os.makedirs(os.path.dirname(path), exist_ok=True)
-                from .pokedex import fetch as download
-                data = download(MON_URL + sub + f"{pid}.png", timeout=20)
-                with open(path + ".part", "wb") as f:
-                    f.write(data)
-                os.replace(path + ".part", path)
-            except Exception:
-                pass
-        threading.Thread(target=get, daemon=True).start()
+        threading.Thread(target=_download_mon, args=(pid, back, shiny), daemon=True).start()
     return None
+
+
+def _mon_path(pid, back, shiny):
+    import os
+    sub = ("back/" if back else "") + ("shiny/" if shiny else "")
+    return os.path.join(frlg.DIR, "mons", sub.replace("/", "_") + f"{pid}.png"), sub
+
+
+def _download_mon(pid, back=False, shiny=False):
+    import os
+    path, sub = _mon_path(pid, back, shiny)
+    if os.path.exists(path):
+        return
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        from .pokedex import fetch as download
+        data = download(MON_URL + sub + f"{pid}.png", timeout=20)
+        with open(path + ".part", "wb") as f:
+            f.write(data)
+        os.replace(path + ".part", path)
+    except Exception:
+        pass
+
+
+_prefetched = []
+
+
+def prefetch_mons(first=(1, 2, 3, 4, 5, 6, 7, 8, 9, 16, 19, 10, 13)):
+    """Gets the FireRed sprites ahead of time so a battle never shows a stand-in while one downloads: the starters
+    and early Pokemon right away, then all 386 in the background."""
+    if _prefetched:
+        return
+    _prefetched.append(True)
+    from concurrent.futures import ThreadPoolExecutor
+    jobs = [(p, b) for p in first for b in (False, True)]
+    with ThreadPoolExecutor(8) as ex:
+        list(ex.map(lambda j: _download_mon(*j), jobs))
+
+    def rest():
+        with ThreadPoolExecutor(6) as ex:
+            list(ex.map(lambda j: _download_mon(*j), [(p, b) for p in range(1, 387) for b in (False, True)]))
+    import threading
+    threading.Thread(target=rest, daemon=True).start()
 
 
 # ====================================================================== the party menu (graphics/party_menu)

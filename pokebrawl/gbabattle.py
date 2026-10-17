@@ -792,6 +792,8 @@ class GBABattle(Scene):
         x, y = at
         lunge = math.sin(self.lunge[side] / 0.25 * math.pi) * 14 if self.lunge[side] > 0 else 0
         x += lunge if side == 0 else -lunge
+        if side == 0:   # FireRed sits your Pokemon's feet on the text box, whatever empty rows its picture has
+            y += _empty_bottom(img)
         r = img.get_rect(midbottom=(x, y))
         if self.faint[side] > 0:   # slides down out of view
             drop = int(self.faint[side] * img.get_height())
@@ -966,3 +968,18 @@ class GBABattle(Scene):
 
     def close(self):
         pass
+
+
+_EMPTY = {}
+
+
+def _empty_bottom(img):
+    """How many fully transparent rows a sprite has under its feet (cached per picture)."""
+    key = id(img), img.get_size()
+    if key not in _EMPTY:
+        try:
+            rect = img.get_bounding_rect()
+            _EMPTY[key] = img.get_height() - rect.bottom if rect.height else 0
+        except pygame.error:
+            _EMPTY[key] = 0
+    return _EMPTY[key]

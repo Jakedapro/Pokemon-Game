@@ -66,6 +66,7 @@ class Display:
         scale = min((dh - 90) / H, (dw - 40) / W, 1.0)
         self.window = pygame.display.set_mode((int(W * scale), int(H * scale)), pygame.RESIZABLE)
         self.fullscreen = False
+        self.scaled = False
 
     def set_canvas(self, size):
         """Switch canvas size: the normal portrait one in a window, the small GBA-style pixel canvas (Adventure)
@@ -81,9 +82,16 @@ class Display:
             except Exception:
                 dw, dh = 1280, 800
             k = max(1, min((dw - 40) // PIXEL[0], (dh - 90) // PIXEL[1]))
-            self.window = pygame.display.set_mode((PIXEL[0] * k, PIXEL[1] * k), pygame.RESIZABLE)
             self.fullscreen = False
             self.pixel = True
+            if not os.environ.get("POKEBRAWL_NO_VSYNC"):
+                try:   # the GPU scales it up and frames are synced to the screen: smooth walking, no tearing
+                    self.window = pygame.display.set_mode(PIXEL, pygame.SCALED | pygame.RESIZABLE, vsync=1)
+                    self.scaled = True
+                    return
+                except pygame.error:
+                    pass
+            self.window = pygame.display.set_mode((PIXEL[0] * k, PIXEL[1] * k), pygame.RESIZABLE)
             return
         if tuple(size) != (W, H):
             try:
@@ -94,9 +102,14 @@ class Display:
         elif self.fullscreen or getattr(self, "pixel", False):
             self._windowed()
         self.pixel = False
+        self.scaled = False
 
     def present(self):
         if self.headless:
+            return
+        if getattr(self, "scaled", False):
+            self.window.blit(self.canvas, (0, 0))
+            pygame.display.flip()
             return
         cw, ch = self.canvas.get_size()
         ww, wh = self.window.get_size()
@@ -114,7 +127,7 @@ class Display:
         pygame.display.flip()
 
     def to_canvas(self, pos):
-        if self.headless:
+        if self.headless or getattr(self, "scaled", False):   # SCALED windows already report canvas positions
             return pos
         r = self._rect
         cw, ch = self.canvas.get_size()
