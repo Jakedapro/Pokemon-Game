@@ -189,7 +189,7 @@ back to its own drawn art.
 - **Rift-Born:** a Pokemon caught inside a rift keeps the rare ability Rift Heart (moves hit 20% harder) and a
   fifth move no other Pokemon can learn, Rift Breaker (its own type, uses its better attack stat, double damage
   against Megas).
-- **Mega Radar and digging:** Prof. Hazel's Mega Radar (with the Key Stone) points to stones buried on each route.
+- **Mega Radar and digging:** Prof. Oak's Mega Radar (with the Key Stone) points to stones buried on each route.
   Stand on the spot, press Z, break into the cave and chip the stone out of the wall with the pick and hammer
   before the wall caves in.
 - **Corrupted Mega Stones:** some buried stones are corrupted. They double every stat after Mega Evolving, but
@@ -213,7 +213,7 @@ back to its own drawn art.
   `tools/pixelstudio/`). An artist's own sprite dropped into `pokebrawl/art/megas/` replaces any of them.
 - **No more one-Mega rule:** every Pokemon holding its stone can Mega Evolve in the same battle, and from the
   fourth Gym on, leaders bring two Megas.
-- **Real interiors:** Pokemon Centers, Marts, houses and Prof. Hazel's lab are FireRed's own rooms, with their
+- **Real interiors:** Pokemon Centers, Marts, houses and Prof. Oak's lab are FireRed's own rooms, with their
   counters, shelves and PCs.
 - **A Gym for every type:** 18 Gyms in 18 towns - Rock, Bug, Water, Normal, Electric, Flying, Grass, Fighting,
   Poison, Fairy, Psychic, Ghost, Fire, Steel, Ice, Dark, Ground and Dragon - each with its own leader, badge,
@@ -227,7 +227,7 @@ back to its own drawn art.
 - **Randomizer:** unlocked once you become World Champion. Turn it on in a new game's OPTION screen and choose
   what to mix up: wild Pokemon (similar strength or anything, legendaries or not), starters, trainer teams and
   Gym types - from all 1,025 Pokemon.
-- **Start:** Professor Hazel's speech on FireRed's real intro screen, then you wake up in her lab. Check the three
+- **Start:** Professor Oak's speech on FireRed's real intro screen, then you wake up in his lab. Check the three
   Poke Balls on her table to choose Bulbasaur, Charmander or Squirtle - your rival Blake grabs the one with the type
   advantage and battles you on the spot.
   A secret Pikachu hides somewhere in Voltara City. Shinies are 1 in 200 and sparkle when they appear.
@@ -238,7 +238,7 @@ back to its own drawn art.
   Experience is given right after each knockout, with level-ups and new moves mid-battle, and evolutions after.
 - **Catching:** throw Poke Balls from the BAG - the ball wobbles and clicks shut, or the Pokemon breaks free.
   Rare legendaries hide on the later routes (they also go into your Legend collection). Shinies are 1 in 512.
-- **Story - "The First Rift":** ten years ago Prof. Hazel's son, Dr. Elias, vanished into a rift at the Rootleaf
+- **Story - "The First Rift":** ten years ago Prof. Oak's son, Dr. Elias, vanished into a rift at the Rootleaf
   pond. Team Rocket stole his notes and built the Rift Engine, which tears Mega Rifts open all over the region to
   harvest Mega Stones. Your rival Blake - Elias's son - will do anything to find his dad, even take a corrupted
   stone from Admin Morga... Stop Giovanni on Victory Road, win the World Tournament, then go into the First Rift

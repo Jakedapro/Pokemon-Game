@@ -450,7 +450,7 @@ class OverworldScene(Scene):
             if not g["party"]:   # FireRed: Oak won't let you leave without a Pokemon
                 self.say(["Wait! Don't go out without a Pokemon of your own!",
                           "Wild Pokemon live in the tall grass. Choose one from the table first."],
-                         speaker="Prof. Hazel")
+                         speaker="Prof. Oak")
                 return
             AUDIO.play("ball", 0.3)
             self.warp = {"t": 0.0, "go": self._exit_room}
@@ -569,14 +569,14 @@ class OverworldScene(Scene):
             self.say(["Hi there! May I help you?"], lambda: self.app.push(MartScene(self.app, g)))
         elif k == "prof" and not g["party"]:
             self.say(["Those three Poke Balls on the table each hold a Pokemon.",
-                      "Go on - check them and choose your partner!"], speaker="Prof. Hazel")
+                      "Go on - check them and choose your partner!"], speaker="Prof. Oak")
         elif k == "ball":
             self._starter_ask(n)
         elif k == "prof":
             c = len(g["caught"])
-            self.say(["Hazel: Ah, you're back!", f"Your Pokedex has {c} Pokemon caught.",
+            self.say(["Oak: Ah, you're back!", f"Your Pokedex has {c} Pokemon caught.",
                       "Amazing work!" if c > 40 else "There are many more out there. Keep it up!"],
-                     speaker="Prof. Hazel")
+                     speaker="Prof. Oak")
         elif k == "trainer":
             if n["id"] in g["beaten"]:
                 self.say([n["lose"]], speaker=n["name"])
@@ -624,7 +624,7 @@ class OverworldScene(Scene):
         g = self.game
         e = self.app.dex.all[n["pokemon"]]
         if g["party"]:
-            self.say(["That's Prof. Hazel's last Pokemon. It's staying here in the lab."])
+            self.say(["That's Prof. Oak's last Pokemon. It's staying here in the lab."])
             return
         AUDIO.cry(e["id"], 0.7)
         self.choice = {"menu": U.Menu([("yes", "YES"), ("no", "NO")]), "pid": e["id"],
@@ -663,7 +663,7 @@ class OverworldScene(Scene):
         got = [f"{g['name'].upper()} received the {nm} from PROF. HAZEL!"]
         if mon.get("shiny"):
             got.insert(0, f"...Wait, it's sparkling! It's a SHINY {nm}!")
-        steps = [("say", "Prof. Hazel", ["This Pokemon is really energetic!"]), ("say", "", got)]
+        steps = [("say", "Prof. Oak", ["This Pokemon is really energetic!"]), ("say", "", got)]
         if rival:
             steps += [("say", S.RIVAL, ["I'll take this one, then!"]),
                       ("say", "", [f"{S.RIVAL.upper()} received the {rival['name'].upper()} from PROF. HAZEL!"])]
@@ -672,11 +672,11 @@ class OverworldScene(Scene):
                   ("say", S.RIVAL, ["Okay! I'll make my Pokemon fight to toughen it up!",
                                     f"{g['name']}! Gramps! Smell you later! See you at the World Tournament!"]),
                   ("flag", "rival1"), ("heal",),
-                  ("say", "Prof. Hazel", ["...That boy. He's so much like his father it hurts sometimes."]),
-                  ("say", "Prof. Hazel", [f"{g['name']}, take these for your journey.",
+                  ("say", "Prof. Oak", ["...That boy. He's so much like his father it hurts sometimes."]),
+                  ("say", "Prof. Oak", [f"{g['name']}, take these for your journey.",
                                           "Poke Balls catch wild Pokemon, and Potions heal them."]),
                   ("give", "poke-ball", 5), ("give", "potion", 3),
-                  ("say", "Prof. Hazel", ["Catch Pokemon in the tall grass on ROUTE 1, north of town.",
+                  ("say", "Prof. Oak", ["Catch Pokemon in the tall grass on ROUTE 1, north of town.",
                                           "The first Gym is in PEBBLECREST CITY. Off you go!"])]
         A.save(g)
         self._refresh()   # both balls leave the table
@@ -1324,12 +1324,12 @@ class OverworldScene(Scene):
                         a = self.t * 3 + k * 2.1
                         pygame.draw.circle(surf, (255, 240, 160), (int(cx + math.cos(a) * 18), int(cy + math.sin(a) * 14)), 2)
                     continue
-                if n["kind"] == "ball":   # a starter's Poke Ball on Hazel's table
+                if n["kind"] == "ball":   # a starter's Poke Ball on Oak's table
                     surf.blit(G.hitem(), (nx, ny + oy))
                     continue
                 if n["kind"] == "static":   # a Pokemon standing in the world
                     e = self.app.dex.get(n["pokemon"])
-                    img = pygame.transform.scale_by(G.icon(e["id"] if e else 25, n.get("shiny", False)), 1.5)
+                    img = G.icon(e["id"] if e else 25, n.get("shiny", False), int(self.t * 2))
                     bob = int(2 * math.sin(self.t * 3))
                     surf.blit(img, img.get_rect(midbottom=(nx + T / 2, ny + oy + T - 2 + bob)))
                     continue
@@ -1337,10 +1337,10 @@ class OverworldScene(Scene):
                 surf.blit(img, (nx, ny + oy + T - img.get_height() - 2))
             elif kind_a == "follow":
                 mon, fx, fy = data
-                img = G.icon(mon["species"], mon.get("shiny", False))
+                img = G.icon(mon["species"], mon.get("shiny", False), int(self.t * (6 if self.move else 2)))
                 if self.game["x"] * T + ox > fx:
                     img = pygame.transform.flip(img, True, False)
-                hop = 2 if self.move is not None and p < 0.5 else 0
+                hop = 0   # the icon's own two frames do the bounce
                 surf.blit(img, img.get_rect(midbottom=(fx + T / 2, fy + T - 2 - hop + oy)))
             else:
                 x, y, pp = data

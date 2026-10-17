@@ -876,7 +876,7 @@ class World:
 
 # ====================================================================== the save file
 def new_game(name, starter_id, dex):
-    """A fresh save. starter_id None: you choose your first Pokemon in Hazel's lab."""
+    """A fresh save. starter_id None: you choose your first Pokemon in Oak's lab."""
     rng = random.Random()
     party = [make_mon(dex, dex.all[starter_id], 5, rng, origin="Rootleaf Town")] if starter_id else []
     got = [starter_id] if starter_id else []
@@ -1060,7 +1060,7 @@ def room(world, kind, area_index, door=None):
             npcs.append({"id": f"h{t}-{seed}b", "kind": "talk", "x": 4, "y": 4, "face": "right", "name": "",
                          "look": looks[1], "lines": [lines[1]]})
     elif kind == "lab":
-        npcs.append({"id": "prof", "kind": "prof", "x": 7, "y": 4, "face": "down", "name": "Prof. Hazel",
+        npcs.append({"id": "prof", "kind": "prof", "x": 7, "y": 4, "face": "down", "name": "Prof. Oak",
                      "look": "prof"})
     elif kind == "gym":
         k = t - 1
@@ -1078,7 +1078,7 @@ def room(world, kind, area_index, door=None):
     elif kind == "league":
         npcs.append({"id": "champion", "kind": "champion", "x": 7, "y": 2, "face": "down", "name": CHAMPION[0],
                      "look": "rival"})
-    return {"name": {"center": "Pokemon Center", "mart": "Poke Mart", "house": area["name"], "lab": "Hazel's Lab",
+    return {"name": {"center": "Pokemon Center", "mart": "Poke Mart", "house": area["name"], "lab": "Oak's Lab",
                      "gym": f"{area['name']} Gym", "league": "Pokemon League"}[kind],
             "kind": "room", "room": kind, "rows": rows, "npcs": npcs, "items": [], "music": "gym" if kind in
             ("gym", "league") else "town"}

@@ -18,7 +18,7 @@ CAST = {
     # Blake, the rival: orange
     "rival": ("blue", "rival_early", ((240, 300, 22, 1.1, 1.05),)),
     "rival_late": ("blue", "rival_late", ((240, 300, 22, 1.1, 1.05),)),
-    # Prof. Hazel: navy trousers
+    # Prof. Oak: navy trousers
     "prof": ("prof_oak", "professor_oak", ((0, 60, 215, 1.0, 0.8),)),
     # Team Rocket, exactly as they are: grunts, Admin Morga and Boss Giovanni
     "grunt": ("rocket_m", "rocket_grunt_m", ()),

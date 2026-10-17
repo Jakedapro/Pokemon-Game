@@ -288,8 +288,8 @@ class OptionsScene(GBAScene):
 
 
 class NewGame(GBAScene):
-    """Prof. Hazel's speech on FireRed's intro backdrop, then you walk into her lab to choose a Pokemon."""
-    SPEECH_MON = 133   # Eevee hops onto the platform while Hazel talks about Pokemon
+    """Prof. Oak's speech on FireRed's intro backdrop, then you walk into his lab to choose a Pokemon."""
+    SPEECH_MON = 133   # Eevee hops onto the platform while Oak talks about Pokemon
 
     def __init__(self, app):
         super().__init__(app)
@@ -347,7 +347,7 @@ class NewGame(GBAScene):
         self.go_t = 0.0
 
     def _start(self):
-        """The new save begins inside Hazel's lab with no Pokemon: the three Poke Balls are on her table."""
+        """The new save begins inside Oak's lab with no Pokemon: the three Poke Balls are on his table."""
         from .overworld import OverworldScene
         game = A.new_game((self.name.strip() or "RED")[:10], None, self.app.dex)
         game["opts"] = dict(self.opts)
@@ -356,19 +356,19 @@ class NewGame(GBAScene):
         game["area"] = 0
         game["center"] = [0, lab[0], lab[1] + 1]
         game["room"] = {"kind": "lab", "area": 0, "door": list(lab)}
-        game["x"], game["y"] = 6, 4   # right in front of Hazel
+        game["x"], game["y"] = 6, 4   # right in front of Oak
         A.save(game)
         ow = OverworldScene(self.app, game)
         game["face"] = "up"
         nm = game["name"].upper()
         ow.run_script([
             ("say", S.RIVAL, [f"{nm}! There you are! Gramps! I'm fed up with waiting!"]),
-            ("say", "Prof. Hazel", [f"{S.RIVAL}? Patience! I asked you both here, didn't I?",
+            ("say", "Prof. Oak", [f"{S.RIVAL}? Patience! I asked you both here, didn't I?",
                                     f"{nm}, there are three POKeMON on that table.",
                                     "They're inside these POKe BALLS. When I was young, I was a serious trainer.",
                                     "Now I only have these three left. You can have one. Go on, choose!"]),
             ("say", S.RIVAL, ["Hey! Gramps! What about me?"]),
-            ("say", "Prof. Hazel", [f"Be patient, {S.RIVAL}! You can have one too, after {nm} chooses."])])
+            ("say", "Prof. Oak", [f"Be patient, {S.RIVAL}! You can have one too, after {nm} chooses."])])
         self.app.replace(ow)
 
     def update(self, dt):

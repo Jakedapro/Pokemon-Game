@@ -575,12 +575,80 @@ def person(look, face, frame=0, shirt=None):
 
 # ====================================================================== Pokemon icons (followers / party)
 ICON_URL = "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/versions/generation-viii/icons/{}.png"
+# the GBA-style party icons (32x32, two frames) from pokeemerald-expansion - they match FireRed's pixel art
+GBA_ICON_URL = ("https://raw.githubusercontent.com/rh-hideout/pokeemerald-expansion/"
+                "73b3fbeb574327cd9420c89e56bef5aa3c08fead/graphics/pokemon/{}/icon.png")
 
 
-def icon(pid, shiny=False):
-    """A small Pokemon icon for the party screen and the walking follower. Falls back to a shrunk sprite."""
+def _icon_folders(pid):
+    """pokeemerald-expansion folder names to try for a Pokemon (its species, then the bare species name)."""
+    dex = pokedex.load_dex(progress=lambda m: None)   # already loaded: just returns it
+    e = dex.all.get(pid)
+    if not e:
+        return []
+    base = dex.all.get(e.get("species", pid)) or e
+    key = base["key"]
+    clean = key.replace("-", "_").replace("'", "").replace(".", "").replace("\u00e9", "e")
+    out = [clean, clean.split("_")[0]]
+    special = {"nidoran_f": "nidoran_f", "nidoran_m": "nidoran_m", "mr_mime": "mr_mime", "mime_jr": "mime_jr",
+               "ho_oh": "ho_oh", "porygon_z": "porygon_z", "type_null": "type_null", "jangmo_o": "jangmo_o",
+               "hakamo_o": "hakamo_o", "kommo_o": "kommo_o", "mr_rime": "mr_rime"}
+    for k, v in special.items():
+        if clean.startswith(k):
+            out.insert(0, v)
+    return list(dict.fromkeys(out))
+
+
+def _gba_icon(pid):
+    """Both frames of the GBA icon at 2x, cropped together (so the bounce keeps its feet in place), or None."""
+    path = os.path.join(pokedex.SPRITE_DIR, f"gbaicon-{pid}.png")
+    if not os.path.exists(path):
+        for folder in _icon_folders(pid):
+            try:
+                data = pokedex.fetch(GBA_ICON_URL.format(folder), timeout=8)
+            except Exception:  # noqa: BLE001
+                continue
+            os.makedirs(pokedex.SPRITE_DIR, exist_ok=True)
+            with open(path, "wb") as f:
+                f.write(data)
+            break
+        else:
+            return None
+    try:
+        sheet = pygame.image.load(path)
+        if sheet.get_bitsize() <= 8:
+            sheet.set_colorkey(sheet.get_palette_at(0))
+        sheet = _rgba(sheet)
+        w = sheet.get_width()
+        frames = [sheet.subsurface((0, i * w, w, w)).copy() for i in range(max(1, sheet.get_height() // w))]
+        box = frames[0].get_bounding_rect()
+        for fr in frames[1:]:
+            box = box.union(fr.get_bounding_rect())
+        if not box.w:
+            return None
+        return [pygame.transform.scale_by(fr.subsurface(box).copy(), 2) for fr in frames]
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _rgba(img):
+    """A plain 32-bit RGBA copy (works before a window exists), keeping colorkey transparency."""
+    out = pygame.Surface(img.get_size(), pygame.SRCALPHA, 32)
+    out.blit(img, (0, 0))
+    return out
+
+
+def icon(pid, shiny=False, frame=0):
+    """A small Pokemon icon for the party screen and the walking follower: FireRed-style (two-frame GBA icon,
+    `frame` 0 or 1 for the little bounce). Falls back to a modern icon, then a shrunk sprite."""
     from .riftdex import base_of
     pid = base_of(pid)
+    gk = ("gi", pid)
+    if gk not in _cache:
+        _cache[gk] = _gba_icon(pid)
+    if _cache[gk]:
+        frames = _cache[gk]
+        return frames[frame % len(frames)]
     key = ("i", pid, shiny)
     if key in _cache:
         return _cache[key]
