@@ -138,7 +138,9 @@ class GBABattle(Scene):
             self.intro_t += dt
             if self.intro_t >= 1.3:
                 self.mode = "play"
-                if self.s.kind == "wild":
+                if self.s.kind == "wild" and self.trainer.get("rift"):   # the rift has its own entrance line
+                    AUDIO.cry(self.s.battle.sides[1].mons[0].entry["id"], 0.9)
+                elif self.s.kind == "wild":
                     m = self.s.foes[0]
                     AUDIO.cry(self.s.battle.sides[1].mons[0].entry["id"], 0.9)
                     shiny = " shiny" if m.get("shiny") else ""
@@ -549,14 +551,14 @@ class GBABattle(Scene):
         if not getattr(b, "rift", None):
             return
         from .riftdex import ANOMALIES
-        left = getattr(self, "rift_left", b.rift.get("turns"))
+        left = getattr(self, "rift_left", b.turns_left)
         danger = left is not None and left <= 2
         name = ANOMALIES.get(b.anomaly, ("",))[0]
         r = pygame.Rect(4, 2, 300, 26)   # a strip along the top, clear of both Pokemon
         pygame.draw.rect(surf, (24, 8, 40), r, border_radius=5)
         edge = (255, 80, 80) if danger and int(self.t * 6) % 2 else (176, 112, 255)
         pygame.draw.rect(surf, edge, r, 2, border_radius=5)
-        F.draw(surf, f"RIFT {left}", (r.x + 8, r.y + 4), (255, 120, 120) if danger else (248, 232, 255),
+        F.draw(surf, f"RIFT {left}" if left is not None else "RIFT", (r.x + 8, r.y + 4), (255, 120, 120) if danger else (248, 232, 255),
                None, small=True)
         F.draw(surf, name, (r.x + 80, r.y + 4), (200, 168, 255), None, small=True)
         ct = getattr(self, "collapse_t", 0)

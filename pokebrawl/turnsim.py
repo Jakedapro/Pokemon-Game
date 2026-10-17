@@ -96,6 +96,8 @@ class TurnBattle:
         self.rift = dict(rift) if rift else None
         self.anomaly = self.rift.get("anomaly") if self.rift else None
         self.turns_left = self.rift.get("turns") if self.rift else None
+        if self.turns_left and self.turns_left >= 50:   # a boss rift (Giratina, Arceus) never collapses: no countdown
+            self.turns_left = None
         self.collapsed = False
         if self.rift:
             for s in self.sides:

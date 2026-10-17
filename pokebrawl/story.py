@@ -367,7 +367,7 @@ def npcs_for(world, index, game):
                                 "Their stones are scattered under the routes. Your Mega Radar can find them.",
                                 "But first - let a scientist see the trainer who sealed nineteen rifts. Battle me!"]),
                 ("battle", "elias"),
-                ("say", ELIAS, ["...Mother was right about you.",
+                ("say", ELIAS, ["...Dad was right about you.",
                                 "Listen. The rifts weren't only Giovanni's doing. His Engine just widened cracks",
                                 "that were already there. Cracks in creation itself.",
                                 "Inside the First Rift I felt something vast watching me. Patient. Ancient.",
@@ -625,19 +625,19 @@ def npcs_for(world, index, game):
     if index == 0 and has(game, "first_rift") and game.get("champion") and not has(game, "rift_zero"):
         fid = mega_form(dex, "mewtwo-mega-y")
         if fid:   # sealing every rift wakes the first one, right at home
-            add(id="rift_zero", kind="rift", x=3, y=23, pokemon=fid, level=75, script=[
+            add(id="rift_zero", kind="rift", x=3, y=23, pokemon=fid, level=70, script=[
                 ("say", RIVAL, ["This is it. The First Rift.", "Dad's in there somewhere. Let's go. Together."]),
                 ("say", "", ["You step into the light... Inside, time stands still.",
                              "A Mewtwo, wreathed in Mega energy, stands guard over a man in a lab coat."]),
                 ("say", ELIAS, ["...Blake? Is that... you've gotten so tall...",
                                 "Careful! Mewtwo was caught in the blast with me. It's been raging for ten years!",
                                 "Calm it down - and we can all go home!"]),
-                ("rift", fid, 75),
+                ("rift", fid, 70),
                 ("say", "", ["Mewtwo's Mega energy fades. The First Rift folds shut behind you."]),
                 ("say", RIVAL, ["DAD!"]),
                 ("say", ELIAS, ["Ten years... it felt like ten minutes. Blake, I'm so sorry.",
                                 f"And you - you're the one who sealed the rifts. {game['name']}, was it?",
-                                "Come find me at Mother's lab once I've had a shower. I owe you a battle."]),
+                                "Come find me at Dad's lab once I've had a shower. I owe you a battle."]),
                 ("say", "", ["Mewtwo left behind two stones that hum with power..."]),
                 ("mega", "mewtwo-mega-y"), ("mega", "mewtwo-mega-x"), ("flag", "rift_zero"), ("flag", "vale_home")])
     if index == 0 and all(has(game, f"rift_{r}") for r in range(1, A.NUM_ROUTES + 1)) and \
