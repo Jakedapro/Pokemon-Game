@@ -479,6 +479,10 @@ class TurnBattleScene(Scene):
                 if want in self._gimmicks(self.req or {}):
                     self.mega_on = not (self.mega_on and self.gimmick == want)
                     self.gimmick = want
+            elif self.req and self.req["kind"] in ("lead", "switch") and pygame.K_1 <= ev.key <= pygame.K_6:
+                i = ev.key - pygame.K_1   # keys 1-6 pick that Pokemon (team preview / after a faint)
+                if i in self.req["switches"]:
+                    self._send({"type": "switch", "index": i})
             elif ev.key in (pygame.K_1, pygame.K_2, pygame.K_3, pygame.K_4):
                 i = ev.key - pygame.K_1
                 if i < len(self.move_btns) and self.move_btns[i].enabled:
@@ -917,7 +921,7 @@ class TurnBattleScene(Scene):
             gfx.text(surf, m["name"][:11], (cx, 300), 14, ow=1, chunky=False)
             for j, t in enumerate(m["types"]):
                 gfx.pill(surf, t.upper(), (cx, 324 + j * 22), gfx.type_color(t, 0), 11)
-        gfx.text(surf, "Tap your lead below", (W / 2, 420), 26, (255, 240, 150))
+        gfx.text(surf, "Tap your lead below (or press 1-6)", (W / 2, 420), 26, (255, 240, 150))
         mine = self.state["sides"][self.me]["mons"]
         for i, m in enumerate(mine):
             img = SPRITES.get(m["id"], 90)
