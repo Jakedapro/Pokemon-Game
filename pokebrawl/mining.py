@@ -233,8 +233,13 @@ class MiningScene(GBAScene):
             pygame.draw.rect(surf, (248, 216, 96) if on else (120, 96, 80), r, border_radius=6)
             pygame.draw.rect(surf, (48, 32, 24), r, 2, border_radius=6)
             F.draw(surf, label, r.center, (48, 32, 24), None, anchor="center", small=True)
-        for i, line in enumerate(("Z  dig", "X  swap", "Esc  quit")):
-            F.draw(surf, line, (392, 222 + i * 18), (232, 216, 200), None, small=True)
+        got = self.items[0]["got"]
+        for i, line in enumerate(("Z  dig", "X  swap", "Esc  done" if got else "Esc  quit")):
+            F.draw(surf, line, (392, 222 + i * 18), (248, 224, 96) if got and i == 2 else (232, 216, 200), None,
+                   small=True)
+        if got and not self.done:   # the stone is out: you can keep digging for treasure, or go
+            F.draw(surf, "GOT IT! Dig for treasure, or Esc to leave.", (OX, 52), (248, 224, 96), (40, 24, 16),
+                   small=True)
         if self.text is not None:
             self.text.draw(surf, self.t)
 
