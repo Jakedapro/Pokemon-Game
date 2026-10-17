@@ -586,14 +586,14 @@ class PartyScene(GBAScene):
             level = "green" if frac > 0.5 else "yellow" if frac > 0.2 else "red"
             cols = BG.party_hp_colors(level) or (U.hp_color(frac), U.hp_color(frac))
             if i == 0:
-                surf.blit(icon, icon.get_rect(center=(r.x + 26, r.y + 30 + bob)))
-                F.draw(surf, nm, (r.x + 50, r.y + 22), white, shade)
+                surf.blit(icon, icon.get_rect(center=(r.x + 22, r.y + 28 + bob)))
+                F.draw_fit(surf, nm, (r.x + 56, r.y + 22), r.w - 64, white, shade)
                 F.draw(surf, f"Lv{m['level']}", (r.x + 66, r.y + 46), white, shade, small=True)
                 bar = pygame.Rect(r.x + 50, r.y + 70, 92, 6)
                 F.draw(surf, f"{hp}/ {mx}", (r.right - 14, r.y + 82), white, shade, anchor="topright", small=True)
             else:
-                surf.blit(icon, icon.get_rect(center=(r.x + 22, r.y + 22 + bob)))
-                F.draw(surf, nm, (r.x + 48, r.y + 6), white, shade)
+                surf.blit(icon, icon.get_rect(center=(r.x + 20, r.y + 22 + bob)))
+                F.draw_fit(surf, nm, (r.x + 52, r.y + 6), 122, white, shade)
                 F.draw(surf, f"Lv{m['level']}", (r.x + 64, r.y + 28), white, shade, small=True)
                 bar = pygame.Rect(r.x + 178, r.y + 22, 92, 6)
                 F.draw(surf, f"{hp}/ {mx}", (r.right - 14, r.y + 30), white, shade, anchor="topright", small=True)
@@ -926,8 +926,11 @@ class BagScene(GBAScene):
         F.draw(surf, "ITEMS", (94, 204), U.WHITE, (120, 64, 32), anchor="center", scale=3)
         rows = len(self.menu.options)
         self.menu.draw(surf, (184, 8, 292, min(240, 20 + 26 * rows)))
-        for i, (k, n) in enumerate(self.items[:8]):
-            F.draw(surf, f"x{n}", (466, 8 + 12 + i * 26), U.TEXT, U.SHADOW, anchor="topright")
+        top = getattr(self.menu, "top", 0)
+        fit = max(1, (min(240, 20 + 26 * rows) - 8 - 6) // 26)
+        for i, (k, n) in enumerate(self.items):
+            if top <= i < top + fit:
+                F.draw(surf, f"x{n}", (450, 8 + 12 + (i - top) * 26), U.TEXT, U.SHADOW, anchor="topright")
         inner = U.box(surf, (4, 256, 472, 60))
         k = self.menu.options[self.menu.index][0]
         from . import story as S
@@ -1282,8 +1285,15 @@ class CardScene(GBAScene):
             y = r.y + 56 + i * 30
             F.draw(surf, k, (r.x + 22, y), U.TEXT, U.SHADOW)
             F.draw(surf, v, (r.x + 280, y), U.TEXT, U.SHADOW, anchor="topright")
-        me = pygame.transform.scale_by(G.person("player", "down", 0), 3)
-        surf.blit(me, me.get_rect(midbottom=(r.right - 80, r.y + 176)))
+        from . import cast
+        pic = BG.intro_pic(cast.player_look()) if hasattr(BG, "intro_pic") else None
+        if pic is not None:   # FireRed's card shows the trainer's full picture
+            k = 150 / max(1, pic.get_height())
+            me = pygame.transform.scale(pic, (int(pic.get_width() * k), 150)) if k < 1 else pic
+            me = me.subsurface(me.get_bounding_rect()).copy() if me.get_bounding_rect().w else me
+        else:
+            me = pygame.transform.scale_by(G.person("player", "down", 0), 3)
+        surf.blit(me, me.get_rect(midbottom=(r.right - 80, r.y + 182)))
         pygame.draw.rect(surf, (200, 168, 96), (r.x + 10, r.y + 190, r.w - 20, 86), border_radius=6)
         for i, gym in enumerate(A.GYMS):   # the badge case: two rows of nine
             x, y = r.x + 34 + (i % 9) * 46, r.y + 212 + (i // 9) * 38

@@ -129,9 +129,18 @@ _WORDS = [("POKeMON", "Pokémon"), ("POKéMON", "Pokémon"), ("POKEMON", "Pokém
           ("Pokemon", "Pokémon"), ("Pokedex", "Pokédex"), ("Poke ", "Poké ")]
 
 
+_CAPS = [("POKeMON", "POKéMON"), ("POKeDEX", "POKéDEX"), ("POKEMON", "POKéMON"), ("POKEDEX", "POKéDEX"),
+         ("POKE BALL", "POKé BALL"), ("POKE MART", "POKé MART"), ("POKe", "POKé")]
+
+
 def _fix(text):
-    """Writes Pokémon the normal way (not 'POKeMON')."""
+    """Writes Pokémon the normal way (not 'POKeMON'); an all-capitals label stays in capitals (POKéMON, like
+    FireRed's menus)."""
     if "ok" not in text.lower():
+        return text
+    if not any(c.islower() for c in text.replace("POKe", "")):
+        for a, b in _CAPS:
+            text = text.replace(a, b)
         return text
     for a, b in _WORDS:
         text = text.replace(a, b)
@@ -218,3 +227,15 @@ def wrap(text, max_w, scale=2):
     if line:
         lines.append(line)
     return lines
+
+
+def draw_fit(surf, text, pos, max_w, color, shadow=None, **kw):
+    """Draws text, squeezing it sideways if it's wider than max_w (long names stay whole and readable)."""
+    import pygame
+    w = width(_fix(text), kw.get("scale", 2), kw.get("small", False))
+    if w <= max_w:
+        return draw(surf, text, pos, color, shadow, **kw)
+    h = 40
+    tmp = pygame.Surface((w + 6, h), pygame.SRCALPHA)
+    draw(tmp, text, (0, 0), color, shadow, **kw)
+    surf.blit(pygame.transform.scale(tmp, (int((w + 6) * max_w / w), h)), pos)

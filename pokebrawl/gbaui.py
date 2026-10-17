@@ -262,14 +262,32 @@ class Menu:
         inner = pygame.Rect(rect) if bare else box(surf, rect, fill, border)
         cw = col_w or (inner.w - 8) // self.cols
         self.rects = []
+        rows = -(-len(self.options) // self.cols)
+        fit = max(1, (inner.h - 6) // row_h)
+        top = getattr(self, "top", 0)
+        if rows > fit:   # a long list scrolls, keeping the cursor in view (like FireRed's bag)
+            r = self.index // self.cols
+            top = min(max(top, r - fit + 1), r, rows - fit)
+        else:
+            top = 0
+        self.top = top
         for i, o in enumerate(self.options):
             c, r = i % self.cols, i // self.cols
-            x, y = inner.x + 22 + c * cw, inner.y + 6 + r * row_h
+            if not top <= r < top + fit:
+                self.rects.append(pygame.Rect(-100, -100, 0, 0))
+                continue
+            x, y = inner.x + 22 + c * cw, inner.y + 6 + (r - top) * row_h
             self.rects.append(pygame.Rect(x - 20, y - 2, cw, row_h))
             col = TEXT if self._enabled(i) else (168, 168, 168)
             F.draw(surf, o[1], (x, y), col, SHADOW)
             if i == self.index:
                 cursor(surf, (x - 16, y))
+        cx = inner.right - 14
+        if top > 0:
+            pygame.draw.polygon(surf, (232, 72, 64), [(cx - 6, inner.y + 8), (cx + 6, inner.y + 8), (cx, inner.y + 2)])
+        if top + fit < rows:
+            b = inner.bottom - 3
+            pygame.draw.polygon(surf, (232, 72, 64), [(cx - 6, b - 6), (cx + 6, b - 6), (cx, b)])
         return inner
 
 
