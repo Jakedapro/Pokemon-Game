@@ -34,14 +34,23 @@ OCEAN = {"water", "ice"}
 FOREST = {"grass", "bug", "poison", "fairy"}
 ROUTE_NAME = {"ocean": "the SEA", "forest": "the FOREST", "sky": "the MOUNTAINS"}
 CAMEOS = {"ocean": ("lapras", "mantine", "tentacool"),
-          "forest": ("wurmple", "shroomish", "slakoth", "silcoon", "pikachu"),
+          "forest": ("gastly", "haunter", "gengar", "duskull", "misdreavus"),
           "sky": ()}
 EM_FLYERS = {  # Emerald's own flying overworld sprites: name -> (path, frame size)
     "wingull": ("graphics/object_events/pics/pokemon/wingull.png", 16),
     "latias": ("graphics/object_events/pics/pokemon/latias_latios.png", 32),
     "hooh": ("graphics/object_events/pics/pokemon/ho_oh.png", 32),
 }
-BANNERS = {"ocean": (0.1, 14.9), "forest": (11.1,), "sky": (0.1, 14.9)}   # the HM-style move banner
+BANNERS = {"ocean": (0.1, 14.9), "forest": (11.1, 16.6), "sky": (0.1, 14.9)}
+BEAM_T = 18.1   # SolarBeam goes off in the forest
+RM = "graphics/region_map/"
+HOME, HAVEN_AT = (68, 124), (196, 30)   # on FireRed's Town Map
+MAP_ROUTES = {
+    "ocean": ([HOME, (68, 140), (110, 146), (160, 144), (198, 124), (204, 92), (200, 56), HAVEN_AT],
+              "THE STORMY SEA"),
+    "forest": ([HOME, (68, 99), (68, 78), (84, 62), (120, 58), (150, 58), (176, 46), HAVEN_AT], "THE HAUNTED WOODS"),
+    "sky": ([HOME, (68, 99), (52, 60), (40, 38), (80, 24), (130, 20), (170, 24), HAVEN_AT], "THE HIGH PEAKS"),
+}   # the HM-style move banner
 
 
 def em_frames(name):
@@ -75,7 +84,7 @@ FX = {  # name: (path, frame w, frame h)
     "cuttree": ("graphics/object_events/pics/misc/cut_tree.png", 16, 16),
     "cutleaf": ("graphics/field_effects/fldeff_cut.png", 8, 8),
     "rain": ("graphics/weather/rain.png", 16, 32), "cloud": ("graphics/weather/cloud.png", 64, 64),
-    "fog": ("graphics/weather/fog_horizontal.png", 64, 64),
+    "fog": ("graphics/weather/fog_horizontal.png", 64, 64), "fog2": ("graphics/weather/fog_diagonal.png", 64, 64),
 }
 
 
@@ -115,11 +124,12 @@ def lines_for(biome, nm, player):
                 (23.0, "The storm breaks. Sunlight sparkles on the water."),
                 (28.5, "A sacred mountain rises from the sea. Its peak is glowing!")]
     if biome == "forest":
-        return [(0.5, f"The woods are deep and old. {nm} leads the way."),
-                (5.5, "Wild POK\u00e9MON peek out from between the trees..."),
+        return [(0.5, f"The woods go dark and cold. {nm} leads the way."),
+                (5.5, "Red eyes glint between the trees. Something is watching..."),
                 (11.0, f"A tree blocks the path! {nm} used VINE WHIP!"),
-                (16.5, f"{nm} hums softly. The forest makes way for it."),
-                (23.0, "Sunlight breaks through the leaves. The way is clear..."),
+                (14.8, "GHOSTS pour out of the fog! They're closing in!"),
+                (18.6, f"{nm} used SOLARBEAM! The ghosts scatter!"),
+                (23.5, "The fog lifts. Moonlight shows the way..."),
                 (28.5, f"{nm}'s flower is glowing. It knows the way.")]
     return [(0.5, f"{nm} spreads its wings. {player} holds on tight."),
             (5.5, "One beat of its wings and the ground drops away!"),
@@ -273,34 +283,32 @@ def dense_woods(trail, blocked):
 HAVEN_SWAP = {804: 1, 805: 1, 161: 113}   # Mt. Pyre's summit without its gravestones (or the sky round it)
 
 
-def region_map():
-    """The overview, built from real towns and routes: Mt. Pyre's shrine up north, then Petalburg Woods, the open sea
-    and Mt. Ember side by side, and a Pallet-style home town in the south. (surface, {zone: rect}) or None."""
-    sea_map = frlg.layout("Route20_Layout")
-    if not sea_map:
+def town_map():
+    """FireRed's own Town Map screen (its frame, background and map) as one 240x160 picture, or None."""
+    banks = frlg.pal_banks(RM + "region_map.pal")
+    if not banks:
         return None
-    sea = sea_map["blocks"][0] & 0x3FF
-    w, h = 30, 58
-    out = pygame.Surface((w * 16, h * 16))
-    over = pygame.Surface((w * 16, h * 16), pygame.SRCALPHA)
-    tile = sea_map["tiles"].metatile(sea, "under")
-    for y in range(h):
-        for x in range(w):
-            out.blit(tile, (x * 16, y * 16))
-    for src, name, x, y, cw, ch, cx, cy in ((emerald, "MtPyre_Summit_Layout", 8, 0, 30, 19, 0, 0),
-                                            (emerald, "PetalburgWoods_Layout", 0, 12, 10, 19, 0, 19),
-                                            (frlg, "Route20_Layout", 2, 1, 10, 19, 10, 19),
-                                            (frlg, "MtEmber_Exterior_Layout", 0, 0, 10, 19, 20, 19),
-                                            (frlg, "PalletTown_Layout", 0, 0, 24, 20, 3, 38)):
-        r = (emerald.render(name, x, y, cw, ch, swap=HAVEN_SWAP) if src is emerald and "Pyre" in name
-             else src.render(name, x, y, cw, ch, scale=1))
-        if not r:
+    out = pygame.Surface((LW, LH))
+    for tiles, tmap in (("background", "background"), ("map_edge", "map_edge"), ("region_map", "kanto")):
+        layer = frlg.tilemap(RM + tiles + ".png", RM + tmap + ".bin", banks, 0, 30)
+        if layer is None:
             return None
-        out.blit(r[0], (cx * 16, cy * 16))
-        over.blit(r[1], (cx * 16, cy * 16))
-    out.blit(over, (0, 0))
-    return out, {"forest": pygame.Rect(0, 304, 160, 304), "ocean": pygame.Rect(160, 304, 160, 304),
-                 "sky": pygame.Rect(320, 304, 160, 304)}
+        out.blit(layer, (0, 0))
+    return out
+
+
+def map_icon(name, pal, size=16):
+    """Frames of one of the Town Map's sprites (cursor, player head, fly marker) in their own palette."""
+    f, p = frlg.fetch(RM + name + ".png"), frlg.read_pal(RM + pal + ".pal")
+    if not f or not p:
+        return []
+    img = pygame.image.load(f)
+    if img.get_bitsize() != 8:
+        return []
+    img.set_palette(p)
+    img.set_colorkey(img.get_palette_at(0))
+    img = G._rgba(img)
+    return [img.subsurface((0, y, size, size)).copy() for y in range(0, img.get_height() - size + 1, size)]
 
 
 # ---------------------------------------------------------------------- the scene
@@ -336,9 +344,27 @@ class JourneyScene(GBAScene):
         self.shake = 0.0
         self.banner_cry = set()
         threading.Thread(target=self._load_cameos, daemon=True).start()
-        self.overview = region_map()
+        from . import cast
+        female = cast.player_look() == "player_f"
+        self.townmap = town_map()
+        self.icons = {"cursor": map_icon("cursor", "cursor"), "fly": map_icon("fly_icon", "misc_icon"),
+                      "you": map_icon("player_icon_leaf" if female else "player_icon_red",
+                                      "player_icon_leaf" if female else "player_icon_red")}
+        self.vignette = self._make_vignette()
         self._setup()
         AUDIO.cry(self.pid, 1.0)
+
+    @staticmethod
+    def _make_vignette():
+        """Darkness closing in from the edges of the screen."""
+        v = pygame.Surface((LW, LH), pygame.SRCALPHA)
+        for y in range(0, LH, 2):
+            for x in range(0, LW, 2):
+                d = math.hypot((x - LW / 2) / (LW / 2), (y - LH / 2.4) / (LH / 2))
+                a = int(max(0.0, min(1.0, (d - 0.45) / 0.6)) ** 1.5 * 230)
+                if a:
+                    v.fill((4, 6, 16, a), (x, y, 2, 2))
+        return v
 
     @staticmethod
     def _whiten(img):
@@ -409,7 +435,8 @@ class JourneyScene(GBAScene):
 
     def update(self, dt):
         self.t += dt
-        AUDIO.music("showcase" if self.t > MAP_T else "town")
+        AUDIO.music("town" if self.t < MAP_T else "haunt" if self.biome == "forest" and not self.finished
+                    and self.t - MAP_T < 23 else "showcase")
         self.flash = max(0.0, self.flash - dt * 2.5)
         if self.text is not None:
             self.text.update(dt)
@@ -575,7 +602,7 @@ class JourneyScene(GBAScene):
 
     # ------------------------------------------------------------------ drawing
     def draw(self, surf):
-        if self.t < MAP_T and self.overview:
+        if self.t < MAP_T and self.townmap:
             self._draw_map(surf, self.t)
         else:
             s = self.low
@@ -621,42 +648,48 @@ class JourneyScene(GBAScene):
             return 1
         return 0
 
-    # --- the overview: the camera pans up from home, over the three ways, to the Haven
+    # --- the overview: FireRed's Town Map, like choosing where to Fly
     def _draw_map(self, surf, t):
-        img, zones = self.overview
-        mh = img.get_height()
-        stops = ((0.0, mh - 320), (1.2, mh - 320), (3.0, 330), (5.0, 330), (6.6, 0), (99.0, 0))
-        cam = 0
-        for (t0, y0), (t1, y1) in zip(stops, stops[1:]):
-            if t0 <= t < t1:
-                f = (t - t0) / (t1 - t0)
-                f = f * f * (3 - 2 * f)
-                cam = int(y0 + (y1 - y0) * f)
-                break
-        surf.blit(img, (0, -cam))
-        you, mon = self.pf["walk"]["up"][0], self.mf["up"][0]   # you and your starter at home, looking north
-        surf.blit(you, you.get_rect(midbottom=(150, 752 - cam)))
-        surf.blit(mon, mon.get_rect(midbottom=(174, 752 - cam)))
-        if t > 2.6:
-            dim = pygame.Surface((480, 320), pygame.SRCALPHA)
-            for key, rect in zones.items():
-                if key != self.biome:
-                    dim.fill((8, 16, 40, 120), rect.move(0, -cam))
-            pulse = int(150 + 100 * math.sin(t * 6))
-            pygame.draw.rect(dim, (255, 255, 255, pulse), zones[self.biome].move(0, -cam).inflate(-4, -4), 2)
-            surf.blit(dim, (0, 0))
-            for key, label in (("forest", "FOREST"), ("ocean", "SEA"), ("sky", "MOUNTAINS")):
-                c = zones[key].move(0, -cam).center
-                F.draw(surf, label, (c[0], c[1] - 40), (248, 232, 96) if key == self.biome else U.WHITE,
-                       (24, 32, 56), anchor="center")
-        self._halo(surf, (248, 56 - cam), t, 0.7)   # the Haven's stone, glowing
-        if cam < 120:
-            F.draw(surf, "STARTER'S HAVEN", (240, max(8, 100 - cam)), (255, 240, 180), (80, 48, 16), anchor="center")
-        if t > 3.2:
-            box = U.box(surf, (24, 236, 432, 80))
-            F.draw(surf, f"{self.nm} looks toward {ROUTE_NAME[self.biome]}.", (box.x + 8, box.y + 6), U.TEXT,
-                   U.SHADOW)
-            F.draw(surf, "It knows the way.", (box.x + 8, box.y + 34), U.TEXT, U.SHADOW)
+        s = self.low
+        s.blit(self.townmap, (0, 0))
+        pts, name = MAP_ROUTES[self.biome]
+        seg = [0.0]
+        for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
+            seg.append(seg[-1] + math.hypot(x1 - x0, y1 - y0))
+        f = max(0.0, min(1.0, (t - 1.6) / 4.0))
+        f = f * f * (3 - 2 * f)
+        d = f * seg[-1]
+        trail = []
+        for k in range(len(pts) - 1):   # the way it goes, dotted in as you travel
+            (x0, y0), (x1, y1) = pts[k], pts[k + 1]
+            n = max(1, int((seg[k + 1] - seg[k]) / 5))
+            for m in range(n):
+                dd = seg[k] + (seg[k + 1] - seg[k]) * m / n
+                if dd <= d:
+                    trail.append((x0 + (x1 - x0) * m / n, y0 + (y1 - y0) * m / n))
+        for x, y in trail:
+            s.fill((40, 40, 56), (int(x) - 1, int(y) - 1, 4, 4))
+            s.fill((248, 224, 80), (int(x), int(y), 2, 2))
+        k = max(0, min(len(pts) - 2, next((i for i in range(len(seg) - 1) if seg[i + 1] >= d), len(pts) - 2)))
+        g = (d - seg[k]) / max(1e-6, seg[k + 1] - seg[k])
+        you = (pts[k][0] + (pts[k + 1][0] - pts[k][0]) * g, pts[k][1] + (pts[k + 1][1] - pts[k][1]) * g)
+        self._halo(s, HAVEN_AT, t, 0.45)   # the Haven, shining out at sea
+        fly = self.icons["fly"]
+        if fly:
+            s.blit(fly[int(t * 3) % len(fly)], fly[0].get_rect(center=HAVEN_AT))
+        cur = self.icons["cursor"]
+        if cur and t > 5.6:
+            s.blit(cur[int(t * 4) % len(cur)], cur[0].get_rect(center=HAVEN_AT))
+        head = self.icons["you"]
+        if head and (t > 1.6 or int(t * 4) % 2):
+            s.blit(head[0], head[0].get_rect(center=(int(you[0]), int(you[1]))))
+        surf.blit(pygame.transform.scale(s, (LW * K, LH * K)), (0, 0))
+        if t < 0.5:
+            fade = pygame.Surface(surf.get_size())
+            fade.set_alpha(int(255 * (1 - t / 0.5)))
+            surf.blit(fade, (0, 0))
+        place = "HOME" if f < 0.08 else "STARTER'S HAVEN" if f > 0.94 else name
+        F.draw(surf, place, (20, 4), U.WHITE, (40, 40, 56))
 
     # --- the sea: surfing on its shell along Route 20
     def _draw_ocean(self, s, tt):
@@ -737,7 +770,7 @@ class JourneyScene(GBAScene):
                 ey = oy + back[1] * (12 + n * 15) + (n * n * 0.5 if back[1] == 0 else 0)
                 self._anim("spray", ex + cam[0], ey + cam[1], fps=14, flip=back[0] > 0)
 
-    # --- the forest: following it through Petalburg Woods
+    # --- the forest: following it through Petalburg Woods, haunted
     def _draw_forest(self, s, tt):
         mx, my, mface = self.path.point(self._walk_d(tt) + 30)   # it walks just ahead of you
         px, py, pface = self.path.point(self._walk_d(tt))
@@ -759,30 +792,84 @@ class JourneyScene(GBAScene):
                 if self.rng.random() < 0.7:
                     self._anim("cutleaf", tx + self.rng.uniform(-6, 6), ty - 8, fps=4, life=0.7,
                                vx=self.rng.uniform(-36, 36), vy=self.rng.uniform(-50, -10), g=70)
-        for name, at, side, face in (("wurmple", 3.0, 1, "left"), ("shroomish", 6.0, -1, "right"),
-                                     ("slakoth", 9.5, 1, "down"), ("silcoon", 14.0, -1, "down"),
-                                     ("pikachu", 21.0, 1, "left")):
-            cx, cy, _ = self.path.point(self._walk_d(at) + 64)
-            pos = [cx + 24 * side - cam[0], cy - cam[1]]
-            if name == "pikachu" and tt > 21:   # it scampers off into the trees
-                pos[0] += min(3.0, tt - 21) * 30
-            self._cameo(s, name, face, pos, 4)
         self._field(s, cam, 1)   # the trail is narrow: you walk in front of the tree crowns, not under them
-        mon = self.mf[mface][int(tt * 4) % 2]
+        # night: the woods drained of colour, mist drifting through, darkness closing in
+        night = 1.0 if tt < BEAM_T else max(0.3, 1.0 - (tt - BEAM_T) / 6)
+        s.fill(tuple(int(255 - (255 - c) * night) for c in (60, 72, 128)), special_flags=pygame.BLEND_MULT)
+        self._fog(s, 45 * night, tt, 14)
+        fog2 = self.fx.get("fog2")
+        if fog2:
+            img = fog2[0].copy()
+            img.set_alpha(int(28 * night))
+            ox = int(-tt * 9) % 64
+            for y in range(0, LH, 64):
+                for x in range(-64, LW, 64):
+                    s.blit(img, (x + ox, y + int(tt * 4) % 64 - 64))
+        mon = self.mf[mface][int(tt * 4) % 2]   # you two, picked out in the dark
         you = self.pf["walk"][pface][(1 + int(tt * 4) % 2) if int(tt * 8) % 2 else 0]
         for img, (x, y) in sorted(((mon, (mx, my)), (you, (px, py))), key=lambda e: e[1][1]):
+            img = img.copy()
+            img.fill(tuple(int(255 - (255 - c) * night * 0.35) for c in (120, 130, 190)),
+                     special_flags=pygame.BLEND_RGB_MULT)
             s.blit(img, img.get_rect(midbottom=(int(x - cam[0]), int(y - cam[1]) + 2)))
         self._draw_anims(s, cam, ("vine", "cutleaf"))
-        if self.rng.random() < 0.12:   # leaves drifting down through the canopy
-            self._anim("leaf", cam[0] + self.rng.uniform(0, LW), cam[1] - 8, fps=6, life=4.0,
-                       vx=self.rng.uniform(-12, 4), vy=self.rng.uniform(18, 30))
-        if 15.5 < tt < 19 and self.rng.random() < 0.3:   # its hum: sparkles of light
-            self._anim("sparkle", mx + self.rng.uniform(-8, 8), my - 20, fps=12)
-        if tt > 22 and self.rng.random() < 0.25:
+        cx, cy = (px + mx) / 2 - cam[0], (py + my) / 2 - cam[1] - 10
+        if 3.0 < tt < BEAM_T:   # red eyes in the trees, blinking
+            for i in range(9):
+                if (int(tt * 1.3 + i * 0.7)) % 5:
+                    ex, ey = (i * 47 + 13) % (LW - 20) + 6, 12 + (i * 31) % 96
+                    if math.hypot(ex - cx, ey - cy) > 44:
+                        self._sprite(s, "eye", 0, (ex, ey))
+                        self._sprite(s, "eye", 0, (ex + 8, ey))
+        self._ghosts(s, tt, cx, cy)
+        if night > 0.4:
+            v = self.vignette.copy()
+            v.set_alpha(int(190 * min(1.0, night)))
+            s.blit(v, (0, 0))
+        if BEAM_T <= tt < BEAM_T + 1.6:   # SolarBeam: a blinding burst of light
+            age = tt - BEAM_T
+            if age < 0.05:
+                self.flash = 1.0
+                AUDIO.play("hit_super", 0.6)
+            halo = self.fx.get("halo")
+            if halo:
+                g = pygame.transform.scale_by(halo[0], 0.6 + min(age, 0.5) * 6)
+                g.set_alpha(int(255 * max(0.0, 1 - age / 0.7)))
+                s.blit(g, g.get_rect(center=(int(mx - cam[0]), int(my - cam[1]) - 16)))
+            for k in range(3):
+                self._sprite(s, "sparkle", int(age * 12) + k, (mx - cam[0] + (k - 1) * 20, my - cam[1] - 30 - age * 40))
+        if 15.5 < tt < BEAM_T and self.rng.random() < 0.3:   # its flower gathering light
+            self._anim("sparkle", mx + self.rng.uniform(-14, 14), my - 22 + self.rng.uniform(-8, 8), fps=12)
+        if tt > BEAM_T + 2 and self.rng.random() < 0.15:
             self._anim("glint", cam[0] + self.rng.uniform(0, LW), cam[1] + self.rng.uniform(10, 110), fps=6)
         if tt > 26:   # the flower glows
             self._halo(s, (mx - cam[0], my - cam[1] - 22), tt, 0.4)
         self._draw_anims(s, cam, ("leaf", "sparkle", "glint"))
+
+    def _ghosts(self, s, tt, cx, cy):
+        """Ghost POK\u00e9MON drifting out of the fog, circling closer... until SolarBeam blows them away."""
+        for k, name in enumerate(CAMEOS["forest"]):
+            fr = self.cameo.get(name)
+            if not fr:
+                continue
+            appear = 4.0 + k * 2.2
+            if tt < appear:
+                continue
+            ang = k * 1.3 + tt * (0.35 + k * 0.05)
+            if tt < 14.8:   # lurking at the edge of the light
+                r = 72 - k * 3
+            elif tt < BEAM_T:   # closing in
+                r = 72 - (tt - 14.8) / (BEAM_T - 14.8) * 40
+            else:   # blown away
+                r = 40 + (tt - BEAM_T) * 260
+            if r > 260:
+                continue
+            gx, gy = cx + math.cos(ang) * r * 1.35, cy + math.sin(ang) * r * 0.6 + math.sin(tt * 3 + k) * 3
+            img = fr["down"][int(tt * 3 + k) % 2].copy()
+            flicker = 0.55 + 0.45 * math.sin(tt * 7 + k * 2)
+            fade = min(1.0, (tt - appear) / 1.2) * (1.0 if tt < BEAM_T else max(0.0, 1 - (tt - BEAM_T) / 0.8))
+            img.set_alpha(int(255 * fade * (0.5 + 0.5 * flicker)))
+            s.blit(img, img.get_rect(center=(int(gx), int(gy))))
 
     # --- the mountains: flying on its back over Mt. Ember
     def _draw_sky(self, s, tt):

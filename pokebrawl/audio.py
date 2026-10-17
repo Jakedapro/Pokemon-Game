@@ -67,7 +67,7 @@ def prepare_voices(lines):
     threading.Thread(target=go, daemon=True).start()
 CRY_DIR = os.path.join(pokedex.HOME, "cries")
 CRY_URL = "https://raw.githubusercontent.com/PokeAPI/cries/main/cries/pokemon/latest/{}.ogg"
-AUDIO_VERSION = 4
+AUDIO_VERSION = 5
 
 # minimum seconds between two plays of the same sound (keeps 300-Pokemon battles from turning into noise)
 THROTTLE = {"ball": 0.03, "hit": 0.045, "hit_super": 0.08, "hit_weak": 0.07, "beam": 0.07, "blast": 0.09, "impact": 0.05,
@@ -179,8 +179,44 @@ def _freq(name, octave):
     return NOTE[name] * 2 ** (octave - 4)
 
 
+def _make_haunt():
+    """Slow and eerie, for haunted places: a high, wandering square-wave arpeggio built on a tritone (the
+    Lavender Town trick), over a low droning bass and the odd far-off bell."""
+    beat = 60 / 84
+    bars = 8
+    n = int(bars * 4 * beat * RATE)
+    out = [0.0] * n
+
+    def add(start, dur, fn, vol):
+        s = int(start * RATE)
+        e = min(n, s + int(dur * RATE))
+        ln = e - s
+        for i in range(s, e):
+            k = i - s
+            out[i] += fn(k / RATE) * vol * min(1.0, k / 300) * (1 - k / max(1, ln)) ** 0.8
+
+    arps = ([("C", 5), ("G", 5), ("B", 5), ("F#", 5)], [("C", 5), ("G", 5), ("A#", 5), ("E", 5)])
+    for bar in range(bars):
+        t0 = bar * 4 * beat
+        arp = arps[(bar // 2) % 2]
+        for step in range(8):
+            nm, o = arp[step % 4]
+            f = _freq(nm, o)
+            add(t0 + step * beat / 2, beat / 2 * 0.95, lambda t, f=f: _square(f * t) * 0.5 + _square(f * 1.01 * t) * 0.5,
+                0.05)
+        root = ("A", "F", "A", "D#")[bar % 4]
+        f = _freq(root, 2)
+        add(t0, 4 * beat, lambda t, f=f: _tri(f * t) * (0.8 + 0.2 * math.sin(2 * math.pi * 0.5 * t)), 0.22)
+        if bar % 2 == 1:   # a far-off bell
+            f = _freq("E", 6)
+            add(t0 + 2 * beat, 2 * beat, lambda t, f=f: math.sin(2 * math.pi * f * t) * math.exp(-t * 2.5), 0.08)
+    return out
+
+
 def _make_music(kind):
-    """A looping chiptune track. kind: 'battle' (fast, minor) or 'menu' (chill)."""
+    """A looping chiptune track. kind: 'battle' (fast, minor) or 'menu' (chill), ... 'haunt' (eerie)."""
+    if kind == "haunt":
+        return _make_haunt()
     rng = random.Random({"battle": 7, "menu": 3, "showcase": 11, "town": 21, "route": 5, "gym": 13}[kind])
     bpm = {"battle": 150, "menu": 104, "showcase": 138, "town": 96, "route": 124, "gym": 144}[kind]
     prog = {"battle": ["A", "F", "C", "G"], "menu": ["C", "A", "F", "G"], "showcase": ["D", "A#", "F", "C"],
@@ -257,7 +293,7 @@ def ensure_assets():
     os.makedirs(SFX_DIR, exist_ok=True)
     for name, samples in _make_sfx().items():
         _write_wav(os.path.join(SFX_DIR, f"{name}.wav"), samples)
-    for kind in ("battle", "menu", "showcase", "town", "route", "gym"):
+    for kind in ("battle", "menu", "showcase", "town", "route", "gym", "haunt"):
         _write_wav(os.path.join(SFX_DIR, f"music_{kind}.wav"), _make_music(kind))
     open(marker, "w", encoding="utf-8").close()
 
