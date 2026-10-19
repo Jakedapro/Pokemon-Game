@@ -597,6 +597,8 @@ class OverworldScene(Scene):
         elif k == "clerk":
             from .adventure_ui import MartScene
             self.say(["Hi there! May I help you?"], lambda: self.app.push(MartScene(self.app, g)))
+        elif k == "prof" and not g["party"] and set(A.starters(self.app.dex)) <= set(g.get("declined", [])):
+            self._secret_starter()
         elif k == "prof" and not g["party"]:
             self.say(["Those three Poke Balls on the table each hold a Pokemon.",
                       "Go on - check them and choose your partner!"], speaker="Prof. Oak")
@@ -674,6 +676,24 @@ class OverworldScene(Scene):
             self._take_starter(c["pid"])
         elif k in ("no", "back"):
             self.choice = None
+            declined = self.game.setdefault("declined", [])
+            if c["pid"] not in declined:
+                declined.append(c["pid"])
+
+    def _secret_starter(self):
+        """Turned down all three? Oak has one more Pokemon - the Eevee from his speech."""
+        pid = A.SECRET_STARTER
+        e = self.app.dex.all[pid]
+
+        def offer():
+            AUDIO.cry(pid, 0.9)
+            self.choice = {"menu": U.Menu([("yes", "YES"), ("no", "NO")]), "pid": pid,
+                           "q": U.TextBox([f"Will you take {e['name'].upper()} as your partner?"])}
+        self.say(["Hm? You said no to all three of them?", "Picky, aren't you? ...You remind me of myself.",
+                  "Well. There IS one more. I wasn't going to give it to anyone...",
+                  "It's the EEVEE you saw at my speech. It's been following me around for years.",
+                  "It can grow into all sorts of Pokemon. Nobody knows which way it'll go!"], offer,
+                 speaker="Prof. Oak")
 
     def _take_starter(self, pid):
         g = self.game
@@ -686,7 +706,7 @@ class OverworldScene(Scene):
         for lst in (g["seen"], g["caught"]):
             if pid not in lst:
                 lst.append(pid)
-        rival = dex.all[A.rival_starter(dex, pid)] if pid in trio else None
+        rival = dex.all[A.rival_starter(dex, pid)]
         nm = A.name_of(dex, mon).upper()
         AUDIO.play("win")
         AUDIO.cry(pid, 1.0)
@@ -694,6 +714,10 @@ class OverworldScene(Scene):
         if mon.get("shiny"):
             got.insert(0, f"...Wait, it's sparkling! It's a SHINY {nm}!")
         steps = [("say", "Prof. Oak", ["This Pokemon is really energetic!"]), ("say", "", got)]
+        if pid not in trio:   # the secret starter
+            steps = [("say", "Prof. Oak", ["Take good care of it. It chose you, you know."]), ("say", "", got),
+                     ("flag", "eevee_starter"),
+                     ("say", S.RIVAL, ["WHAT?! Gramps never offered ME that one!"])]
         if rival:
             steps += [("say", S.RIVAL, ["I'll take this one, then!"]),
                       ("say", "", [f"{S.RIVAL.upper()} received the {rival['name'].upper()} from PROF. OAK!"])]

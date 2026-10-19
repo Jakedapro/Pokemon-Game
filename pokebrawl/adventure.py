@@ -18,6 +18,7 @@ MAX_LEVEL = 100
 SHINY_ODDS = 200     # 1 in 200: rare, but you'll see some
 
 STARTERS = {1: [1, 4, 7]}   # Bulbasaur, Charmander, Squirtle
+SECRET_STARTER = 133         # Eevee: turn down all three in Oak's lab, then talk to him
 
 # ====================================================================== new-game options
 OPTION_DEFS = [("difficulty", "DIFFICULTY", ["EASY", "NORMAL", "HARD", "INSANE"]),
@@ -107,9 +108,9 @@ def rival_starter(dex, mine):
     the randomizer's starters."""
     from .types import effectiveness
     trio = starters(dex)
-    if mine not in trio:
+    if mine not in dex.all:
         return None
-    me = dex.all[mine]["types"]
+    me = dex.all[mine]["types"]   # (a secret starter like Eevee works too: he takes the best of the three)
 
     def edge(pid):
         them = dex.all[pid]["types"]

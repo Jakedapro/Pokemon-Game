@@ -1137,7 +1137,7 @@ def hidden_items(world, area_index):
 SECRETS = {"chatterbox": "The Chatterbox", "red_gyarados": "The Red Gyarados", "snorlax": "The Sleeping Giant",
            "shiny_charm": "Shiny Charm", "mom_gift": "Mom's Gift", "mew": "The Giggle in the Trees",
            "arceus": "The Origin", "creator_beaten": "The Creator", "rift_zero": "The First Rift",
-           "pikachu": "The Mouse Behind the Fence", "magikarp_deal": "The Magikarp Deal",
+           "pikachu": "The Mouse Behind the Fence", "eevee_starter": "The Fourth Partner", "magikarp_deal": "The Magikarp Deal",
            "legend_name": "A Familiar Name", "ghost_girl": "The Girl in Duskmoor", "celebi": "Out of Time",
            "jirachi": "A Wish Upon a Rift", "darkrai": "The Nightmare", "rift_keeper": "Rift Keeper",
            "elias_beaten": "Like Father, Like Son", "tower_legend": "Tower Legend", "true_ending": "The World Worth Keeping"}
