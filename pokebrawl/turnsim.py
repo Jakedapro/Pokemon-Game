@@ -391,6 +391,8 @@ class TurnBattle:
             rate *= self.rift.get("catch", 1.0)
         st = 2.5 if foe.status in ("slp", "frz") else 1.5 if foe.status else 1.0
         a = (3 * foe.maxhp - 2 * foe.hp) * rate * mult / (3 * foe.maxhp) * st
+        if not self.rift:   # easier than the old games: a bit for everyone, a lot for young Pokemon (like Gen 8)
+            a *= 1.5 * max(1.0, (36 - 2 * foe.member.level) / 10)
         if a >= 255:
             shakes, caught = 3, True
         else:

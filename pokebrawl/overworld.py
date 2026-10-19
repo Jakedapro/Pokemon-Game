@@ -114,6 +114,14 @@ class OverworldScene(Scene):
         self.blds = buildings_of(self.cur)
         self._set_field(("area", index), lambda: fieldmap.render_area(self.cur, self.blds))
         self._refresh()
+        rows = self.rows()
+        if first and not (0 <= y < len(rows) and 0 <= x < len(rows[y]) and self.walkable(x, y)):
+            # a save from before this map changed shape (Route 1 got longer): step onto the nearest open spot
+            spots = [(abs(xx - x) + abs(yy - y), xx, yy) for yy in range(len(rows)) for xx in range(len(rows[yy]))
+                     if self.walkable(xx, yy)]
+            if spots:
+                _, x, y = min(spots)
+                g["x"], g["y"] = x, y
         self.trail = [(x, y + 1)]
         self.banner = 0.0
         AUDIO.music(self.cur["music"])

@@ -586,7 +586,7 @@ def _theme(i, g, rng):
 
 def route_map(i, rng):
     """Route i (1-based): a winding path north with tall grass, trees, a pond and trainers."""
-    h = 48 + 6 * min(i, 6)
+    h = 78 if i == 1 else 48 + 6 * min(i, 6)   # Route 1 is a long one: room to train and catch before Rocket
     g = _empty(h, "#")
     x = 7
     path = []
@@ -605,7 +605,7 @@ def route_map(i, rng):
             for xx in (6, 7, 8):
                 g[y][xx] = "="
     # tall grass patches
-    for _ in range(4 + i // 2):
+    for _ in range(8 if i == 1 else 4 + i // 2):
         w, hh = rng.randint(3, 6), rng.randint(3, 6)
         gx, gy = rng.randint(1, COLS - 1 - w), rng.randint(4, h - 5 - hh)
         for yy in range(gy, gy + hh):
