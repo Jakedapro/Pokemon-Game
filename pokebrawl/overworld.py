@@ -1446,7 +1446,7 @@ class OverworldScene(Scene):
                     surf.blit(img, img.get_rect(midbottom=(nx + T / 2, ny + oy + T - 2 + bob)))
                     continue
                 img = G.person(n.get("look") or n.get("cls") or "villager", n["face"], frame)
-                surf.blit(img, (nx, ny + oy + T - img.get_height() - 2))
+                surf.blit(img, (nx + (T - img.get_width()) // 2, ny + oy + T - img.get_height() - 2))
             elif kind_a == "follow":
                 mon, fx, fy = data
                 img = G.icon(mon["species"], mon.get("shiny", False), int(self.t * (6 if self.move else 2)))

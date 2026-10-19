@@ -522,7 +522,11 @@ def _frlg_person(look, face, frame):
         name = FRLG_PEOPLE.get(look, look if isinstance(look, str) and look.islower() else None)
     if not name:
         return None
-    fr = frlg.frames(f"graphics/object_events/pics/people/{name}.png", 16, 32, rules)
+    path = f"graphics/object_events/pics/people/{name}.png"
+    sheet = frlg.sprite(path, rules)
+    # most people are 16 wide; a few (the Biker on his bike) are 32x32 frames - cutting those at 16 split them in half
+    fw = 32 if sheet is not None and sheet.get_width() >= 32 * 9 else 16
+    fr = frlg.frames(path, fw, 32, rules)
     if not fr:
         return None
     i = FRLG_FRAMES[face][frame]
