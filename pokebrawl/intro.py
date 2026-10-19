@@ -1,6 +1,6 @@
 """PokeBrawl's opening, the way the Game Boy Advance games open: a shooting star "presents" screen, a moonlit
-Gengar-vs-Nidorino clash (FireRed's own intro sprites), then the title screen - Charizard in flames or Venusaur
-in falling leaves, like FireRed and LeafGreen - with PRESS START. Plus the loading screen and the Poke Ball
+Gengar-vs-Nidorino clash (FireRed's own intro sprites), then the title screen - Charizard in flames, like
+FireRed's - with PRESS START. Plus the loading screen and the Poke Ball
 wipe used between big screens.
 
 Everything is drawn on a small 240x427 pixel screen and blown up 3x, so it all stays chunky pixel art. The
@@ -27,9 +27,9 @@ FILES = [I + p for p in ("gengar.pal", "nidorino.pal", "scene_2/gengar.png", "sc
                          "scene_3/gengar_anim.png", "scene_3/gengar_anim.bin", "scene_3/nidorino.png",
                          "scene_3/recoil_dust.png", "game_freak/star.png", "game_freak/sparkles.pal",
                          "game_freak/sparkles_big.png", "game_freak/sparkles_small.png")] + \
-        [T + v + p for v in ("firered/", "leafgreen/") for p in ("box_art_mon.png", "box_art_mon.bin",
+        [T + "firered/" + p for p in ("box_art_mon.png", "box_art_mon.bin",
                                                                  "box_art_mon.pal")] + \
-        [T + "firered/flames.png", T + "leafgreen/leaves.png", T + "slash.png", T + "firered/slash.pal"]
+        [T + "firered/flames.png", T + "slash.png", T + "firered/slash.pal"]
 
 YELLOW = (255, 214, 40)
 BLUE = (40, 96, 200)
@@ -117,7 +117,7 @@ def gengar_back():
 
 
 def box_art(version):
-    """The title screen's Pokemon (FireRed's Charizard or LeafGreen's Venusaur), trimmed, or None."""
+    """The title screen's Pokemon (FireRed's Charizard), trimmed, or None."""
     key = ("box", version)
     if key not in _assets:
         banks = frlg.pal_banks(T + version + "/box_art_mon.pal")
@@ -508,16 +508,11 @@ class TitleScene(Scene):
         self.white = 1.0 if from_white else 0.0
         self.low = pygame.Surface((LW, LH))
         self.rng = random.Random()
-        self.version = self.rng.choice(("firered", "leafgreen"))
-        self.mon = box_art(self.version)
-        self.fx = []               # rising flames / falling leaves: [x, y, vx, vy, age, frame0]
-        if self.version == "firered":
-            self.fx_frames = _sheet(T + "firered/flames.png", None, 16, 16)[:6]   # (the rest is grey smoke)
-        else:
-            self.fx_frames = _sheet(T + "leafgreen/leaves.png", None, 16, 16)
+        self.mon = box_art("firered")
+        self.fx = []               # rising flames: [x, y, vx, vy, age]
+        self.fx_frames = _sheet(T + "firered/flames.png", None, 16, 16)[:6]   # (the rest is grey smoke)
         self.slash = (_sheet(T + "slash.png", T + "firered/slash.pal", 64, 64) or [None])[0]
         self.leaving = None
-        self.embers = []
         self.slammed = False
 
     def handle(self, ev, pos):
@@ -536,20 +531,13 @@ class TitleScene(Scene):
         if self.t > 0.35 and not self.slammed:
             self.slammed = True
             AUDIO.play("impact")
-        fire = self.version == "firered"
-        if self.rng.random() < dt * (18 if fire else 7):
-            if fire:
-                self.fx.append([self.rng.uniform(0, LW), LH + 8, self.rng.uniform(-6, 6),
-                                -self.rng.uniform(40, 80), 0.0, 0])
-            else:
-                self.fx.append([self.rng.uniform(-20, LW), -10, self.rng.uniform(10, 30),
-                                self.rng.uniform(20, 40), 0.0, self.rng.randrange(11)])
+        if self.rng.random() < dt * 18:
+            self.fx.append([self.rng.uniform(0, LW), LH + 8, self.rng.uniform(-6, 6), -self.rng.uniform(40, 80), 0.0])
         for p in self.fx:
             p[4] += dt
-            p[0] += (p[2] + (0 if fire else math.sin(p[4] * 3 + p[5]) * 18)) * dt
+            p[0] += p[2] * dt
             p[1] += p[3] * dt
-        life = 1.6 if fire else 12
-        self.fx = [p for p in self.fx if p[4] < life and -30 < p[1] < LH + 20]
+        self.fx = [p for p in self.fx if p[4] < 1.6 and -30 < p[1] < LH + 20]
         if self.leaving is not None:
             self.leaving += dt
             if self.leaving > 0.45:
@@ -560,8 +548,7 @@ class TitleScene(Scene):
     def draw(self, surf):
         low = self.low
         t = self.t
-        fire = self.version == "firered"
-        top, bot = ((6, 4, 10), (120, 24, 12)) if fire else ((4, 12, 10), (16, 96, 48))
+        top, bot = (6, 4, 10), (120, 24, 12)
         for y in range(0, LH, 3):
             k = (y / LH) ** 1.6
             low.fill(tuple(int(a + (b - a) * k) for a, b in zip(top, bot)), (0, y, LW, 3))
@@ -572,7 +559,7 @@ class TitleScene(Scene):
             a = t * 0.15 + i * math.tau / 12
             pts = [(cx, cy), (cx + math.cos(a) * 400, cy + math.sin(a) * 400),
                    (cx + math.cos(a + 0.18) * 400, cy + math.sin(a + 0.18) * 400)]
-            pygame.draw.polygon(rays, (255, 200, 120, 14) if fire else (180, 255, 180, 12), pts)
+            pygame.draw.polygon(rays, (255, 200, 120, 14), pts)
         low.blit(rays, (0, 0))
         # the box-art Pokemon rises into place
         if self.mon is not None:
@@ -581,20 +568,14 @@ class TitleScene(Scene):
             bob = int(math.sin(t * 1.6) * 2)
             r = mon.get_rect(center=(LW // 2 + 6, 255 + int((1 - k) * 180) + bob))
             low.blit(mon, r)
-        # flames / leaves
-        for x, y, _vx, _vy, age, f0 in self.fx:
-            if not self.fx_frames:
-                break
-            if fire:
+        # flames rising, and a wall of fire along the bottom
+        if self.fx_frames:
+            for x, y, _vx, _vy, age in self.fx:
                 fr = self.fx_frames[min(len(self.fx_frames) - 1, int(age / 1.6 * len(self.fx_frames)))]
-            else:
-                fr = self.fx_frames[(f0 + int(age * 8)) % len(self.fx_frames)]
-            low.blit(fr, (int(x) - 8, int(y) - 8))
-        if fire:   # a wall of fire along the bottom
+                low.blit(fr, (int(x) - 8, int(y) - 8))
             for i in range(0, LW + 16, 12):
-                if self.fx_frames:
-                    fr = self.fx_frames[int(t * 10 + i) % 4]
-                    low.blit(fr, (i - 8, LH - 12 - int(abs(math.sin(t * 5 + i)) * 4)))
+                fr = self.fx_frames[int(t * 10 + i) % 4]
+                low.blit(fr, (i - 8, LH - 12 - int(abs(math.sin(t * 5 + i)) * 4)))
         # the logo slams down, then a shine sweeps across it now and then
         lk = _back_out((t - 0.05) / 0.35)
         lg = logo(1.0)
@@ -611,10 +592,6 @@ class TitleScene(Scene):
                                                             (sx - 24, shine.get_height())])
             band.blit(shine, (0, 0), special_flags=pygame.BLEND_RGBA_MIN)
             low.blit(band, lr.topleft, special_flags=pygame.BLEND_RGBA_ADD)
-        sub = "FIRE VERSION" if fire else "LEAF VERSION"
-        if t > 0.5:
-            col = (255, 140, 60) if fire else (120, 230, 110)
-            F.draw(low, sub, (LW // 2, lr.bottom + 8), col, (40, 16, 16) if fire else (8, 40, 16), 1, anchor="center")
         if t > 1.4 and self.leaving is None and int(t * 1.6) % 2 == 0:
             F.draw(low, "PRESS START", (LW // 2, 381), (255, 255, 255), (60, 60, 80), 1, anchor="center")
         if self.leaving is not None and int(self.leaving * 16) % 2 == 0:
