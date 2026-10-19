@@ -24,7 +24,8 @@ OPTION_DEFS = [("difficulty", "DIFFICULTY", ["EASY", "NORMAL", "HARD", "INSANE"]
                ("gender", "PLAYER", ["BOY", "GIRL"]),
                ("text", "TEXT SPEED", ["SLOW", "MID", "FAST"]),
                ("scene", "BATTLE SCENE", ["ON", "OFF"]),
-               ("sound", "SOUND", ["ON", "OFF"])]
+               ("sound", "SOUND", ["ON", "OFF"]),
+               ("follower", "FOLLOWER", ["OFF", "ON"])]   # your lead Pokemon walking behind you
 # unlocked by becoming World Champion once
 RANDOM_DEFS = [("random", "RANDOMIZER", ["OFF", "ON"]),
                ("r_wild", "WILD ENCOUNTERS", ["SIMILAR", "ANY"]),
@@ -703,7 +704,7 @@ class World:
         if r >= NUM_ROUTES:   # Victory Road
             return (60, 66)
         if r == 1:
-            return (1, 4)     # the very first route: a gentle start
+            return (2, 6)     # the very first route: easy, but worth catching
         lo = 2 + round(3.2 * (r - 1))
         return (lo, lo + 3)
 
@@ -785,10 +786,15 @@ class World:
         npcs = []
         used = set()
         h = len(rows)
-        count = {1: 0, 2: 1}.get(r, 2 + r // 6)   # FireRed: no trainers on the first route, then it builds up
-        ys = sorted(rng.sample(range(6, h - 6), min(h - 12, count)))
+        count = {1: 3, 2: 3}.get(r, 2 + r // 6)   # a few easy ones early, so you can train up for Team Rocket
+        if r <= 2:   # try extra rows so all of them find a spot (and stay clear of Route 1's helpers at the bottom)
+            ys = sorted(rng.sample(range(6, h - 10), min(h - 16, count * 3)))
+        else:
+            ys = sorted(rng.sample(range(6, h - 6), min(h - 12, count)))
         last = -9
         for y in ys:
+            if len(npcs) >= count:
+                break
             if y - last < 4:
                 continue
             last = y
@@ -800,9 +806,9 @@ class World:
             cls = rng.choice(TRAINER_CLASSES)
             nm = rng.choice([n for n in TRAINER_NAMES if n not in used] or TRAINER_NAMES)   # never two Joeys on a route
             used.add(nm)
-            size = rng.randint(1, min(3, 1 + r // 2))
-            team = self.team_for(self.dex.all[self.wild_species(area, rng)]["types"], hi + (1 if r > 2 else 0),
-                                 size, rng)
+            size = rng.randint(1, min(3, 1 + r // 2)) if r > 1 else rng.randint(1, 2)
+            lv = rng.randint(3, 5) if r == 1 else hi + (1 if r > 2 else 0)   # Route 1: still beginners
+            team = self.team_for(self.dex.all[self.wild_species(area, rng)]["types"], lv, size, rng)
             npcs.append({"id": f"r{r}-{y}", "kind": "trainer", "x": x, "y": y, "face": "left" if side > 0 else "right",
                          "name": f"{cls} {nm}", "cls": cls, "team": team, "sight": 4,
                          "intro": rng.choice(["Hey! Our eyes met - that means battle!", "You look tough. Let's see!",

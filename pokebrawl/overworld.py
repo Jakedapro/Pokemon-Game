@@ -360,6 +360,9 @@ class OverworldScene(Scene):
         if self.app.stack[-1] is not self:
             return
         self.t += dt
+        if self.__dict__.get("_down"):
+            pressed = pygame.key.get_pressed()
+            self._down = {k for k in self._down if pressed[k]}
         if not self.__dict__.get("_had_field") and fieldmap.available():   # the graphics just finished downloading
             self._had_field = True
             self.__dict__["_fields"] = {}
@@ -434,6 +437,9 @@ class OverworldScene(Scene):
                 self._arrived(tx, ty)
                 if self.move is None and self.text is None and self.trans is None:
                     self._held_move()
+                    q = self.__dict__.pop("_queued", None)
+                    if self.move is None and q and self.text is None and self.trans is None:
+                        self._try_move(q)   # a tap made while walking still counts
                 self._carry = 0.0
             else:
                 self.move = (fx, fy, tx, ty, p)
@@ -1217,6 +1223,17 @@ class OverworldScene(Scene):
         if self.choice is not None:
             self._choice_handle(ev, pos)
             return
+        if ev.type == pygame.KEYDOWN and ev.key in U.DIR_KEYS:
+            # move right away instead of waiting for the next frame's key check (quick taps used to get lost)
+            down = self.__dict__.setdefault("_down", set())
+            if ev.key in down:   # key repeat from holding it: walking on is handled every frame already
+                return
+            down.add(ev.key)
+            if self.move is None:
+                self._try_move(U.DIR_KEYS[ev.key])
+            else:
+                self._queued = U.DIR_KEYS[ev.key]
+            return
         if ev.type == pygame.KEYDOWN:
             if ev.key in (pygame.K_RETURN, pygame.K_ESCAPE, pygame.K_TAB) and self.move is None:
                 self._open_menu()
@@ -1373,7 +1390,7 @@ class OverworldScene(Scene):
                 nx += ddx * self.walking_npc[1] * T
                 ny += ddy * self.walking_npc[1] * T
             actors.append((ny, "npc", (n, nx, ny, walking)))
-        lead = A.lead_alive(self.game, self.app.dex)
+        lead = A.lead_alive(self.game, self.app.dex) if A.OPTS.get("follower") == "ON" else None
         if lead is not None and not inside:
             fx, fy = self._follower_px(p)
             actors.append((fy - 1, "follow", (lead, fx + ox, fy)))
@@ -1409,6 +1426,7 @@ class OverworldScene(Scene):
             elif kind_a == "follow":
                 mon, fx, fy = data
                 img = G.icon(mon["species"], mon.get("shiny", False), int(self.t * (6 if self.move else 2)))
+                img = pygame.transform.scale_by(img, 0.75)   # smaller than you, like a real follower
                 if self.game["x"] * T + ox > fx:
                     img = pygame.transform.flip(img, True, False)
                 hop = 0   # the icon's own two frames do the bounce

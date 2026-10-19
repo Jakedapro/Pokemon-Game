@@ -259,7 +259,7 @@ def battle_team(world, game, key):
         return rival_team(world, game, 60, 6), {"name": RIVAL, "look": "rival", "money": 7800, "ai": "hard",
                                                "lose": "...You're really strong. Win that tournament for both of us."}
     if key.startswith("grunt"):
-        lv = {"grunt1": 12, "grunt2": 24, "grunt3": 34, "grunt4": 40}.get(key, 20)
+        lv = {"grunt1": 10, "grunt2": 24, "grunt3": 34, "grunt4": 40}.get(key, 20)
         team = world.team_for(["poison", "dark"], lv, 2 + (lv > 30), rng)
         return team, {"name": "Rocket Grunt", "look": "grunt", "money": 50 * lv, "ai": "normal",
                       "lose": "No way! Team Rocket lost to a kid?!"}

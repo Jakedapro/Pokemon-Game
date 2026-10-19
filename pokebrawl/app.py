@@ -82,7 +82,7 @@ class App:
         self.dex = None
         self.running = True
         self.t = 0.0
-        pygame.key.set_repeat(350, 35)
+        pygame.key.set_repeat(260, 35)
         AUDIO.init(self.settings, headless=headless)
         gfx.SPRITES.async_load = not headless   # downloads never freeze the screen
         self._shown = None        # the scene drawn last frame (to notice screen changes)
@@ -173,7 +173,9 @@ class App:
     def run(self):
         self.push(LoadingScene(self))
         while self.running and self.stack:
-            dt = min(0.05, self.clock.tick(60) / 1000)
+            # with vsync the screen already paces the frames: a 60 cap on top of it made frames (and key presses)
+            # wait a whole extra refresh, worst on 120Hz Mac screens
+            dt = min(0.05, self.clock.tick(250 if getattr(self.display, "scaled", False) else 60) / 1000)
             self.t += dt
             scene = self.stack[-1]
             for ev in pygame.event.get():
