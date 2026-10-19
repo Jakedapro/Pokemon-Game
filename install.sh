@@ -221,17 +221,22 @@ if [ "$OS" = "Darwin" ]; then
 exec "$BIN/pokebrawl"
 EOF
   chmod +x "$APPDIR/Contents/MacOS/PokeBrawl"
+  mkdir -p "$APPDIR/Contents/Resources"
+  PYTHONPATH="$APP" SDL_VIDEODRIVER=dummy "$VENV/bin/python" -m pokebrawl.winicon "$APPDIR/Contents/Resources/PokeBrawl.icns" >/dev/null 2>&1 || true
   cat > "$APPDIR/Contents/Info.plist" <<'EOF'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
   <key>CFBundleName</key><string>PokeBrawl</string>
+  <key>CFBundleDisplayName</key><string>PokeBrawl</string>
   <key>CFBundleExecutable</key><string>PokeBrawl</string>
+  <key>CFBundleIconFile</key><string>PokeBrawl</string>
   <key>CFBundleIdentifier</key><string>local.pokebrawl</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleVersion</key><string>1.0</string>
 </dict></plist>
 EOF
+  touch "$APPDIR"   # so Finder picks up the new icon
 fi
 
 # --- 6. optional: ffmpeg for recording showcase videos -------------------------------

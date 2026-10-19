@@ -10,11 +10,9 @@ Makes, in dist/:
 Needs: pip install nuitka ordered-set zstandard -r requirements.txt   (+ a C compiler)
 """
 import argparse
-import io
 import os
 import platform
 import shutil
-import struct
 import subprocess
 import sys
 import time
@@ -33,22 +31,12 @@ def write_build_info(tag):
 def icons():
     """PokeBrawl's ball icon as .ico (Windows) and .icns (Mac)."""
     os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
-    import pygame
-
     from pokebrawl import winicon
     os.makedirs(BUILD, exist_ok=True)
     ico = os.path.join(BUILD, "PokeBrawl.ico")
     winicon.save_ico(ico)
-    big = winicon.draw(1024)
-    chunks = b""
-    for kind, n in ((b"ic10", 1024), (b"ic09", 512), (b"ic08", 256), (b"ic07", 128)):
-        buf = io.BytesIO()
-        pygame.image.save(pygame.transform.smoothscale(big, (n, n)), buf, "png")
-        data = buf.getvalue()
-        chunks += kind + struct.pack(">I", 8 + len(data)) + data
     icns = os.path.join(BUILD, "PokeBrawl.icns")
-    with open(icns, "wb") as f:
-        f.write(b"icns" + struct.pack(">I", 8 + len(chunks)) + chunks)
+    winicon.save_icns(icns)
     return ico, icns
 
 

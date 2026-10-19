@@ -51,6 +51,11 @@ class Display:
             os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
         pygame.init()
         pygame.display.set_caption(title)
+        try:   # the Poke Ball in the Dock / taskbar instead of Python's icon
+            from .winicon import draw
+            pygame.display.set_icon(draw(64))
+        except Exception:  # noqa: BLE001
+            pass
         if headless:
             self.window = pygame.display.set_mode((W, H))
         else:

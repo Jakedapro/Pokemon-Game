@@ -52,6 +52,8 @@ EVENT_CHOICES = {"Random": "random", "Off": "none", "Arceus": ["arceus"], "Prima
 
 
 class ShowcaseMenu(Scene):
+    transition = "ball"   # a Poke Ball wipe in and out
+
     def __init__(self, app):
         super().__init__(app)
         s = app.settings

@@ -53,6 +53,8 @@ class GBAScene(Scene):
 
 # ====================================================================== title
 class AdventureTitle(GBAScene):
+    transition = "ball"   # a Poke Ball wipe in and out
+
     def __init__(self, app):
         super().__init__(app)
         self.save = A.load()

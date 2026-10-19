@@ -273,3 +273,39 @@ def test_no_area_edge_softlocks(dex, rand):
                     assert not stuck(here, OverworldScene._landing(here, x, 0), 0), (nxt["name"], x)
     finally:
         A.OPTS.clear()
+
+
+def test_opening_screens_run(dex, monkeypatch):
+    """The intro, title screen, loading screen and Poke Ball wipe all play through, with or without the FireRed
+    graphics, and PRESS START lands on the main menu."""
+    import os
+    os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
+    os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
+    import pygame
+
+    from pokebrawl import app as A
+    from pokebrawl import intro
+    game = A.App(headless=True)
+    game.dex = dex
+    for offline in (False, True):
+        if offline:
+            from pokebrawl import frlg
+            monkeypatch.setattr(frlg, "OFFLINE", True)
+            monkeypatch.setattr(frlg, "DIR", os.path.join(os.path.dirname(frlg.DIR), "no-such-dir"))
+            intro._assets.clear()
+        game.stack = [A.MainMenu(game), intro.IntroScene(game)]
+        canvas = game.display.canvas
+        for _ in range(int(12 / 0.05)):
+            game.stack[-1].update(0.05)
+            game.stack[-1].draw(canvas)
+        title = game.stack[-1]
+        assert isinstance(title, intro.TitleScene)
+        title.handle(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_RETURN), (0, 0))
+        for _ in range(20):
+            game.stack[-1].update(0.05)
+            game.stack[-1].draw(canvas)
+        assert isinstance(game.stack[-1], A.MainMenu)
+        intro.Loading().draw(canvas, 1.3, 0.5, "Loading...")
+        old = canvas.copy()
+        for k in (0.2, 0.5, 0.8):
+            intro.ball_wipe(canvas, old, k)

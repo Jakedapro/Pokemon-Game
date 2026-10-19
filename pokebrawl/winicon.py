@@ -1,13 +1,14 @@
-"""Draws PokeBrawl's Windows shortcut icon (a ball) and saves it as an .ico. Used by install.ps1:
+"""Draws PokeBrawl's icon (a ball) and saves it as an .ico (install.ps1's Windows shortcut) or an .icns (the Mac
+app install.sh makes), and the game window uses it too:
 
     python -m pokebrawl.winicon OUT.ico
+    python -m pokebrawl.winicon OUT.icns
 """
 import io
 import os
 import struct
 import sys
 
-os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 import pygame  # noqa: E402
 
 INK = (24, 24, 32)
@@ -46,5 +47,43 @@ def save_ico(path, sizes=(256, 48, 32, 16)):
         f.write(out + b"".join(d for _, d in pngs))
 
 
+def save_icns(path):
+    """A Mac .icns holding PNG images from 1024 down to 128 pixels."""
+    big = draw(1024)
+    chunks = b""
+    for kind, n in ((b"ic10", 1024), (b"ic09", 512), (b"ic08", 256), (b"ic07", 128)):
+        buf = io.BytesIO()
+        pygame.image.save(pygame.transform.smoothscale(big, (n, n)), buf, "png")
+        data = buf.getvalue()
+        chunks += kind + struct.pack(">I", 8 + len(data)) + data
+    with open(path, "wb") as f:
+        f.write(b"icns" + struct.pack(">I", 8 + len(chunks)) + chunks)
+
+
+def ensure_mac_app_icon():
+    """Older installs made ~/Applications/PokeBrawl.app without an icon: give it the ball (once). Updates come in
+    without re-running the installer, so the game does this itself."""
+    if sys.platform != "darwin":
+        return
+    app = os.path.join(os.path.expanduser("~"), "Applications", "PokeBrawl.app", "Contents")
+    plist = os.path.join(app, "Info.plist")
+    icns = os.path.join(app, "Resources", "PokeBrawl.icns")
+    if not os.path.isfile(plist) or os.path.exists(icns):
+        return
+    try:
+        os.makedirs(os.path.dirname(icns), exist_ok=True)
+        save_icns(icns)
+        with open(plist, encoding="utf-8") as f:
+            text = f.read()
+        if "CFBundleIconFile" not in text and "</dict>" in text:
+            text = text.replace("</dict>", "  <key>CFBundleIconFile</key><string>PokeBrawl</string>\n</dict>", 1)
+            with open(plist, "w", encoding="utf-8") as f:
+                f.write(text)
+        os.utime(os.path.dirname(app))   # so Finder notices
+    except OSError:
+        pass
+
+
 if __name__ == "__main__":
-    save_ico(sys.argv[1])
+    os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
+    (save_icns if sys.argv[1].endswith(".icns") else save_ico)(sys.argv[1])

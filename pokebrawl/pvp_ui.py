@@ -26,6 +26,8 @@ CONN_HELP = {
 
 
 class PvPSetup(Scene):
+    transition = "ball"   # a Poke Ball wipe in and out
+
     def __init__(self, app):
         super().__init__(app)
         s = app.settings

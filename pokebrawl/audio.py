@@ -67,7 +67,7 @@ def prepare_voices(lines):
     threading.Thread(target=go, daemon=True).start()
 CRY_DIR = os.path.join(pokedex.HOME, "cries")
 CRY_URL = "https://raw.githubusercontent.com/PokeAPI/cries/main/cries/pokemon/latest/{}.ogg"
-AUDIO_VERSION = 5
+AUDIO_VERSION = 6
 
 # minimum seconds between two plays of the same sound (keeps 300-Pokemon battles from turning into noise)
 THROTTLE = {"ball": 0.03, "hit": 0.045, "hit_super": 0.08, "hit_weak": 0.07, "beam": 0.07, "blast": 0.09, "impact": 0.05,
@@ -213,10 +213,76 @@ def _make_haunt():
     return out
 
 
+def _make_title():
+    """The title screen's theme: a bright, heroic square-wave melody over marching bass and drums (written for
+    PokeBrawl, in the spirit of the old title fanfares). 8 bars that loop."""
+    beat = 60 / 132
+    e8 = beat / 2
+    melody = [  # (note, octave, eighths); None = rest
+        ("G", 4, 1), ("C", 5, 1), ("E", 5, 1), ("G", 5, 3), ("F", 5, 1), ("E", 5, 1),
+        ("D", 5, 2), ("B", 4, 1), ("G", 4, 1), ("D", 5, 3), (None, 0, 1),
+        ("C", 5, 1), ("E", 5, 1), ("A", 5, 2), ("G", 5, 1), ("E", 5, 1), ("C", 5, 2),
+        ("F", 5, 2), ("E", 5, 1), ("D", 5, 1), ("G", 5, 4),
+        ("E", 5, 1), ("G", 5, 1), ("C", 6, 3), ("B", 5, 1), ("A", 5, 1), ("G", 5, 1),
+        ("A", 5, 2), ("F", 5, 1), ("C", 5, 1), ("F", 5, 3), (None, 0, 1),
+        ("D", 5, 1), ("F", 5, 1), ("A", 5, 2), ("G", 5, 2), ("B", 4, 2),
+        ("C", 5, 6), (None, 0, 2)]
+    chords = [("C", "E", "G"), ("G", "B", "D"), ("A", "C", "E"), ("F", "A", "C"), ("C", "E", "G"),
+              ("F", "A", "C"), ("D", "F", "A"), ("C", "E", "G")]
+    bars = 8
+    total = bars * 4 * beat
+    n = int(total * RATE)
+    out = [0.0] * n
+
+    def add(start, dur, fn, vol, rel=0.6):
+        s = int(start * RATE)
+        e = min(n, s + int(dur * RATE))
+        ln = e - s
+        for i in range(s, e):
+            k = i - s
+            out[i] += fn(k / RATE) * vol * min(1.0, k / 150) * (1 - k / max(1, ln)) ** rel
+
+    def pulse(f, duty):
+        return lambda t: 1.0 if (f * t) % 1.0 < duty else -1.0
+
+    pos = 0.0
+    for nm, o, ln in melody:
+        if nm:
+            f = _freq(nm, o)
+            vib = lambda t, f=f: f * (1 + 0.004 * math.sin(2 * math.pi * 6 * t) * min(1.0, t * 3))
+            add(pos, ln * e8 * 0.95, lambda t, v=vib: (1.0 if (v(t) * t) % 1.0 < 0.25 else -1.0), 0.085, 0.3)
+            add(pos + 0.12, ln * e8 * 0.9, pulse(f / 2, 0.5), 0.02, 0.5)       # a soft echo an octave down
+        pos += ln * e8
+    for bar in range(bars):
+        t0 = bar * 4 * beat
+        ch = chords[bar]
+        root = ch[0]
+        for k in range(8):   # marching bass: root, root, fifth, root...
+            nm = ch[2] if k % 4 == 2 else root
+            add(t0 + k * e8, e8 * 0.85, lambda t, f=_freq(nm, 2): _tri(f * t), 0.3)
+        for b in range(4):   # bright chord stabs on the off-beats
+            for nm in ch:
+                add(t0 + b * beat + e8, e8 * 0.5, pulse(_freq(nm, 4), 0.125), 0.025)
+        nz = _noise_gen(bar + 40)
+        for k in range(8):
+            st = t0 + k * e8
+            add(st, 0.025, lambda t: nz(), 0.05)
+            if k in (0, 3, 4):
+                add(st, 0.12, lambda t: math.sin(2 * math.pi * (120 - 420 * t) * t), 0.45)
+            if k in (2, 6):
+                add(st, 0.1, lambda t: nz() * 0.8 + math.sin(2 * math.pi * 200 * t) * 0.3, 0.2)
+        if bar == bars - 1:   # snare roll back into the top
+            for k in range(8):
+                add(t0 + 3 * beat + k * beat / 8, 0.05, lambda t: nz(), 0.08 + k * 0.012)
+    return out
+
+
 def _make_music(kind):
     """A looping chiptune track. kind: 'battle' (fast, minor) or 'menu' (chill), ... 'haunt' (eerie)."""
     if kind == "haunt":
         return _make_haunt()
+    if kind == "title":
+        return _make_title()
     rng = random.Random({"battle": 7, "menu": 3, "showcase": 11, "town": 21, "route": 5, "gym": 13}[kind])
     bpm = {"battle": 150, "menu": 104, "showcase": 138, "town": 96, "route": 124, "gym": 144}[kind]
     prog = {"battle": ["A", "F", "C", "G"], "menu": ["C", "A", "F", "G"], "showcase": ["D", "A#", "F", "C"],
@@ -293,7 +359,7 @@ def ensure_assets():
     os.makedirs(SFX_DIR, exist_ok=True)
     for name, samples in _make_sfx().items():
         _write_wav(os.path.join(SFX_DIR, f"{name}.wav"), samples)
-    for kind in ("battle", "menu", "showcase", "town", "route", "gym", "haunt"):
+    for kind in ("battle", "menu", "showcase", "town", "route", "gym", "haunt", "title"):
         _write_wav(os.path.join(SFX_DIR, f"music_{kind}.wav"), _make_music(kind))
     open(marker, "w", encoding="utf-8").close()
 
@@ -505,7 +571,8 @@ def mix(events, duration, out_wav):
     music = []
     for t, key, vol in events:
         if key.startswith("music:"):
-            music.append((t, key[6:], vol))
+            if not music or music[-1][1] != key[6:]:   # screens ask for their music every frame: keep it playing
+                music.append((t, key[6:], vol))
             continue
         if key not in cache:
             if key.startswith("cry:"):

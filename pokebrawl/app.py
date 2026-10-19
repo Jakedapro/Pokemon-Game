@@ -86,7 +86,8 @@ class App:
         AUDIO.init(self.settings, headless=headless)
         gfx.SPRITES.async_load = not headless   # downloads never freeze the screen
         self._shown = None        # the scene drawn last frame (to notice screen changes)
-        self._trans = None        # [old frame, time, direction] while a screen transition plays
+        self._trans = None        # [old frame, time, direction, kind] while a screen transition plays
+        self.next_transition = None   # a scene can ask for the next change to be a "ball" wipe
 
     def push(self, scene):
         self.stack.append(scene)
@@ -108,26 +109,45 @@ class App:
 
     TRANSITION = 0.32
 
-    def _start_transition(self, scene, canvas):
-        """The screen just changed: keep the old picture and slide it away over the new one."""
+    def _start_transition(self, scene, canvas, prev):
+        """The screen just changed: keep the old picture and slide it away over the new one (or close a Poke
+        Ball over it and open it on the new one, going to and from the big modes)."""
         old = self._shown
         self._shown = scene
-        if old is None or getattr(scene, "no_transition", False) or getattr(old, "no_transition", False):
-            self._trans = None
-            return
-        if canvas.get_size() != (gfx.W, gfx.H):
+        forced, self.next_transition = self.next_transition, None
+        skip = not forced and (getattr(scene, "no_transition", False) or getattr(old, "no_transition", False))
+        kind = forced or ("ball" if "ball" in (getattr(scene, "transition", None),
+                                               getattr(old, "transition", None)) else "slide")
+        same = prev.get_size() == canvas.get_size()
+        if old is None or skip or not (same and canvas.get_size() == (gfx.W, gfx.H) or kind == "ball"):
             self._trans = None
             return
         back = old not in self.stack   # popped: slide right, pushed: slide left
-        self._trans = [canvas.copy(), 0.0, 1 if back else -1]
+        shot = prev.copy()
+        if not same:   # going between the portrait screens and Adventure's pixel screen: fit the old picture
+            shot = pygame.Surface(canvas.get_size())
+            k = min(canvas.get_width() / prev.get_width(), canvas.get_height() / prev.get_height())
+            img = pygame.transform.smoothscale(prev, (int(prev.get_width() * k), int(prev.get_height() * k)))
+            shot.blit(img, img.get_rect(center=shot.get_rect().center))
+        if kind == "ball":
+            AUDIO.play("ball", 0.6)
+        self._trans = [shot, 0.0, 1 if back else -1, kind]
 
     def _draw_transition(self, canvas, dt):
         if not self._trans or canvas.get_size() != self._trans[0].get_size():
             self._trans = None
             return
-        old, t, d = self._trans
+        old, t, d, kind = self._trans
         t += dt
         self._trans[1] = t
+        if kind == "ball":
+            from .intro import ball_wipe
+            k = t / 0.7
+            if k >= 1:
+                self._trans = None
+                return
+            ball_wipe(canvas, old, k)
+            return
         k = min(1.0, t / self.TRANSITION)
         e = 1 - (1 - k) ** 3
         w = canvas.get_width()
@@ -173,6 +193,7 @@ class App:
                 break
             scene.update(dt)
             scene = self.stack[-1] if self.stack else scene
+            prev = self.display.canvas    # last frame drawn (a transition starts from it)
             # most screens are portrait in a window; big battle royales ask for a wide full-screen canvas
             self.display.set_canvas(getattr(scene, "canvas_size", (gfx.W, gfx.H)))
             mp = self.display.to_canvas(pygame.mouse.get_pos())
@@ -180,7 +201,7 @@ class App:
                 b.hover = b.rect.collidepoint(mp)
             canvas = self.display.canvas
             if scene is not self._shown:
-                self._start_transition(scene, canvas)
+                self._start_transition(scene, canvas, prev)
             scene.draw(canvas)
             self._draw_transition(canvas, dt)
             self.display.present()
@@ -191,31 +212,50 @@ class App:
 
 # ---------------------------------------------------------------------------- loading
 class LoadingScene(Scene):
-    """First launch: downloads the Pokedex. Later launches: instant."""
+    """Opening the game: loads the Pokedex (downloading it the first time) and the intro's graphics, then plays
+    the intro (or goes straight to the title screen). Later launches only show it for a moment, if at all."""
+    no_transition = True
 
     def __init__(self, app):
         super().__init__(app)
         self.msg = "Loading Pokedex..."
         self.error = None
+        self.t = 0.0
+        from . import intro
+        self.intro = intro
+        self.view = intro.Loading()
+        intro.warm()
         threading.Thread(target=self._load, daemon=True).start()
 
     def _load(self):
+        try:
+            from .winicon import ensure_mac_app_icon
+            ensure_mac_app_icon()
+        except Exception:  # noqa: BLE001
+            pass
         try:
             self.app.dex = pokedex.load_dex(progress=lambda m: setattr(self, "msg", m.replace("[pokebrawl] ", "")))
         except Exception as e:  # noqa: BLE001
             self.error = f"Couldn't download data: {e}"
 
     def update(self, dt):
-        if self.app.dex:
-            self.app.replace(MainMenu(self.app))
+        self.t += dt
+        if not self.app.dex or not (self.intro.settled() or self.t > 25):
+            return
+        if self.app.settings.get("intro", "On") == "On" and self.intro.ready():
+            self.app.replace(self.intro.IntroScene(self.app))
+        else:
+            self.app.replace(self.intro.TitleScene(self.app))
+
+    def handle(self, ev, pos):
+        if ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE:
+            self.app.running = False
 
     def draw(self, surf):
-        ui.menu_background(surf, self.app.t)
-        ui.header(surf, "PokeBrawl")
-        gfx.text(surf, self.error or self.msg, (W / 2, H * 0.5), 22, (220, 220, 230), chunky=False)
-        if self.error:
-            gfx.text(surf, "Check your internet connection and restart.", (W / 2, H * 0.54), 18, ui.MUTED,
-                     chunky=False)
+        if self.t < 0.3 and not self.error:   # usually done before anything needs showing
+            surf.fill((0, 0, 0))
+            return
+        self.view.draw(surf, self.t, None, self.msg, self.error and "Check your internet and restart")
 
 
 class PrefetchScene(Scene):
@@ -248,9 +288,11 @@ class PrefetchScene(Scene):
             self.app.replace(self.make_next())
 
     def draw(self, surf):
-        ui.menu_background(surf, self.app.t)
-        gfx.text(surf, "Getting sprites ready...", (W / 2, H * 0.45), 30)
-        gfx.hp_bar(surf, (160, int(H * 0.5), 400, 14), self.done / max(1, self.total))
+        if not hasattr(self, "view"):
+            from .intro import Loading
+            self.view, self.t = Loading(), 0.0
+        self.t += self.app.clock.get_time() / 1000
+        self.view.draw(surf, self.t, self.done / max(1, self.total), "Getting sprites ready...")
 
 
 # ---------------------------------------------------------------------------- main menu
@@ -274,6 +316,7 @@ class MainMenu(Scene):
         super().__init__(app)
         self.typed = ""
         self.unlock_t = -9.0
+        self.enter = None          # when the menu first showed (its buttons fly in)
         self._build()
         from .updater import AutoUpdater
         from .version import current
@@ -348,6 +391,27 @@ class MainMenu(Scene):
             if shiny:
                 gfx.sparkles(surf, (x, 190), 40, t, pid, 4)
 
+    def _draw_buttons(self, surf):
+        """The buttons fly in one after another (alternating sides) with a little overshoot the first time the
+        menu shows, then sit still."""
+        if self.enter is None:
+            self.enter = self.app.t
+        t = self.app.t - self.enter
+        for i, b in enumerate(self.buttons):
+            k = max(0.0, min(1.0, (t - 0.05 - i * 0.045) / 0.4))
+            if k >= 1:
+                b.draw(surf)
+                continue
+            if k <= 0:
+                continue
+            k1 = k - 1
+            e = 1 + 2.2 * k1 ** 3 + 1.2 * k1 ** 2      # ease out with overshoot
+            side = -1 if i % 2 else 1
+            r = b.rect.copy()
+            b.rect.x += int((1 - e) * 760 * side)
+            b.draw(surf)
+            b.rect = r
+
     def _rp(self):
         now = self.app.t
         if now - getattr(self, "_rp_t", -9) > 1.0:   # re-read now and then (battles change it)
@@ -415,8 +479,7 @@ class MainMenu(Scene):
         rk = profile.rank_of(self._rp())
         ui.rank_badge(surf, (650, 58), 34, rk, self.app.t)
         gfx.text(surf, rk["label"], (650, 118), 13, (255, 230, 235), ui.SHELL_DARK, 2)
-        for b in self.buttons:
-            b.draw(surf)
+        self._draw_buttons(surf)
         h, d = self.version
         gfx.text(surf, f"Version {h}, {d}" if d else f"Version {h}", (W / 2, H - 52), 14, ui.MUTED, None, 0,
                  chunky=False)
