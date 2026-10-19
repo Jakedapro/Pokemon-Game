@@ -592,6 +592,9 @@ class OverworldScene(Scene):
     def _sign(self):
         a = self.cur
         t = a.get("town")
+        if self.zone():
+            self.say([self.zone().upper(), "A quiet stop on the way to PEBBLECREST CITY."])
+            return
         if t:
             if t <= len(A.GYMS):
                 _, leader, typ, *_ = A.GYMS[t - 1]
