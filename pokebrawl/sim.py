@@ -7,7 +7,7 @@ import math
 import random
 
 from . import abilities as AB
-from .battlecore import AILMENT_TO_STATUS, Mon, acc_mult, damage, move_type_and_power
+from .battlecore import AILMENT_TO_STATUS, Mon, acc_mult, damage, move_type_and_power, stats_to_self
 
 WORLD_W, WORLD_H = 720, 1280
 ARENA = (44, 66, 676, 1234)  # walkable x0, y0, x1, y1
@@ -33,7 +33,7 @@ def move_kind(m):
             return "field"
         if m["cat"] == "heal" or m["healing"] > 0:
             return "heal"
-        if m["target"] == "user" or m["cat"] == "net-good-stats":
+        if stats_to_self(m) if m["stats"] else m["target"] == "user":
             return "buff"
         return "projectile"  # status inflicted on a target (Thunder Wave, Will-O-Wisp, Spore...)
     if m["target"] in ("all-opponents", "all-other-pokemon", "entire-field", "all-pokemon"):
@@ -943,7 +943,7 @@ class Sim:
                 tmon.status_turns = self.rng.randint(2, 4)
             self.emit("status", tgt.uid, res)
         if move["stats"]:
-            to_self = move["cat"] in ("damage-raise", "net-good-stats") or move["target"] == "user"
+            to_self = stats_to_self(move)
             chance = (move["stat_chance"] or 100) * (1 if to_self else sec)
             if self.rng.random() * 100 < chance:
                 who = u if to_self else tgt

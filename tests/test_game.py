@@ -309,3 +309,30 @@ def test_opening_screens_run(dex, monkeypatch):
         old = canvas.copy()
         for k in (0.2, 0.5, 0.8):
             intro.ball_wipe(canvas, old, k)
+
+
+def test_lowering_moves_hit_the_foe(dex):
+    """Tail Whip and Sand Attack lower the FOE's stats; Swords Dance raises your own."""
+    from pokebrawl.team import Member
+    from pokebrawl.turnsim import TurnBattle
+    ids = {m["key"]: i for i, m in dex.moves.items()}
+    for key, stat, mine in (("tail-whip", "def", 0), ("sand-attack", "acc", 0), ("growl", "atk", 0),
+                            ("swords-dance", "atk", 1)):   # +2, then the foe's Growl: +1
+        me = Member(133, [ids[key]], level=5)
+        foe = Member(1, [ids["growl"]], level=5)
+        b = TurnBattle(dex, [[me], [foe]], 3)
+        for _ in range(4):   # leads come out, then one turn of moves
+            reqs = b.requests()
+            moved = any(r["kind"] == "move" for r in reqs.values())
+            for side, req in reqs.items():
+                b.choose(side, {"type": "move", "slot": 0} if req["kind"] == "move" else
+                         {"type": "switch", "index": req["switches"][0]})
+            b.run()
+            if moved:
+                break
+        mine_st = b.sides[0].mon.stages.get(stat, 0)
+        foe_st = b.sides[1].mon.stages.get(stat, 0)
+        if mine:
+            assert mine_st == mine, (key, mine_st)
+        else:
+            assert foe_st == -1 and (stat == "atk" or mine_st == 0), (key, mine_st, foe_st)

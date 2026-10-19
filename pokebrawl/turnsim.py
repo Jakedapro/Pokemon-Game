@@ -12,7 +12,7 @@ Choices: {"type": "move", "slot": i, "mega": bool, "tera": bool, "gmax": bool} o
 import random
 
 from . import abilities as AB
-from .battlecore import AILMENT_TO_STATUS, STATUS_NAMES, Mon, acc_mult, damage, move_type_and_power, type_eff
+from .battlecore import AILMENT_TO_STATUS, STATUS_NAMES, Mon, stats_to_self, acc_mult, damage, move_type_and_power, type_eff
 from .types import effectiveness
 
 WEATHER_MOVES = {"rain-dance": "rain", "sunny-day": "sun", "sandstorm": "sand", "snowscape": "snow",
@@ -1107,7 +1107,7 @@ class TurnBattle:
                 fail()
             return
         if mv["stats"]:
-            to_self = mv["target"] == "user" or mv["cat"] == "net-good-stats"
+            to_self = stats_to_self(mv)
             self._boost(side if to_self else foe_i, mv["stats"], from_foe=not to_self)
             return
         fail()

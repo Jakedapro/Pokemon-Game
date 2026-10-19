@@ -10,6 +10,21 @@ STATUS_IMMUNE = {"brn": ("fire",), "par": ("electric",), "psn": ("poison", "stee
                  "frz": ("ice",), "slp": ()}
 
 
+SELF_TARGETS = ("user", "user-and-allies", "users-field", "user-or-ally", "ally", "all-allies")
+
+
+def stats_to_self(mv):
+    """Does this move's stat change land on the user? The data files put Swords Dance and Tail Whip in the same
+    category ("net-good-stats": good for the user), so go by who the move targets: Tail Whip, Growl and Sand Attack
+    lower the foe's stats, Swords Dance raises your own. Damaging moves that raise the user's stats (Power-Up
+    Punch) count too."""
+    if mv["target"] in SELF_TARGETS or mv["cat"] == "damage-raise":
+        return True
+    if mv["target"] in ("entire-field", "all-pokemon"):
+        return all(v > 0 for v in mv["stats"].values())
+    return False
+
+
 def stage_mult(stage):
     return (2 + stage) / 2 if stage >= 0 else 2 / (2 - stage)
 

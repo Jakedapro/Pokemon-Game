@@ -1,7 +1,7 @@
 """Practice bots for both battle styles, with difficulty levels."""
 import random
 
-from .battlecore import AILMENT_TO_STATUS, damage
+from .battlecore import AILMENT_TO_STATUS, damage, stats_to_self
 from .team import random_team
 from .types import effectiveness
 
@@ -54,7 +54,7 @@ def _pointless(me, foe, mv):
         return me.hp_frac() > 0.9   # healing at (nearly) full HP does nothing
     if mv.get("cls") != "status" or not mv.get("stats"):
         return False
-    target = me if mv.get("target") == "user" or mv.get("cat") == "net-good-stats" else foe
+    target = me if (stats_to_self(mv) if mv.get("stats") else mv.get("target") == "user") else foe
     stages = getattr(target, "stages", {}) or {}
     for k, v in mv["stats"].items():
         cur = stages.get(k, 0)
@@ -153,7 +153,7 @@ class TurnBot:
                         sc = 0
                 elif mv["cat"] == "heal" or mv["healing"]:
                     sc = 90 if me.hp_frac() < 0.5 else -50 if me.hp_frac() > 0.9 else 0
-                elif mv["stats"] and (mv["target"] == "user" or mv["cat"] == "net-good-stats"):
+                elif mv["stats"] and stats_to_self(mv):
                     up = sum(v for v in mv["stats"].values() if v > 0)
                     cur = max(me.stages.values())
                     sc = (45 * up if safe and me.hp_frac() > 0.55 and cur < 2 else 0)
