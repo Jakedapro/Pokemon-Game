@@ -584,6 +584,32 @@ def _theme(i, g, rng):
         paint(",", 1, 10, 4, 11), paint(",", 10, 10, 13, 11)
 
 
+VILLAGE = "Bramble Village"   # a little village halfway up Route 1, before the first Gym
+VILLAGE_AT, VILLAGE_H = 39, 18   # the rows of Route 1 it takes up
+
+
+def village_rows():
+    """Bramble Village: a Pokemon Center, a Mart and two houses on either side of the road."""
+    g = _empty(VILLAGE_H)
+    for y in range(VILLAGE_H):
+        g[y][0] = g[y][COLS - 1] = "#"
+        for x in (6, 7, 8):
+            g[y][x] = "="
+    _put(g, 1, 2, BUILDINGS["C"])
+    _put(g, 10, 2, BUILDINGS["M"])
+    _put(g, 1, 10, BUILDINGS["H"])
+    _put(g, 9, 10, BUILDINGS["H"])
+    _put(g, 9, 7, ["S"])
+    for x in range(1, COLS - 1):   # a little square in front of the Center and Mart
+        g[6][x] = "="
+    g[15][2] = g[15][10] = "="     # doorsteps
+    for y in (0, VILLAGE_H - 1):   # open edges, so the route runs straight into it
+        for x in range(1, COLS - 1):
+            if g[y][x] == ".":
+                g[y][x] = ","
+    return g
+
+
 def route_map(i, rng):
     """Route i (1-based): a winding path north with tall grass, trees, a pond and trainers."""
     h = 78 if i == 1 else 48 + 6 * min(i, 6)   # Route 1 is a long one: room to train and catch before Rocket
@@ -632,8 +658,19 @@ def route_map(i, rng):
     for y in range(h):
         g[y][0] = g[y][COLS - 1] = "#"
     _pair_trees(g)
+    if i == 1:   # Bramble Village sits halfway up
+        v = village_rows()
+        for y in (VILLAGE_AT - 1, VILLAGE_AT):   # clear a way from the route into it
+            for xx in range(1, COLS - 1):
+                if g[y][xx] in "#~":
+                    g[y][xx] = "."
+        g[VILLAGE_AT:VILLAGE_AT] = v
+        path[VILLAGE_AT:VILLAGE_AT] = [7] * VILLAGE_H
+        h = len(g)
     # ledges you can hop down (never across the path itself), and boulders further along
     for y in range(9, h - 6, 9):
+        if i == 1 and VILLAGE_AT - 2 <= y <= VILLAGE_AT + VILLAGE_H:
+            continue
         if rng.random() < 0.8:
             for xx in range(1, COLS - 1):
                 if g[y][xx] in '.,"' and abs(xx - path[y]) > 1 and g[y + 1][xx] in '.,"':
@@ -697,6 +734,11 @@ class World:
                 area["npcs"] = self._route_trainers(i + 1, rows, path, area, random.Random(
                     seed * 17 + i + (self.rseed if self.rand_trainers else 0)))
                 area["items"] = self._route_items(i + 1, rows, path, random.Random(seed * 19 + i))
+                if i == 0:   # nobody battles (or drops items) in the middle of Bramble Village
+                    area["zones"] = [(VILLAGE_AT, VILLAGE_AT + VILLAGE_H, VILLAGE)]
+                    inside = lambda o: VILLAGE_AT - 1 <= o["y"] <= VILLAGE_AT + VILLAGE_H  # noqa: E731
+                    area["npcs"] = [n for n in area["npcs"] if not inside(n)]
+                    area["items"] = [it for it in area["items"] if not inside(it)]
                 self.areas.append(area)
         # areas run south (index 0) to north: walking off the top goes to index + 1
 
@@ -789,7 +831,9 @@ class World:
         h = len(rows)
         count = {1: 3, 2: 3}.get(r, 2 + r // 6)   # a few easy ones early, so you can train up for Team Rocket
         if r <= 2:   # try extra rows so all of them find a spot (and stay clear of Route 1's helpers at the bottom)
-            ys = sorted(rng.sample(range(6, h - 10), min(h - 16, count * 3)))
+            rows_ok = [y for y in range(6, h - 10)
+                       if r != 1 or not VILLAGE_AT - 2 <= y <= VILLAGE_AT + VILLAGE_H + 1]
+            ys = sorted(rng.sample(rows_ok, min(len(rows_ok), count * 3)))
         else:
             ys = sorted(rng.sample(range(6, h - 6), min(h - 12, count)))
         last = -9

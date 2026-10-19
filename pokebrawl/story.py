@@ -406,6 +406,16 @@ def npcs_for(world, index, game):
                                          "Weaken a wild Pokemon before you throw a Poke Ball - it's much easier!"]),
                 ("flag", "aide1")])
         add(id="q_charm_girl", kind="quest", quest="q_charm", look="Lass", x=3, y=len(area["rows"]) - 8, face="right")
+        v = A.VILLAGE_AT   # Bramble Village, halfway up the route
+        add(id="bramble_elder", kind="talk", look="old_man_1", x=4, y=v + 7, face="right", name="Old Man",
+            lines=["Welcome to BRAMBLE VILLAGE! Not much here but a Center, a Mart and good company.",
+                   "Trainers rest here before PEBBLECREST CITY. Team Rocket's been seen up there, you know.",
+                   "Rest up at the Center and train in the grass first - those Rockets don't play nice!"])
+        add(id="bramble_kid", kind="talk", look="Youngster", x=11, y=v + 8, face="left", name="Kid",
+            lines=["Wild Pokemon are SO easy to catch round here!",
+                   "Knock their HP down first, and a Poke Ball almost always works."])
+        add(id="bramble_girl", kind="talk", look="Lass", x=10, y=v + 16, face="up", name="Girl",
+            lines=["I'm saving up for my first Pokemon. Mom says I have to beat my homework first..."])
     if town == 1:   # Pebblecrest: Team Rocket shows up
         add(id="grunt1", kind="story", look="grunt", x=11, y=13, face="up", name="Rocket Grunt", **{"if": "!grunt1"},
             script=[("say", "Rocket Grunt", ["Hey! This gym is closed! Team Rocket is searching it for Mega Stones!",

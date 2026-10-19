@@ -385,7 +385,12 @@ class OverworldScene(Scene):
             self._radar_beep(dt)
         self.banner += dt
         self.fade = max(0.0, self.fade - dt * 3)
-        AUDIO.music(self.cur["music"])
+        zone = self.zone()
+        if not self.inside:
+            if zone != self.__dict__.get("_zone", zone):   # walked into (or out of) a village on a route
+                self.banner = 0.0
+            self._zone = zone
+        AUDIO.music("town" if zone else self.cur["music"])
         if self.battle is not None:
             s, self.battle = self.battle, None
             self._after_battle(s)
@@ -1540,16 +1545,24 @@ class OverworldScene(Scene):
             px, py = s[1] * T + T // 2 + ox, s[2] * T + T // 2 + oy
             pygame.draw.circle(surf, (160, 240, 255), (px, py), int(5 + 7 * k), 2)
 
+    def zone(self):
+        """The village you're standing in, on a route that has one (Bramble Village on Route 1), or None."""
+        if self.inside:
+            return None
+        y = self.game["y"]
+        return next((nm for y0, y1, nm in self.cur.get("zones", ()) if y0 <= y < y1), None)
+
     def _draw_hud(self, surf):
         q = self.banner
+        name = self.zone() or self.cur["name"]
         if q < 2.6 and not self.inside:   # area name sign in the top-left corner
             k = min(1.0, q / 0.25, (2.6 - q) / 0.25)
             y = int(-40 + 44 * k)
-            r = pygame.Rect(4, y, max(140, F.width(self.cur["name"]) + 30), 34)
+            r = pygame.Rect(4, y, max(140, F.width(name) + 30), 34)
             pygame.draw.rect(surf, (48, 48, 56), r, border_radius=4)
             pygame.draw.rect(surf, (216, 184, 120), r.inflate(-4, -4), border_radius=3)
             pygame.draw.rect(surf, (248, 240, 216), r.inflate(-8, -8), border_radius=2)
-            F.draw(surf, self.cur["name"], (r.x + 14, r.y + 9), U.TEXT, U.SHADOW)
+            F.draw(surf, name, (r.x + 14, r.y + 9), U.TEXT, U.SHADOW)
 
     def _draw_transition(self, surf, t):
         """Into battle: the screen flashes, then black bars close in from both sides."""
