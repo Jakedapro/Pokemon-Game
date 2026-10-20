@@ -17,6 +17,7 @@ from . import story as S
 from . import fieldmap
 from .app import Scene
 from .audio import AUDIO
+from .audio import HEAL_LEN as AUDIO_HEAL_LEN, HEAL_NOTES as AUDIO_HEAL_NOTES
 from .gfx import PIXEL
 
 T = G.T
@@ -390,7 +391,8 @@ class OverworldScene(Scene):
             if zone != self.__dict__.get("_zone", zone):   # walked into (or out of) a village on a route
                 self.banner = 0.0
             self._zone = zone
-        AUDIO.music("town" if zone else self.cur["music"])
+        if self.healing is None:   # (quiet while the healing jingle plays)
+            AUDIO.music("town" if zone else self.cur["music"])
         if self.battle is not None:
             s, self.battle = self.battle, None
             self._after_battle(s)
@@ -412,8 +414,20 @@ class OverworldScene(Scene):
             return
         if self.healing is not None:
             self.healing -= dt
+            el = self.heal_total - self.healing
+            n = max(1, len(self.game["party"]))
+            for i in range(n):   # a click as each ball goes onto the machine
+                if el >= 0.35 + i * self.PLACE and ("ball", i) not in self._heal_sounds:
+                    self._heal_sounds.add(("ball", i))
+                    AUDIO.play("click", 0.6)
+            if el >= self._jingle_at() and "jingle" not in self._heal_sounds:
+                self._heal_sounds.add("jingle")
+                AUDIO.play("heal_jingle", 1.0)
             if self.healing <= 0:
                 self.healing = None
+                nurse = next((m for m in self.npcs if m["kind"] == "nurse"), None)
+                if nurse:
+                    nurse["face"] = "down"
                 self._heal_done()
             return
         if self.emote is not None:
@@ -992,10 +1006,55 @@ class OverworldScene(Scene):
         lines.append(f"Mega Stones collected: {len(stones)}.")
         self.say(lines, then)
 
+    PLACE = 0.32    # seconds per Poke Ball set on the healing machine
+
     def _start_heal(self):
-        self.healing = 2.4
+        """FireRed's healing: the nurse turns to the machine, sets your Poke Balls on it one at a time, then they
+        flash along to the healing jingle."""
+        n = max(1, len(self.game["party"]))
+        self.heal_total = 0.35 + n * self.PLACE + 0.25 + AUDIO_HEAL_LEN + 0.2
+        self.healing = self.heal_total
+        self._heal_sounds = set()
+        nurse = next((m for m in self.npcs if m["kind"] == "nurse"), None)
+        if nurse:
+            nurse["face"] = "left"   # toward the machine
         AUDIO.music(None)
-        AUDIO.play("heal")
+
+    def _jingle_at(self):
+        return 0.35 + max(1, len(self.game["party"])) * self.PLACE + 0.25
+
+    def _draw_heal_machine(self, surf, nx, ny):
+        """Your Poke Balls in the machine's tray (two rows of three), set down one by one; when the jingle plays
+        they and the screen above them flash on every note."""
+        el = self.heal_total - self.healing
+        n = len(self.game["party"])
+        lit = 0.0
+        j = el - self._jingle_at()
+        if j >= 0:
+            for st, ln in AUDIO_HEAL_NOTES:
+                if st <= j < st + ln:
+                    lit = 1.0 - (j - st) / ln * 0.6
+            if j >= AUDIO_HEAL_NOTES[-1][0]:
+                lit = max(lit, 0.5 + 0.5 * math.sin(j * 30))
+        # the machine stands just left of the nurse; its green tray is where the balls go
+        tx, ty = nx - 52, ny - 22
+        if lit > 0:   # the tray lights up
+            glow = pygame.Surface((38, 50), pygame.SRCALPHA)
+            pygame.draw.rect(glow, (255, 250, 200, int(110 * lit)), (0, 0, 38, 50), border_radius=4)
+            surf.blit(glow, (tx - 2, ty - 4))
+        for i in range(n):
+            t0 = 0.35 + i * self.PLACE
+            if el < t0:
+                break
+            drop = max(0.0, 1 - (el - t0) / 0.12) * 6     # each ball drops into its slot
+            cx = tx + 11 + (i % 2) * 13
+            cy = ty + 7 + (i // 2) * 13 - int(drop)
+            U.ball(surf, (int(cx), int(cy)), 4)
+            if lit > 0:
+                g = pygame.Surface((14, 14), pygame.SRCALPHA)
+                pygame.draw.circle(g, (255, 255, 210, int(220 * lit)), (7, 7), 6)
+                pygame.draw.circle(g, (255, 255, 255, int(255 * lit)), (7, 7), 3)
+                surf.blit(g, (int(cx) - 7, int(cy) - 7))
 
     def _heal_done(self):
         self._heal_all()
@@ -1391,15 +1450,8 @@ class OverworldScene(Scene):
                         surf.blit(img, (x * T + ox, y * T + oy - 16))
         if inside and kind == "center" and self.healing is not None:   # balls on the healing machine
             nurse = next((n for n in self.npcs if n["kind"] == "nurse"), None)
-            hx, hy = (nurse["x"] - 2, nurse["y"]) if field and nurse else (5, 2)
-            mx, my = hx * T + ox, hy * T + oy
-            n = len(self.game["party"])
-            for i in range(n):
-                if (2.4 - self.healing) > i * 0.15:
-                    on = int(self.t * 8) % 2 if self.healing < 1.4 else 1
-                    U.ball(surf, (mx + 10 + (i % 3) * 7, my + 12 + (i // 3) * 7), 3)
-                    if on and self.healing < 1.4:
-                        pygame.draw.circle(surf, (255, 255, 200), (mx + 10 + (i % 3) * 7, my + 12 + (i // 3) * 7), 2)
+            nx_, ny_ = (nurse["x"], nurse["y"]) if nurse else (7, 2)
+            self._draw_heal_machine(surf, nx_ * T + ox, ny_ * T + oy)
         for kind_b, bx, by, bw, bh, door in (self.field_missing if field else self.blds):
             accent = None
             if kind_b == "gym" and self.cur.get("town"):

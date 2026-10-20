@@ -67,7 +67,7 @@ def prepare_voices(lines):
     threading.Thread(target=go, daemon=True).start()
 CRY_DIR = os.path.join(pokedex.HOME, "cries")
 CRY_URL = "https://raw.githubusercontent.com/PokeAPI/cries/main/cries/pokemon/latest/{}.ogg"
-AUDIO_VERSION = 6
+AUDIO_VERSION = 7
 
 # minimum seconds between two plays of the same sound (keeps 300-Pokemon battles from turning into noise)
 THROTTLE = {"ball": 0.03, "hit": 0.045, "hit_super": 0.08, "hit_weak": 0.07, "beam": 0.07, "blast": 0.09, "impact": 0.05,
@@ -100,6 +100,41 @@ def _render(dur, fn):
 def _noise_gen(seed):
     rng = random.Random(seed)
     return lambda: rng.uniform(-1, 1)
+
+
+# the Pokemon Center's healing jingle: "dun, dun, dun-dun, DUN" (start, length) of each note, for the balls to flash to
+HEAL_NOTES = [(0.0, 0.2), (0.24, 0.2), (0.48, 0.1), (0.6, 0.1), (0.72, 0.62)]
+HEAL_LEN = 1.6
+
+
+def _heal_jingle():
+    """A bright square-wave lead with a third underneath, a soft triangle bass and a shimmer on the last note."""
+    n = int(HEAL_LEN * RATE)
+    out = [0.0] * n
+    lead = [("B", 5), ("B", 5), ("B", 5), ("G#", 5), ("E", 6)]
+    under = [("G#", 5), ("G#", 5), ("G#", 5), ("E", 5), ("B", 5)]
+    bass = [("E", 3), ("E", 3), ("E", 3), ("E", 3), ("E", 3)]
+
+    def add(start, dur, f, vol, wave):
+        s0 = int(start * RATE)
+        ln = int(dur * RATE)
+        for i in range(ln):
+            if s0 + i >= n:
+                break
+            t = i / RATE
+            env = min(1.0, i / 120) * (1 - i / ln) ** 0.5
+            out[s0 + i] += wave(f * t) * env * vol
+
+    def pulse(ph):
+        return 1.0 if ph % 1.0 < 0.25 else -1.0
+    for (st, ln), a, b, c in zip(HEAL_NOTES, lead, under, bass):
+        add(st, ln * 0.95, _freq(*a), 0.16, pulse)
+        add(st, ln * 0.95, _freq(*b), 0.07, _square)
+        add(st, ln, _freq(*c), 0.22, _tri)
+    st = HEAL_NOTES[-1][0]
+    for k, nm in enumerate(("E", "G#", "B")):   # a twinkle as the balls light up
+        add(st + 0.05 + k * 0.06, 0.5, _freq(nm, 7), 0.03, lambda ph: math.sin(2 * math.pi * ph))
+    return out
 
 
 def _make_sfx():
@@ -152,6 +187,7 @@ def _make_sfx():
         return _render(dur, f)
     S["tera"] = bell([1318, 1976, 2637, 3951], 0.9, 0.5)
     S["heal"] = arp([784, 988, 1175, 1568], 0.06, 0.35, math.sin, 0.25)
+    S["heal_jingle"] = _heal_jingle()
     S["boost"] = arp([440, 554, 659, 880], 0.04, 0.2, _square, 0.15)
     S["drop"] = arp([880, 659, 554, 440], 0.04, 0.2, _square, 0.15)
     S["status"] = _render(0.3, lambda i, n: _square(220 * i / RATE + 0.02 * math.sin(i * 0.004)) *
