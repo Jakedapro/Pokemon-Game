@@ -14,7 +14,7 @@ from . import gbaui as U
 from . import pixelfont as F
 from . import profile
 from . import story as S
-from . import fieldmap
+from . import fieldmap, frlg
 from .app import Scene
 from .audio import AUDIO
 from .audio import HEAL_LEN as AUDIO_HEAL_LEN, HEAL_NOTES as AUDIO_HEAL_NOTES
@@ -29,6 +29,27 @@ DIRS = {"up": (0, -1), "down": (0, 1), "left": (-1, 0), "right": (1, 0)}
 OPP = {"up": "down", "down": "up", "left": "right", "right": "left"}
 FURN = {"c": "counter", "k": "mcounter", "m": "machine", "p": "pc", "s": "shelf", "t": "table", "f": "plant",
         "x": "mat", "b": "bed", "v": "tv", "o": "statue", "r": "books", "a": "sofa"}
+
+
+_heal_balls = []
+
+
+def heal_ball():
+    """FireRed's own little Poke Ball for the healing machine (6x6 pixels, drawn 2x) and a brightened copy for
+    when it flashes. (None, None) without the FireRed files."""
+    if not _heal_balls:
+        f = frlg.fetch("graphics/field_effects/pics/pokeball_glow.png")
+        if not f:
+            return None, None
+        img = pygame.image.load(f)
+        img.set_palette_at(2, (248, 248, 248))   # its own palette shades the bottom grey-green: make it white
+        img.set_palette_at(3, (48, 48, 56))      # and a dark outline, so it reads on the green tray
+        img.set_colorkey(img.get_palette_at(0))
+        img = pygame.transform.scale_by(G._rgba(img), 2)
+        bright = img.copy()
+        bright.fill((110, 110, 90, 0), special_flags=pygame.BLEND_RGBA_ADD)
+        _heal_balls[:] = [img, bright]
+    return tuple(_heal_balls)
 
 
 def buildings_of(area):
@@ -1040,21 +1061,21 @@ class OverworldScene(Scene):
         tx, ty = nx - 52, ny - 22
         if lit > 0:   # the tray lights up
             glow = pygame.Surface((38, 50), pygame.SRCALPHA)
-            pygame.draw.rect(glow, (255, 250, 200, int(110 * lit)), (0, 0, 38, 50), border_radius=4)
+            pygame.draw.rect(glow, (255, 250, 200, int(60 * lit)), (0, 0, 38, 50), border_radius=4)
             surf.blit(glow, (tx - 2, ty - 4))
+        ball, bright = heal_ball()
         for i in range(n):
             t0 = 0.35 + i * self.PLACE
             if el < t0:
                 break
             drop = max(0.0, 1 - (el - t0) / 0.12) * 6     # each ball drops into its slot
-            cx = tx + 11 + (i % 2) * 13
-            cy = ty + 7 + (i // 2) * 13 - int(drop)
-            U.ball(surf, (int(cx), int(cy)), 4)
-            if lit > 0:
-                g = pygame.Surface((14, 14), pygame.SRCALPHA)
-                pygame.draw.circle(g, (255, 255, 210, int(220 * lit)), (7, 7), 6)
-                pygame.draw.circle(g, (255, 255, 255, int(255 * lit)), (7, 7), 3)
-                surf.blit(g, (int(cx) - 7, int(cy) - 7))
+            cx = tx + 11 + (i % 2) * 14
+            cy = ty + 9 + (i // 2) * 13 - int(drop)
+            if ball is None:
+                U.ball(surf, (int(cx), int(cy)), 5)
+                continue
+            img = bright if lit > 0.55 else ball      # FireRed flashes the balls themselves on each note
+            surf.blit(img, img.get_rect(center=(int(cx), int(cy))))
 
     def _heal_done(self):
         self._heal_all()
